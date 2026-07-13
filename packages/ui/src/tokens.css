@@ -1,0 +1,109 @@
+/* Slate design tokens — PLAN.md §8.2. Binding, not inspirational.
+   Ban list: blue-purple gradients, glassmorphism/backdrop-blur cards, emoji as
+   UI icons, default-shadcn gray-card-grid look, rounded-2xl-everything, shadows
+   heavier than the two elevation tokens, more than one accent color. */
+
+/* TODO(design): self-host Fraunces + Inter (OFL) woff2 under ./fonts/ and add
+   @font-face rules — see PLAN.md §8.2, §14. Falls back to system stacks until
+   the font files land so `vite build` doesn't fail resolving missing assets. */
+
+:root {
+  /* Surfaces */
+  --bg: #FAF9F6;
+  --surface: #FFFFFF;
+  --surface-2: #F1EFEA;
+
+  /* Ink */
+  --ink: #1A1A1A;
+  --ink-2: #52525B;
+  --ink-3: #A1A1AA;
+
+  /* Lines */
+  --line: #E4E2DC;
+
+  /* Accent — deep pine. One accent: links, primary buttons, active nav, focus rings. */
+  --accent: #1E5C48;
+  --accent-hover: #174A3A;
+  --accent-wash: #E8F0EC;
+
+  /* Semantic */
+  --correct: #1E7F4F;
+  --incorrect: #B4372F;
+  --warning: #B87A1E;
+  --info: var(--accent);
+
+  /* Type scale (px) */
+  --text-xs: 13px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 28px;
+  --text-3xl: 36px;
+  --font-display: 'Fraunces', ui-serif, Georgia, serif;
+  --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  /* Space (4px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Shape */
+  --radius-control: 6px;
+  --radius-card: 10px;
+
+  /* Elevation — nothing heavier than these two */
+  --shadow-1: 0 1px 2px rgb(0 0 0 / .06);
+  --shadow-2: 0 4px 16px rgb(0 0 0 / .10);
+
+  /* Motion */
+  --ease: cubic-bezier(.2, .8, .4, 1);
+  --duration-micro: 150ms;
+  --duration-panel: 220ms;
+}
+
+:root[data-theme='dark'] {
+  --bg: #141412;
+  --surface: #1C1B18;
+  --surface-2: #242320;
+
+  --ink: #F1EFEA;
+  --ink-2: #B8B6AE;
+  --ink-3: #6E6C64;
+
+  --line: #322F29;
+
+  --accent: #3EA37D;
+  --accent-hover: #4DBE93;
+  --accent-wash: #16261F;
+
+  --correct: #3EA37D;
+  --incorrect: #E0665C;
+  --warning: #D99A42;
+  --info: var(--accent);
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.5;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  line-height: 1.2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

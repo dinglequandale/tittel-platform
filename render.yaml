@@ -1,0 +1,31 @@
+# One Node web service: serves the built React/Vite SPA AND the Express API +
+# WS channels (PLAN.md §4.1 — realtime rules out serverless hosting).
+#
+# Deploy: push this repo to GitHub, then on Render choose
+#   New +  ->  Blueprint  ->  pick this repo. Render reads this file.
+services:
+  - type: web
+    name: tittel-platform
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    # Schema is idempotent (create-if-not-exists / alter-if-not-exists), so
+    # it's safe to reapply it on every boot — keeps prod in sync without a
+    # manual migration step (PLAN.md §9.5).
+    startCommand: npm run migrate && npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      # Supabase session-pooler Postgres URI — set in the Render dashboard.
+      - key: DATABASE_URL
+        sync: false
+      # Supabase project URL — used server-side for JWKS verification.
+      - key: SUPABASE_URL
+        sync: false
+      # Public Supabase values baked into the client bundle at build time.
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false

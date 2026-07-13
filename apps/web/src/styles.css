@@ -1,0 +1,33 @@
+@import 'tailwindcss';
+@import '@tittel/ui/tokens.css';
+@import '@tittel/ui/components.css';
+
+/* Map Slate tokens (packages/ui/src/tokens.css) into Tailwind v4's CSS-first
+   theme so utility classes (bg-accent, text-ink-2, rounded-card, ...) draw
+   from the same source as the component CSS — no default-Tailwind-blue drift
+   (PLAN.md §8.3). */
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-wash: var(--accent-wash);
+  --color-correct: var(--correct);
+  --color-incorrect: var(--incorrect);
+  --color-warning: var(--warning);
+
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+
+  --radius-control: var(--radius-control);
+  --radius-card: var(--radius-card);
+}
+
+html, body, #root {
+  height: 100%;
+}

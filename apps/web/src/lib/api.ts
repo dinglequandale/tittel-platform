@@ -15,6 +15,11 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
       ...init.headers,
     },
   })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-  return res.json()
+  if (res.status === 204) return null
+  const body = await res.json().catch(() => null)
+  if (!res.ok) {
+    const message = typeof body?.error === 'string' ? body.error : `${res.status} ${res.statusText}`
+    throw new Error(message)
+  }
+  return body
 }

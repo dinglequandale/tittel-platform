@@ -6,6 +6,8 @@ import { RequireAuth } from './shell/RequireAuth.tsx'
 import { AppShell } from './shell/AppShell.tsx'
 import { Home } from './shell/Home.tsx'
 import { ModulePlaceholder } from './shell/ModulePlaceholder.tsx'
+import { StudentsPage } from './students/StudentsPage.tsx'
+import { ContentPage } from './content/ContentPage.tsx'
 import { ComingSoon } from './ComingSoon.tsx'
 
 // Route map — PLAN.md §4.3. Student-facing surfaces (/try, /b, /s, /hw,
@@ -22,8 +24,8 @@ export function Router() {
       <Route element={<RequireAuth />}>
         <Route path="/app" element={<AppShell />}>
           <Route index element={<Home />} />
-          <Route path="students" element={<ModulePlaceholder title="Students" />} />
-          <Route path="content" element={<ModulePlaceholder title="Content" />} />
+          <Route path="students" element={<StudentsPage />} />
+          <Route path="content" element={<ContentPage />} />
           <Route path="live" element={<ModulePlaceholder title="Live" />} />
           <Route path="assignments" element={<ModulePlaceholder title="Assignments" />} />
           <Route path="analytics" element={<ModulePlaceholder title="Analytics" />} />

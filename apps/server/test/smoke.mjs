@@ -76,6 +76,10 @@ try {
 
     const missing = await fetch(`${BASE}/api/nope`)
     check('unmatched /api route is a 404', missing.status === 404)
+    // Portal/attempt token lookups aren't checked here — unlike /api/health,
+    // they don't degrade gracefully without a real DATABASE_URL (a genuine
+    // "not found" and "DB unreachable" both need a live DB to tell apart),
+    // so they're exercised manually until Phase 2 has real credentials.
   }
 } finally {
   killTree(server.pid)

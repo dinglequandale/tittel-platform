@@ -50,3 +50,18 @@ export async function studentQuery<T extends QueryResultRow = QueryResultRow>(
   const { rows } = await pool.query<T>(sql, [portalToken, ...params])
   return rows
 }
+
+// Attempt-token surfaces (the runner + review) are keyed by their own magic
+// link, distinct from a student's portal_token — same "the token is the
+// whole access control" model, so it gets the same guarded-query treatment.
+export async function attemptQuery<T extends QueryResultRow = QueryResultRow>(
+  attemptToken: string,
+  sql: string,
+  params: unknown[] = [],
+): Promise<T[]> {
+  if (!/attempt_token/i.test(sql)) {
+    throw new Error('attemptQuery: SQL must reference attempt_token — refusing to run an unscoped attempt query')
+  }
+  const { rows } = await pool.query<T>(sql, [attemptToken, ...params])
+  return rows
+}

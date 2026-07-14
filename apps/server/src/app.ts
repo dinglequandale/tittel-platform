@@ -5,6 +5,11 @@ import { fileURLToPath } from 'node:url'
 import express from 'express'
 import { pool } from './db.ts'
 import { requireTutor } from './auth.ts'
+import { studentsRouter } from './routes/students.ts'
+import { tagsRouter } from './routes/tags.ts'
+import { problemsRouter } from './routes/problems.ts'
+import { problemSetsRouter } from './routes/problemSets.ts'
+import { lessonsRouter } from './routes/lessons.ts'
 
 // The configured Express app — defined separately from the listen() bootstrap
 // (src/index.ts) so it can also be imported elsewhere (e.g. tests) without
@@ -32,6 +37,14 @@ app.get('/api/health', async (_req, res) => {
 app.get('/api/tutor/session', requireTutor, (req, res) => {
   res.json({ auth: req.auth })
 })
+
+// Phase 1 — students & content data layer (PLAN.md §10). Every route below
+// is org-scoped via req.auth (set by requireTutor) and orgQuery (db.ts).
+app.use('/api/tutor', requireTutor, studentsRouter)
+app.use('/api/tutor', requireTutor, tagsRouter)
+app.use('/api/tutor', requireTutor, problemsRouter)
+app.use('/api/tutor', requireTutor, problemSetsRouter)
+app.use('/api/tutor', requireTutor, lessonsRouter)
 
 // Any unmatched /api route is a 404 (not the SPA fallback HTML).
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not found' }))

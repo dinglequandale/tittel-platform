@@ -31,11 +31,8 @@ declare global {
   }
 }
 
-export async function requireTutor(req: Request, res: Response, next: NextFunction) {
-  const header = req.header('authorization')
-  const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined
-  if (!token || !jwks) return res.status(401).json({ error: 'unauthorized' })
-
+async function resolveTutorAuth(token: string): Promise<TutorAuth | null> {
+  if (!jwks) return null
   let supabaseUid: string
   let email: string
   try {
@@ -44,7 +41,7 @@ export async function requireTutor(req: Request, res: Response, next: NextFuncti
     supabaseUid = payload.sub
     email = typeof payload.email === 'string' ? payload.email : ''
   } catch {
-    return res.status(401).json({ error: 'unauthorized' })
+    return null
   }
 
   const { rows } = await pool.query<{ id: string; org_id: string; role: 'owner' | 'tutor' }>(
@@ -67,6 +64,30 @@ export async function requireTutor(req: Request, res: Response, next: NextFuncti
     user = { id: userId, org_id: orgId, role: 'owner' }
   }
 
-  req.auth = { supabaseUid, email, userId: user.id, orgId: user.org_id, role: user.role }
+  return { supabaseUid, email, userId: user.id, orgId: user.org_id, role: user.role }
+}
+
+export async function requireTutor(req: Request, res: Response, next: NextFunction) {
+  const header = req.header('authorization')
+  const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined
+  const auth = token ? await resolveTutorAuth(token) : null
+  if (!auth) return res.status(401).json({ error: 'unauthorized' })
+  req.auth = auth
+  next()
+}
+
+/**
+ * Never 401s — used by board-join endpoints where an anonymous guest is a
+ * valid, expected caller. Sets req.auth when a valid tutor bearer token is
+ * present (an existing user only — it won't bootstrap a brand-new org for a
+ * board-join request), leaves it undefined otherwise.
+ */
+export async function tryAuth(req: Request, _res: Response, next: NextFunction) {
+  const header = req.header('authorization')
+  const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined
+  if (token) {
+    const auth = await resolveTutorAuth(token)
+    if (auth) req.auth = auth
+  }
   next()
 }

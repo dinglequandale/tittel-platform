@@ -13,6 +13,8 @@ import { lessonsRouter } from './routes/lessons.ts'
 import { assignmentsRouter } from './routes/assignments.ts'
 import { attemptRouter } from './routes/attempt.ts'
 import { portalRouter } from './routes/portal.ts'
+import { boardsRouter, boardJoinRouter } from './routes/board.ts'
+import { boardAssetsRouter } from './board/assets.ts'
 
 // The configured Express app — defined separately from the listen() bootstrap
 // (src/index.ts) so it can also be imported elsewhere (e.g. tests) without
@@ -49,11 +51,19 @@ app.use('/api/tutor', requireTutor, problemsRouter)
 app.use('/api/tutor', requireTutor, problemSetsRouter)
 app.use('/api/tutor', requireTutor, lessonsRouter)
 app.use('/api/tutor', requireTutor, assignmentsRouter)
+app.use('/api/tutor', requireTutor, boardsRouter)
 
 // Phase 2 — student-facing magic-link surfaces (no Supabase auth; the token
 // itself is the access control — see attemptQuery/studentQuery in db.ts).
 app.use('/api/portal', portalRouter)
 app.use('/api/attempt', attemptRouter)
+
+// Phase 3 — live boards (PLAN.md §6.3). /api/board is public: the board id
+// (plus an optional display name) is the whole guest access model, same as
+// the rest of the live-teaching surface. Asset uploads live at the bare
+// /uploads path (no /api prefix), matching the ported whiteboard's convention.
+app.use('/api/board', boardJoinRouter)
+app.use(boardAssetsRouter)
 
 // Any unmatched /api route is a 404 (not the SPA fallback HTML).
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not found' }))

@@ -19,7 +19,9 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
   const body = await res.json().catch(() => null)
   if (!res.ok) {
     const message = typeof body?.error === 'string' ? body.error : `${res.status} ${res.statusText}`
-    throw new Error(message)
+    const err = new Error(message) as Error & { status: number }
+    err.status = res.status
+    throw err
   }
   return body
 }

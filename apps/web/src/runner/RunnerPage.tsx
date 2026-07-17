@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { Button } from '@tittel/ui'
+import { Button, Dialog, DialogContent, DialogTitle, DialogClose } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
 import { RichText } from '../lib/Math.tsx'
 
@@ -20,6 +20,7 @@ interface AttemptPayload {
   studentName: string
   assignmentTitle: string | null
   timeLimitSec: number | null
+  dueAt: string | null
   remainingSec: number | null
   problems: RProblem[]
   responses: SavedResponse[]
@@ -48,6 +49,7 @@ export function RunnerPage() {
   const [remaining, setRemaining] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [starting, setStarting] = useState(false)
+  const [confirmSubmit, setConfirmSubmit] = useState(false)
 
   const answersRef = useRef(answers)
   answersRef.current = answers
@@ -56,6 +58,10 @@ export function RunnerPage() {
   const timeRef = useRef<{ problemId: string; at: number } | null>(null)
   const debounce = useRef<number | undefined>(undefined)
   const submittedRef = useRef(false)
+  const dataRef = useRef(data)
+  dataRef.current = data
+  const idxRef = useRef(idx)
+  idxRef.current = idx
 
   function loadPayload() {
     if (!attemptToken) return
@@ -117,6 +123,38 @@ export function RunnerPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx, data])
 
+  // A closed tab/backgrounded app can't wait for the debounced save's fetch
+  // to land — flush the current question's answer + elapsed time via
+  // sendBeacon, which the browser guarantees to send even mid-navigation.
+  useEffect(() => {
+    function flushBeacon() {
+      const d = dataRef.current
+      if (!d || d.submitted) return
+      const p = d.problems[idxRef.current]
+      if (!p) return
+      const t = timeRef.current
+      const delta = t && t.problemId === p.id ? Date.now() - t.at : 0
+      timeRef.current = null
+      const body = JSON.stringify({
+        problemId: p.id,
+        answer: answersRef.current[p.id] ?? null,
+        markedForReview: !!markedRef.current[p.id],
+        timeSpentMsDelta: delta,
+        changed: false,
+      })
+      navigator.sendBeacon(`/api/attempt/${attemptToken}/response`, new Blob([body], { type: 'application/json' }))
+    }
+    function onVisibility() {
+      if (document.visibilityState === 'hidden') flushBeacon()
+    }
+    window.addEventListener('pagehide', flushBeacon)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', flushBeacon)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [attemptToken])
+
   const doSubmit = useMemo(() => async () => {
     if (submittedRef.current) return
     submittedRef.current = true
@@ -171,6 +209,7 @@ export function RunnerPage() {
         <p className="muted">{data.studentName}</p>
         <p className="muted">
           {minutes ? `${minutes} minutes · ` : ''}{data.problems.length} questions
+          {data.dueAt && ` · due ${new Date(data.dueAt).toLocaleDateString()}`}
         </p>
         <Button onClick={begin} disabled={starting}>{starting ? 'Starting…' : 'Begin'}</Button>
       </main>
@@ -179,10 +218,13 @@ export function RunnerPage() {
 
   const problems = data.problems
   const p = problems[idx]
-  const answeredCount = problems.filter((q) => {
+  const isAnswered = (q: RProblem) => {
     const a = answers[q.id]
-    return a != null && a !== ''
-  }).length
+    return a != null && a !== '' && !(Array.isArray(a) && a.length === 0)
+  }
+  const answeredCount = problems.filter(isAnswered).length
+  const unansweredCount = problems.length - answeredCount
+  const lowTime = remaining !== null && remaining < 60
 
   function setAnswer(value: unknown, changed = true) {
     setAnswers((a) => ({ ...a, [p.id]: value }))
@@ -196,12 +238,37 @@ export function RunnerPage() {
     save(p.id, { marked: next })
   }
 
+  function onSubmitClick() {
+    if (unansweredCount > 0) setConfirmSubmit(true)
+    else void doSubmit()
+  }
+
   return (
     <div className="page" style={{ maxWidth: 720, margin: '0 auto', padding: '1.5rem 1rem' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <strong>{data.assignmentTitle || 'Assignment'}</strong>
-        {remaining !== null && <span className="badge">{mmss(remaining)}</span>}
+        {remaining !== null && <span className={lowTime ? 'badge badge-incorrect' : 'badge'}>{mmss(remaining)}</span>}
       </header>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginTop: '1rem' }}>
+        {problems.map((q, i) => (
+          <button
+            key={q.id}
+            onClick={() => setIdx(i)}
+            aria-label={`Question ${i + 1}${isAnswered(q) ? ', answered' : ', unanswered'}${marked[q.id] ? ', marked for review' : ''}`}
+            className="btn btn-ghost"
+            style={{
+              width: 32, height: 32, padding: 0, justifyContent: 'center',
+              background: isAnswered(q) ? 'var(--accent-wash)' : 'transparent',
+              outline: i === idx ? '2px solid var(--accent)' : '1px solid var(--line)',
+              color: marked[q.id] ? 'var(--warning)' : undefined,
+              fontWeight: i === idx ? 700 : 400,
+            }}
+          >
+            {marked[q.id] ? '★' : i + 1}
+          </button>
+        ))}
+      </div>
 
       <div className="editor-card" style={{ marginTop: '1rem' }}>
         <div className="page-toolbar" style={{ marginBottom: 0 }}>
@@ -250,9 +317,22 @@ export function RunnerPage() {
         {idx < problems.length - 1 ? (
           <Button onClick={() => setIdx((i) => i + 1)}>Next</Button>
         ) : (
-          <Button onClick={doSubmit} disabled={submitting}>{submitting ? 'Submitting…' : 'Submit'}</Button>
+          <Button onClick={onSubmitClick} disabled={submitting}>{submitting ? 'Submitting…' : 'Submit'}</Button>
         )}
       </footer>
+
+      <Dialog open={confirmSubmit} onOpenChange={setConfirmSubmit}>
+        <DialogContent>
+          <DialogTitle>Submit with unanswered questions?</DialogTitle>
+          <p className="muted">
+            {unansweredCount} question{unansweredCount === 1 ? ' is' : 's are'} unanswered — submit anyway?
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+            <DialogClose asChild><Button variant="ghost">Keep working</Button></DialogClose>
+            <Button variant="danger" onClick={() => { setConfirmSubmit(false); void doSubmit() }}>Submit anyway</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

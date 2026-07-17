@@ -288,13 +288,13 @@ export function BoardCanvas({
       {isHost && (
         <div className="tutor-dock">
           {pdfStatus && <span className="lesson-status">{pdfStatus}</span>}
-          {!linkCopied && <ShareControl boardId={boardId} onCopied={() => setLinkCopied(true)} />}
+          <ShareControl boardId={boardId} collapsed={linkCopied} onCopied={() => setLinkCopied(true)} />
           <button
             className={`dock-btn ${freeReign ? 'primary' : ''}`}
             title="Let students roam pages/zoom freely and use their own calculators"
             onClick={() => toggleFreeReign(!freeReign)}
           >
-            {freeReign ? '🔓 Free reign: On' : '🔒 Free reign: Off'}
+            {freeReign ? '🔓 Free rein: On' : '🔒 Free rein: Off'}
           </button>
           <button className="dock-btn" onClick={() => toggleTimer(!timerOpen)}>
             {timerOpen ? 'Hide timer' : '⏱ Timer'}
@@ -384,7 +384,11 @@ function WriteAccessControls({
   )
 }
 
-function ShareControl({ boardId, onCopied }: { boardId: string; onCopied: () => void }) {
+// Stays visible for the whole session rather than disappearing after the
+// first copy (a tutor often needs to re-send the link mid-lesson) —
+// collapses to a compact dock button once the link's been copied once so it
+// doesn't keep hogging space.
+function ShareControl({ boardId, collapsed, onCopied }: { boardId: string; collapsed: boolean; onCopied: () => void }) {
   const link = `${window.location.origin}/b/${boardId}`
   const [copied, setCopied] = useState(false)
 
@@ -392,10 +396,19 @@ function ShareControl({ boardId, onCopied }: { boardId: string; onCopied: () => 
     try {
       await navigator.clipboard.writeText(link)
       setCopied(true)
-      setTimeout(onCopied, 900)
+      onCopied()
+      setTimeout(() => setCopied(false), 1500)
     } catch {
       /* clipboard blocked — leave it up so they can copy manually */
     }
+  }
+
+  if (collapsed) {
+    return (
+      <button className="dock-btn" title={link} onClick={copy}>
+        {copied ? 'Copied!' : '🔗 Copy link'}
+      </button>
+    )
   }
 
   return (

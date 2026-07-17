@@ -87,6 +87,27 @@ assignmentsRouter.post('/assignments', async (req, res) => {
   }
 })
 
+// Recovers every attempt link for an assignment — the same shape POST
+// /assignments returns at creation time, so a stale/lost "Links" dialog can
+// always be reopened later instead of the link only existing once.
+assignmentsRouter.get('/assignments/:id/links', async (req, res) => {
+  const orgId = req.auth!.orgId
+  const [asg] = await orgQuery(orgId, `select id from assignments where org_id = $1 and id = $2`, [req.params.id])
+  if (!asg) return res.status(404).json({ error: 'not found' })
+
+  const links = await orgQuery(
+    orgId,
+    `select s.id as "studentId", s.name as "studentName", att.attempt_token as "attemptToken",
+            att.status
+       from attempts att
+       join students s on s.id = att.student_id
+      where att.org_id = $1 and att.assignment_id = $2
+      order by s.name`,
+    [req.params.id],
+  )
+  res.json({ links })
+})
+
 assignmentsRouter.delete('/assignments/:id', async (req, res) => {
   const rows = await orgQuery(
     req.auth!.orgId,
@@ -152,13 +173,19 @@ assignmentsRouter.get('/assignments/:id/analytics', async (req, res) => {
     }
   })
 
+  // frq problems are never auto-graded — exclude them from the denominator
+  // (HANDOFF.md C6) so a set with free-response questions doesn't make
+  // 100% silently unreachable.
+  const frqCount = problems.filter((p) => p.type === 'frq').length
+  const gradedTotal = problems.length - frqCount
+
   const perStudent = done.map((a) => {
     const rs = responses.filter((r) => r.attempt_id === a.id)
     return {
       studentName: a.student_name,
       status: a.status,
       score: rs.filter((r) => r.is_correct).length,
-      total: problems.length,
+      total: gradedTotal,
       totalTimeMs: rs.reduce((acc, r) => acc + (r.time_spent_ms || 0), 0),
     }
   })
@@ -168,6 +195,7 @@ assignmentsRouter.get('/assignments/:id/analytics', async (req, res) => {
     setTitle: meta.set_title,
     assigned: attempts.length,
     submitted: done.length,
+    frqCount,
     perProblem,
     perStudent,
   })

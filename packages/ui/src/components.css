@@ -71,6 +71,19 @@
 .badge-correct { background: color-mix(in srgb, var(--correct) 14%, transparent); color: var(--correct); }
 .badge-incorrect { background: color-mix(in srgb, var(--incorrect) 14%, transparent); color: var(--incorrect); }
 .badge-warning { background: color-mix(in srgb, var(--warning) 14%, transparent); color: var(--warning); }
+.badge-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  color: inherit;
+  line-height: 1;
+}
+.badge-x:hover { background: color-mix(in srgb, currentColor 18%, transparent); }
+.badge-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* --- Table (dense, tabular-nums, sticky header) ----------------------------- */
 .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-card); }

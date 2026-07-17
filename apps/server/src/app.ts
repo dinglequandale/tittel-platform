@@ -24,7 +24,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const webDist = path.resolve(__dirname, '../../web/dist')
 
 export const app = express()
-app.use(express.json({ limit: '2mb' }))
+app.use(express.json({ limit: '8mb' }))
 
 // ---------------------------------------------------------------------------
 // API. Feature routers land phase by phase (PLAN.md §10); /api/health and
@@ -35,7 +35,7 @@ app.get('/api/health', async (_req, res) => {
     const { rows } = await pool.query('select now() as now')
     res.json({ ok: true, db: true, now: rows[0].now })
   } catch (err) {
-    res.status(200).json({ ok: true, db: false, error: (err as Error).message })
+    res.status(503).json({ ok: false, db: false, error: (err as Error).message })
   }
 })
 

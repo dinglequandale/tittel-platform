@@ -21,6 +21,7 @@ interface ReviewPayload {
   status: string
   score: number
   total: number
+  frqCount: number
   problems: RProblem[]
   responses: RResponse[]
 }
@@ -49,7 +50,10 @@ export function ReviewPage() {
   return (
     <div className="page" style={{ maxWidth: 720, margin: '0 auto', padding: '1.5rem 1rem' }}>
       <h1 style={{ fontFamily: 'var(--font-display)' }}>{data.assignmentTitle || 'Review'}</h1>
-      <p className="muted">{data.studentName} · Score: {data.score} / {data.total}</p>
+      <p className="muted">
+        {data.studentName} · Score: {data.score} / {data.total}
+        {data.frqCount > 0 && ` · ${data.frqCount} free-response answer${data.frqCount === 1 ? '' : 's'} not auto-graded`}
+      </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
         {data.problems.map((p) => {

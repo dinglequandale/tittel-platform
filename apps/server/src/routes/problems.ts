@@ -180,18 +180,22 @@ problemsRouter.patch('/problems/:id', async (req, res) => {
       return res.status(422).json({ error: (err as Error).message })
     }
   }
+  // correct/explanation_latex/difficulty/source are all nullable columns —
+  // distinguish "field absent, keep as-is" (undefined) from "field present
+  // and null, clear it" via an explicit has-field flag per column, since
+  // coalesce(param, col) can't tell an absent field from an explicit null.
   const rows = await orgQuery(
     req.auth!.orgId,
     `update problems set
        type = coalesce($3, type),
        stem_latex = coalesce($4, stem_latex),
        choices = coalesce($5, choices),
-       correct = coalesce($6, correct),
-       accept = coalesce($7, accept),
-       explanation_latex = coalesce($8, explanation_latex),
-       figures = coalesce($9, figures),
-       difficulty = coalesce($10, difficulty),
-       source = coalesce($11, source),
+       accept = coalesce($6, accept),
+       figures = coalesce($7, figures),
+       correct = case when $8 then $9 else correct end,
+       explanation_latex = case when $10 then $11 else explanation_latex end,
+       difficulty = case when $12 then $13 else difficulty end,
+       source = case when $14 then $15 else source end,
        updated_at = now()
      where org_id = $1 and id = $2 and archived_at is null
      returning id, type, stem_latex, choices, correct, accept, explanation_latex, figures, difficulty, source, created_at, updated_at`,
@@ -200,12 +204,16 @@ problemsRouter.patch('/problems/:id', async (req, res) => {
       type,
       stemLatex,
       choices === undefined ? undefined : JSON.stringify(choices),
-      correct === undefined ? undefined : JSON.stringify(correct),
       accept === undefined ? undefined : JSON.stringify(accept),
-      explanationLatex,
       safeFigures === undefined ? undefined : JSON.stringify(safeFigures),
-      difficulty,
-      source,
+      correct !== undefined,
+      correct === undefined ? null : JSON.stringify(correct),
+      explanationLatex !== undefined,
+      explanationLatex === undefined ? null : explanationLatex,
+      difficulty !== undefined,
+      difficulty === undefined ? null : (typeof difficulty === 'number' ? difficulty : null),
+      source !== undefined,
+      source === undefined ? null : source,
     ],
   )
   if (!rows[0]) return res.status(404).json({ error: 'not found' })

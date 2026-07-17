@@ -10,6 +10,7 @@ interface AttemptRow {
   status: 'pending' | 'active' | 'submitted' | 'expired'
   started_at: string | null
   time_limit_sec: number | null
+  due_at: string | null
   set_id: string
   assignment_title: string | null
   student_name: string
@@ -18,7 +19,7 @@ interface AttemptRow {
 async function loadAttempt(token: string): Promise<AttemptRow | undefined> {
   const rows = await attemptQuery<AttemptRow>(
     token,
-    `select a.id, a.status, a.started_at, asg.time_limit_sec, asg.set_id,
+    `select a.id, a.status, a.started_at, asg.time_limit_sec, asg.due_at, asg.set_id,
             asg.title as assignment_title, s.name as student_name
        from attempts a
        join assignments asg on asg.id = a.assignment_id
@@ -98,6 +99,7 @@ attemptRouter.get('/:token', async (req, res) => {
     studentName: at.student_name,
     assignmentTitle: at.assignment_title,
     timeLimitSec: at.time_limit_sec,
+    dueAt: at.due_at,
     remainingSec: remaining === null ? null : Math.max(0, Math.floor(remaining)),
     problems,
     responses,
@@ -183,12 +185,17 @@ attemptRouter.get('/:token/review', async (req, res) => {
        from responses where attempt_id = $1`,
     [at.id],
   )
+  // frq problems are never auto-graded (gradeResponse returns null for
+  // them) — excluding them from `total` keeps 100% achievable and honest
+  // rather than silently counting ungraded work against the score.
+  const frqCount = problems.filter((p) => p.type === 'frq').length
   res.json({
     studentName: at.student_name,
     assignmentTitle: at.assignment_title,
     status: at.status,
     score: responses.filter((r) => r.is_correct).length,
-    total: problems.length,
+    total: problems.length - frqCount,
+    frqCount,
     problems,
     responses,
   })

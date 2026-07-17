@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Button, Field, Input, EmptyState } from '@tittel/ui'
+import { Button, Field, Input, EmptyState, PageLoading, ConfirmDialog } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
+import { useToast } from '../lib/toast.tsx'
 import { RichText } from '../lib/Math.tsx'
 import type { Problem, Tag, Choice, FigureDraft } from './types.ts'
 
@@ -55,12 +56,14 @@ function toDraft(p: Problem): Draft {
 }
 
 export function ProblemsTab() {
+  const toast = useToast()
   const [problems, setProblems] = useState<Problem[] | null>(null)
   const [tags, setTags] = useState<Tag[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft>(blankDraft())
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [archiveConfirm, setArchiveConfirm] = useState(false)
 
   async function reload() {
     const [p, t] = await Promise.all([
@@ -151,9 +154,13 @@ export function ProblemsTab() {
   }
 
   async function archive(id: string) {
-    await apiFetch(`/api/tutor/problems/${id}`, { method: 'DELETE' })
-    if (selectedId === id) newProblem()
-    await reload()
+    try {
+      await apiFetch(`/api/tutor/problems/${id}`, { method: 'DELETE' })
+      if (selectedId === id) newProblem()
+      await reload()
+    } catch (err) {
+      toast((err as Error).message)
+    }
   }
 
   function toggleTag(id: string) {
@@ -170,7 +177,9 @@ export function ProblemsTab() {
           <strong>Bank</strong>
           <Button variant="secondary" onClick={newProblem}>New problem</Button>
         </div>
-        {problems && problems.length === 0 ? (
+        {problems === null ? (
+          <PageLoading />
+        ) : problems.length === 0 ? (
           <EmptyState title="No problems yet" description="Create one or import a problem-set JSON." />
         ) : (
           <div className="panel-list">
@@ -301,11 +310,20 @@ export function ProblemsTab() {
 
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           {draft.id ? (
-            <Button variant="danger" onClick={() => archive(draft.id!)}>Archive</Button>
+            <Button variant="danger" onClick={() => setArchiveConfirm(true)}>Archive</Button>
           ) : <span />}
           <Button onClick={save} disabled={saving}>{saving ? 'Saving…' : draft.id ? 'Save changes' : 'Create problem'}</Button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={archiveConfirm}
+        onOpenChange={setArchiveConfirm}
+        title="Archive this problem?"
+        description="It's removed from the bank and any sets that reference it."
+        confirmLabel="Archive"
+        onConfirm={() => draft.id && archive(draft.id)}
+      />
     </div>
   )
 }

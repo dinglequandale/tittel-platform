@@ -31,12 +31,23 @@ lessonsRouter.post('/lessons', async (req, res) => {
   if (typeof title !== 'string' || !title.trim()) {
     return res.status(400).json({ error: 'title is required' })
   }
+  let storedDoc: unknown = { title: title.trim(), pages: [] }
+  if (doc !== undefined) {
+    try {
+      storedDoc = parseLessonDoc(doc)
+    } catch (err) {
+      if (err instanceof LessonParseError) {
+        return res.status(422).json({ error: err.message })
+      }
+      throw err
+    }
+  }
   const id = newId()
   const rows = await orgQuery(
     req.auth!.orgId,
     `insert into lessons (id, org_id, title, doc) values ($2, $1, $3, $4)
      returning id, title, doc, version, created_at, updated_at`,
-    [id, title.trim(), JSON.stringify(doc ?? { title: title.trim(), pages: [] })],
+    [id, title.trim(), JSON.stringify(storedDoc)],
   )
   res.status(201).json({ lesson: rows[0] })
 })

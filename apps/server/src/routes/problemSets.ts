@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { newId } from '@tittel/shared'
 import type { LegacyProblemSet } from '@tittel/shared'
-import { orgQuery } from '../db.ts'
+import { orgQuery, pool } from '../db.ts'
 import { importLegacyProblemSet, ImportError } from '../lib/legacyImport.ts'
 
 export const problemSetsRouter = Router()
@@ -72,12 +72,12 @@ problemSetsRouter.patch('/problem-sets/:id', async (req, res) => {
     req.auth!.orgId,
     `update problem_sets set
        title = coalesce($3, title),
-       description = coalesce($4, description),
-       template = coalesce($5, template),
+       description = case when $4 then $5 else description end,
+       template = coalesce($6, template),
        updated_at = now()
      where org_id = $1 and id = $2 and archived_at is null
      returning id, title, description, template, created_at, updated_at`,
-    [req.params.id, title, description, template],
+    [req.params.id, title, description !== undefined, description ?? null, template],
   )
   if (!rows[0]) return res.status(404).json({ error: 'not found' })
   res.json({ problemSet: rows[0] })
@@ -154,15 +154,24 @@ problemSetsRouter.put('/problem-sets/:id/order', async (req, res) => {
   )
   if (!set) return res.status(404).json({ error: 'set not found' })
 
-  for (let i = 0; i < problemIds.length; i++) {
-    await orgQuery(
-      req.auth!.orgId,
-      `update set_problems sp set ordinal = $4
-         from problem_sets s
-        where s.id = sp.set_id and s.org_id = $1
-          and sp.set_id = $2 and sp.problem_id = $3`,
-      [req.params.id, problemIds[i], i],
-    )
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    for (let i = 0; i < problemIds.length; i++) {
+      await client.query(
+        `update set_problems sp set ordinal = $4
+           from problem_sets s
+          where s.id = sp.set_id and s.org_id = $1
+            and sp.set_id = $2 and sp.problem_id = $3`,
+        [req.auth!.orgId, req.params.id, problemIds[i], i],
+      )
+    }
+    await client.query('commit')
+  } catch (e) {
+    await client.query('rollback')
+    throw e
+  } finally {
+    client.release()
   }
   res.status(204).end()
 })

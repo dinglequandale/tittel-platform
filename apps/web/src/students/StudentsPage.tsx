@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import {
-  Button, Field, Input, Table, EmptyState,
+  Button, Field, Input, Table, EmptyState, CopyButton, PageLoading, ConfirmDialog,
   Dialog, DialogTrigger, DialogContent, DialogTitle, DialogClose,
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
+import { useToast } from '../lib/toast.tsx'
 
 interface Student {
   id: string
@@ -21,10 +22,18 @@ interface Group {
   members: { id: string; name: string }[]
 }
 
+function portalUrl(token: string): string {
+  return `${window.location.origin}/s/${token}`
+}
+
 export function StudentsPage() {
+  const toast = useToast()
   const [students, setStudents] = useState<Student[] | null>(null)
   const [groups, setGroups] = useState<Group[] | null>(null)
   const [error, setError] = useState('')
+  const [editing, setEditing] = useState<Student | null>(null)
+  const [archiveTarget, setArchiveTarget] = useState<Student | null>(null)
+  const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null)
 
   async function reload() {
     try {
@@ -51,9 +60,21 @@ export function StudentsPage() {
     await reload()
   }
 
-  async function archiveStudent(id: string) {
-    await apiFetch(`/api/tutor/students/${id}`, { method: 'DELETE' })
+  async function updateStudent(id: string, name: string, email: string, notes: string) {
+    await apiFetch(`/api/tutor/students/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name: name.trim(), email: email.trim() || null, notes: notes.trim() || null }),
+    })
     await reload()
+  }
+
+  async function archiveStudent(id: string) {
+    try {
+      await apiFetch(`/api/tutor/students/${id}`, { method: 'DELETE' })
+      await reload()
+    } catch (err) {
+      toast((err as Error).message)
+    }
   }
 
   async function createGroup(name: string) {
@@ -61,17 +82,34 @@ export function StudentsPage() {
     await reload()
   }
 
+  async function deleteGroup(id: string) {
+    try {
+      await apiFetch(`/api/tutor/groups/${id}`, { method: 'DELETE' })
+      await reload()
+    } catch (err) {
+      toast((err as Error).message)
+    }
+  }
+
   async function addMember(groupId: string, studentId: string) {
-    await apiFetch(`/api/tutor/groups/${groupId}/members`, {
-      method: 'POST',
-      body: JSON.stringify({ studentIds: [studentId] }),
-    })
-    await reload()
+    try {
+      await apiFetch(`/api/tutor/groups/${groupId}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ studentIds: [studentId] }),
+      })
+      await reload()
+    } catch (err) {
+      toast((err as Error).message)
+    }
   }
 
   async function removeMember(groupId: string, studentId: string) {
-    await apiFetch(`/api/tutor/groups/${groupId}/members/${studentId}`, { method: 'DELETE' })
-    await reload()
+    try {
+      await apiFetch(`/api/tutor/groups/${groupId}/members/${studentId}`, { method: 'DELETE' })
+      await reload()
+    } catch (err) {
+      toast((err as Error).message)
+    }
   }
 
   return (
@@ -86,9 +124,11 @@ export function StudentsPage() {
 
       {error && <p className="field-error">{error}</p>}
 
-      {students && students.length === 0 ? (
+      {students === null ? (
+        <PageLoading />
+      ) : students.length === 0 ? (
         <EmptyState title="No students yet" description="Add your first student to get started." />
-      ) : students ? (
+      ) : (
         <Table>
           <thead>
             <tr>
@@ -104,16 +144,22 @@ export function StudentsPage() {
               <tr key={s.id}>
                 <td>{s.name}</td>
                 <td>{s.email || <span className="muted">—</span>}</td>
-                <td><code>/s/{s.portal_token}</code></td>
-                <td>{s.notes || <span className="muted">—</span>}</td>
                 <td>
-                  <Button variant="ghost" onClick={() => archiveStudent(s.id)}>Archive</Button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                    <code>{portalUrl(s.portal_token)}</code>
+                    <CopyButton text={portalUrl(s.portal_token)} />
+                  </div>
+                </td>
+                <td>{s.notes || <span className="muted">—</span>}</td>
+                <td style={{ display: 'flex', gap: '0.375rem' }}>
+                  <Button variant="ghost" onClick={() => setEditing(s)}>Edit</Button>
+                  <Button variant="ghost" onClick={() => setArchiveTarget(s)}>Archive</Button>
                 </td>
               </tr>
             ))}
           </tbody>
         </Table>
-      ) : null}
+      )}
 
       <h2 style={{ marginTop: '2rem', fontFamily: 'var(--font-display)', fontSize: '1.125rem' }}>Groups</h2>
       {groups && groups.length === 0 ? (
@@ -124,11 +170,14 @@ export function StudentsPage() {
             <div key={g.id} className="editor-card">
               <div className="page-toolbar" style={{ marginBottom: 0 }}>
                 <strong>{g.name}</strong>
-                <AddMemberSelect
-                  students={students ?? []}
-                  excludeIds={g.members.map((m) => m.id)}
-                  onSelect={(studentId) => addMember(g.id, studentId)}
-                />
+                <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
+                  <AddMemberSelect
+                    students={students ?? []}
+                    excludeIds={g.members.map((m) => m.id)}
+                    onSelect={(studentId) => addMember(g.id, studentId)}
+                  />
+                  <Button variant="ghost" onClick={() => setDeleteGroupTarget(g)}>Delete group</Button>
+                </div>
               </div>
               <div className="tag-pill-row">
                 {g.members.length === 0 && <span className="muted">No members yet.</span>}
@@ -136,9 +185,10 @@ export function StudentsPage() {
                   <span key={m.id} className="badge">
                     {m.name}{' '}
                     <button
+                      className="badge-x"
                       onClick={() => removeMember(g.id, m.id)}
                       aria-label={`Remove ${m.name}`}
-                      style={{ marginLeft: 4, cursor: 'pointer' }}
+                      style={{ marginLeft: 4 }}
                     >
                       ×
                     </button>
@@ -149,20 +199,56 @@ export function StudentsPage() {
           ))}
         </div>
       )}
+
+      {editing && (
+        <EditStudentDialog
+          student={editing}
+          onOpenChange={(open) => !open && setEditing(null)}
+          onSave={updateStudent}
+        />
+      )}
+
+      <ConfirmDialog
+        open={!!archiveTarget}
+        onOpenChange={(open) => !open && setArchiveTarget(null)}
+        title={`Archive ${archiveTarget?.name}?`}
+        description="Students lose access to their portal link once archived."
+        confirmLabel="Archive"
+        onConfirm={() => archiveTarget && archiveStudent(archiveTarget.id)}
+      />
+
+      <ConfirmDialog
+        open={!!deleteGroupTarget}
+        onOpenChange={(open) => !open && setDeleteGroupTarget(null)}
+        title={`Delete ${deleteGroupTarget?.name}?`}
+        description="This removes the group. Its students are not affected."
+        confirmLabel="Delete"
+        onConfirm={() => deleteGroupTarget && deleteGroup(deleteGroupTarget.id)}
+      />
     </div>
   )
 }
 
 function NewStudentDialog({ onCreate }: { onCreate: (name: string, email: string, notes: string) => Promise<void> }) {
+  const toast = useToast()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [notes, setNotes] = useState('')
   const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   async function submit() {
-    if (!name.trim()) return
-    await onCreate(name.trim(), email.trim(), notes.trim())
-    setName(''); setEmail(''); setNotes(''); setOpen(false)
+    if (!name.trim() || saving) return
+    setSaving(true)
+    try {
+      await onCreate(name.trim(), email.trim(), notes.trim())
+      setName(''); setEmail(''); setNotes(''); setOpen(false)
+      toast('Student added')
+    } catch (err) {
+      toast((err as Error).message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -175,7 +261,50 @@ function NewStudentDialog({ onCreate }: { onCreate: (name: string, email: string
         <Field label="Notes (optional)"><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
-          <Button onClick={submit}>Create</Button>
+          <Button onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Create'}</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function EditStudentDialog({
+  student, onOpenChange, onSave,
+}: {
+  student: Student
+  onOpenChange: (open: boolean) => void
+  onSave: (id: string, name: string, email: string, notes: string) => Promise<void>
+}) {
+  const toast = useToast()
+  const [name, setName] = useState(student.name)
+  const [email, setEmail] = useState(student.email ?? '')
+  const [notes, setNotes] = useState(student.notes ?? '')
+  const [saving, setSaving] = useState(false)
+
+  async function submit() {
+    if (!name.trim() || saving) return
+    setSaving(true)
+    try {
+      await onSave(student.id, name, email, notes)
+      onOpenChange(false)
+      toast('Student updated')
+    } catch (err) {
+      toast((err as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogTitle>Edit student</DialogTitle>
+        <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        <Field label="Email (optional)"><Input value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+        <Field label="Notes (optional)"><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+          <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
+          <Button onClick={submit} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -183,13 +312,22 @@ function NewStudentDialog({ onCreate }: { onCreate: (name: string, email: string
 }
 
 function NewGroupDialog({ onCreate }: { onCreate: (name: string) => Promise<void> }) {
+  const toast = useToast()
   const [name, setName] = useState('')
   const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   async function submit() {
-    if (!name.trim()) return
-    await onCreate(name.trim())
-    setName(''); setOpen(false)
+    if (!name.trim() || saving) return
+    setSaving(true)
+    try {
+      await onCreate(name.trim())
+      setName(''); setOpen(false)
+    } catch (err) {
+      toast((err as Error).message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -200,7 +338,7 @@ function NewGroupDialog({ onCreate }: { onCreate: (name: string) => Promise<void
         <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
-          <Button onClick={submit}>Create</Button>
+          <Button onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Create'}</Button>
         </div>
       </DialogContent>
     </Dialog>

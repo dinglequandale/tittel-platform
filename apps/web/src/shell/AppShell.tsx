@@ -4,6 +4,7 @@ import { Button, Shell } from '@tittel/ui'
 import { BRAND_NAME } from '@tittel/shared'
 import { supabase } from '../lib/supabase.ts'
 import { useSession } from '../lib/useSession.ts'
+import { AppToastProvider } from '../lib/toast.tsx'
 
 const NAV = [
   { to: '/app', label: 'Home', icon: Home, end: true },
@@ -19,30 +20,32 @@ export function AppShell() {
   const { session } = useSession()
 
   return (
-    <Shell
-      sidebar={
-        <>
-          <div className="shell-sidebar-brand">{BRAND_NAME}</div>
-          <nav className="flex flex-col gap-1">
-            {NAV.map(({ to, label, icon: Icon, end }) => (
-              <NavLink key={to} to={to} end={end} className="shell-nav-item">
-                <Icon size={16} strokeWidth={1.75} />
-                {label}
-              </NavLink>
-            ))}
-          </nav>
-        </>
-      }
-      topbar={
-        <>
-          <span className="text-sm text-ink-2">{session?.user.email}</span>
-          <Button variant="ghost" onClick={() => supabase.auth.signOut()}>
-            Sign out
-          </Button>
-        </>
-      }
-    >
-      <Outlet />
-    </Shell>
+    <AppToastProvider>
+      <Shell
+        sidebar={
+          <>
+            <div className="shell-sidebar-brand">{BRAND_NAME}</div>
+            <nav className="flex flex-col gap-1">
+              {NAV.map(({ to, label, icon: Icon, end }) => (
+                <NavLink key={to} to={to} end={end} className="shell-nav-item">
+                  <Icon size={16} strokeWidth={1.75} />
+                  {label}
+                </NavLink>
+              ))}
+            </nav>
+          </>
+        }
+        topbar={
+          <>
+            <span className="text-sm text-ink-2">{session?.user.email}</span>
+            <Button variant="ghost" onClick={() => supabase.auth.signOut()}>
+              Sign out
+            </Button>
+          </>
+        }
+      >
+        <Outlet />
+      </Shell>
+    </AppToastProvider>
   )
 }

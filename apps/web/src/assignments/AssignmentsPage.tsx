@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
 import {
-  Button, Field, Input, Table, EmptyState,
+  Button, Field, Input, Table, EmptyState, CopyButton, PageLoading, ConfirmDialog,
   Dialog, DialogTrigger, DialogContent, DialogTitle, DialogClose,
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
+import { useToast } from '../lib/toast.tsx'
+
+function attemptUrl(token: string): string {
+  return `${window.location.origin}/hw/${token}`
+}
 
 interface AssignmentSummary {
   id: string
@@ -20,18 +25,20 @@ interface AssignmentSummary {
 interface Student { id: string; name: string }
 interface ProblemSetOption { id: string; title: string }
 
-interface Link { studentId: string; studentName: string; attemptToken: string }
+interface Link { studentId: string; studentName: string; attemptToken: string; status?: string }
 
 interface Analytics {
   title: string | null
   setTitle: string
   assigned: number
   submitted: number
+  frqCount: number
   perProblem: { problemId: string; ordinal: number; attempts: number; answered: number; correct: number; pctCorrect: number | null }[]
   perStudent: { studentName: string; status: string; score: number; total: number }[]
 }
 
 export function AssignmentsPage() {
+  const toast = useToast()
   const [assignments, setAssignments] = useState<AssignmentSummary[] | null>(null)
   const [sets, setSets] = useState<ProblemSetOption[]>([])
   const [students, setStudents] = useState<Student[]>([])
@@ -39,6 +46,7 @@ export function AssignmentsPage() {
   const [analyticsFor, setAnalyticsFor] = useState<string | null>(null)
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
   const [error, setError] = useState('')
+  const [archiveTarget, setArchiveTarget] = useState<AssignmentSummary | null>(null)
 
   async function reload() {
     const [a, s, st] = await Promise.all([
@@ -65,15 +73,32 @@ export function AssignmentsPage() {
   }
 
   async function archive(id: string) {
-    await apiFetch(`/api/tutor/assignments/${id}`, { method: 'DELETE' })
-    if (analyticsFor === id) { setAnalyticsFor(null); setAnalytics(null) }
-    await reload()
+    try {
+      await apiFetch(`/api/tutor/assignments/${id}`, { method: 'DELETE' })
+      if (analyticsFor === id) { setAnalyticsFor(null); setAnalytics(null) }
+      await reload()
+    } catch (err) {
+      toast((err as Error).message)
+    }
   }
 
   async function viewAnalytics(id: string) {
     setAnalyticsFor(id)
-    const data = await apiFetch(`/api/tutor/assignments/${id}/analytics`)
-    setAnalytics(data)
+    try {
+      const data = await apiFetch(`/api/tutor/assignments/${id}/analytics`)
+      setAnalytics(data)
+    } catch (err) {
+      toast((err as Error).message)
+    }
+  }
+
+  async function viewLinks(id: string) {
+    try {
+      const data = await apiFetch(`/api/tutor/assignments/${id}/links`)
+      setLinks(data.links)
+    } catch (err) {
+      toast((err as Error).message)
+    }
   }
 
   return (
@@ -84,7 +109,9 @@ export function AssignmentsPage() {
       </div>
       {error && <p className="field-error">{error}</p>}
 
-      {assignments && assignments.length === 0 ? (
+      {assignments === null ? (
+        <PageLoading />
+      ) : assignments.length === 0 ? (
         <EmptyState title="No assignments yet" description="Assign a problem set to one or more students." />
       ) : (
         <Table>
@@ -102,8 +129,9 @@ export function AssignmentsPage() {
                 <td>{a.due_at ? new Date(a.due_at).toLocaleDateString() : <span className="muted">—</span>}</td>
                 <td>{a.submitted} / {a.assigned} submitted</td>
                 <td style={{ display: 'flex', gap: '0.375rem' }}>
+                  <Button variant="ghost" onClick={() => viewLinks(a.id)}>Links</Button>
                   <Button variant="ghost" onClick={() => viewAnalytics(a.id)}>Analytics</Button>
-                  <Button variant="ghost" onClick={() => archive(a.id)}>Archive</Button>
+                  <Button variant="ghost" onClick={() => setArchiveTarget(a)}>Archive</Button>
                 </td>
               </tr>
             ))}
@@ -114,7 +142,10 @@ export function AssignmentsPage() {
       {analyticsFor && analytics && (
         <div className="editor-card" style={{ marginTop: '1.5rem' }}>
           <strong>{analytics.title || 'Untitled'} — {analytics.setTitle}</strong>
-          <p className="muted">{analytics.submitted} / {analytics.assigned} submitted</p>
+          <p className="muted">
+            {analytics.submitted} / {analytics.assigned} submitted
+            {analytics.frqCount > 0 && ` · ${analytics.frqCount} free-response question${analytics.frqCount === 1 ? '' : 's'} not auto-graded`}
+          </p>
 
           <h3 style={{ fontSize: '1rem' }}>By problem</h3>
           <Table>
@@ -151,13 +182,25 @@ export function AssignmentsPage() {
             {links?.map((l) => (
               <div key={l.studentId} className="set-problem-row">
                 <span>{l.studentName}</span>
-                <code>/hw/{l.attemptToken}</code>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                  <code>{attemptUrl(l.attemptToken)}</code>
+                  <CopyButton text={attemptUrl(l.attemptToken)} />
+                </div>
               </div>
             ))}
           </div>
           <DialogClose asChild><Button style={{ alignSelf: 'flex-end' }}>Done</Button></DialogClose>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!archiveTarget}
+        onOpenChange={(open) => !open && setArchiveTarget(null)}
+        title={`Archive ${archiveTarget?.title || 'this assignment'}?`}
+        description="Students lose access to it."
+        confirmLabel="Archive"
+        onConfirm={() => archiveTarget && archive(archiveTarget.id)}
+      />
     </div>
   )
 }
@@ -176,21 +219,27 @@ function NewAssignmentDialog({
   const [minutes, setMinutes] = useState('15')
   const [dueAt, setDueAt] = useState('')
   const [selected, setSelected] = useState<string[]>([])
+  const [saving, setSaving] = useState(false)
 
   function toggleStudent(id: string) {
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
   }
 
   async function submit() {
-    if (!setId || selected.length === 0) return
-    await onCreate({
-      setId,
-      title: title.trim(),
-      timeLimitSec: untimed ? undefined : Math.max(1, Math.round(Number(minutes) * 60)),
-      dueAt: dueAt || undefined,
-      studentIds: selected,
-    })
-    setTitle(''); setSetId(''); setSelected([]); setOpen(false)
+    if (!setId || selected.length === 0 || saving) return
+    setSaving(true)
+    try {
+      await onCreate({
+        setId,
+        title: title.trim(),
+        timeLimitSec: untimed ? undefined : Math.max(1, Math.round(Number(minutes) * 60)),
+        dueAt: dueAt || undefined,
+        studentIds: selected,
+      })
+      setTitle(''); setSetId(''); setSelected([]); setOpen(false)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -233,7 +282,7 @@ function NewAssignmentDialog({
         </Field>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
-          <Button onClick={submit} disabled={!setId || selected.length === 0}>Create</Button>
+          <Button onClick={submit} disabled={!setId || selected.length === 0 || saving}>{saving ? 'Creating…' : 'Create'}</Button>
         </div>
       </DialogContent>
     </Dialog>

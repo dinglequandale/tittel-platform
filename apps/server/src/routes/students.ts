@@ -35,15 +35,17 @@ studentsRouter.post('/students', async (req, res) => {
 
 studentsRouter.patch('/students/:id', async (req, res) => {
   const { name, email, notes } = req.body ?? {}
+  // email/notes are nullable — an explicit null clears them, distinct from
+  // the field being absent (undefined), which coalesce alone can't tell apart.
   const rows = await orgQuery(
     req.auth!.orgId,
     `update students set
        name = coalesce($3, name),
-       email = coalesce($4, email),
-       notes = coalesce($5, notes)
+       email = case when $4 then $5 else email end,
+       notes = case when $6 then $7 else notes end
      where org_id = $1 and id = $2 and archived_at is null
      returning id, name, email, portal_token, report_token, notes, created_at`,
-    [req.params.id, name, email, notes],
+    [req.params.id, name, email !== undefined, email ?? null, notes !== undefined, notes ?? null],
   )
   if (!rows[0]) return res.status(404).json({ error: 'not found' })
   res.json({ student: rows[0] })

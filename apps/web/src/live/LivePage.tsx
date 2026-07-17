@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Button, Table, EmptyState, Field, Input, Dialog, DialogTrigger, DialogContent, DialogTitle, DialogClose } from '@tittel/ui'
+import {
+  Button, Table, EmptyState, Field, Input, CopyButton, PageLoading, ConfirmDialog,
+  Dialog, DialogTrigger, DialogContent, DialogTitle, DialogClose,
+} from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
+import { useToast } from '../lib/toast.tsx'
+
+function boardUrl(id: string): string {
+  return `${window.location.origin}/b/${id}`
+}
 
 interface BoardSummary {
   id: string
@@ -15,8 +23,10 @@ interface BoardSummary {
 // (BoardPage/BoardCanvas) is chromeless and lives outside the app shell —
 // this is just where a tutor creates one and gets the link to send.
 export function LivePage() {
+  const toast = useToast()
   const [boards, setBoards] = useState<BoardSummary[] | null>(null)
   const [error, setError] = useState('')
+  const [archiveTarget, setArchiveTarget] = useState<BoardSummary | null>(null)
 
   async function reload() {
     const res = await apiFetch('/api/tutor/boards')
@@ -38,8 +48,12 @@ export function LivePage() {
   }
 
   async function archive(id: string) {
-    await apiFetch(`/api/tutor/boards/${id}`, { method: 'DELETE' })
-    await reload()
+    try {
+      await apiFetch(`/api/tutor/boards/${id}`, { method: 'DELETE' })
+      await reload()
+    } catch (err) {
+      toast((err as Error).message)
+    }
   }
 
   return (
@@ -50,13 +64,16 @@ export function LivePage() {
       </div>
       {error && <p className="field-error">{error}</p>}
 
-      {boards && boards.length === 0 ? (
+      {boards === null ? (
+        <PageLoading />
+      ) : boards.length === 0 ? (
         <EmptyState title="No boards yet" description="Start a persistent board — its link stays the same every session." />
       ) : (
         <Table>
           <thead>
             <tr>
               <th>Title</th>
+              <th>Link</th>
               <th>Created</th>
               <th />
             </tr>
@@ -65,12 +82,18 @@ export function LivePage() {
             {boards?.map((b) => (
               <tr key={b.id}>
                 <td>{b.title || <span className="muted">Untitled board</span>}</td>
+                <td>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                    <code>{boardUrl(b.id)}</code>
+                    <CopyButton text={boardUrl(b.id)} />
+                  </div>
+                </td>
                 <td>{new Date(b.created_at).toLocaleDateString()}</td>
                 <td style={{ display: 'flex', gap: '0.375rem' }}>
                   <Link to={`/b/${b.id}`}>
                     <Button variant="ghost">Open</Button>
                   </Link>
-                  <Button variant="ghost" onClick={() => archive(b.id)}>
+                  <Button variant="ghost" onClick={() => setArchiveTarget(b)}>
                     Archive
                   </Button>
                 </td>
@@ -79,6 +102,15 @@ export function LivePage() {
           </tbody>
         </Table>
       )}
+
+      <ConfirmDialog
+        open={!!archiveTarget}
+        onOpenChange={(open) => !open && setArchiveTarget(null)}
+        title={`Archive ${archiveTarget?.title || 'this board'}?`}
+        description="Its link stops working."
+        confirmLabel="Archive"
+        onConfirm={() => archiveTarget && archive(archiveTarget.id)}
+      />
     </div>
   )
 }
@@ -86,11 +118,18 @@ export function LivePage() {
 function NewBoardDialog({ onCreate }: { onCreate: (title: string) => Promise<void> }) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
+  const [saving, setSaving] = useState(false)
 
   async function submit() {
-    await onCreate(title.trim())
-    setTitle('')
-    setOpen(false)
+    if (saving) return
+    setSaving(true)
+    try {
+      await onCreate(title.trim())
+      setTitle('')
+      setOpen(false)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -107,7 +146,7 @@ function NewBoardDialog({ onCreate }: { onCreate: (title: string) => Promise<voi
           <DialogClose asChild>
             <Button variant="ghost">Cancel</Button>
           </DialogClose>
-          <Button onClick={submit}>Create</Button>
+          <Button onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Create'}</Button>
         </div>
       </DialogContent>
     </Dialog>

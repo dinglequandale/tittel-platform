@@ -1,19 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  Button, Field, Input, EmptyState,
+  Button, Field, Input, EmptyState, PageLoading, ConfirmDialog,
   Dialog, DialogTrigger, DialogContent, DialogTitle, DialogClose,
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
+import { useToast } from '../lib/toast.tsx'
 import { RichText } from '../lib/Math.tsx'
 import type { Problem, ProblemSetDetail, ProblemSetSummary } from './types.ts'
 
 export function SetsTab() {
+  const toast = useToast()
   const [sets, setSets] = useState<ProblemSetSummary[] | null>(null)
   const [detail, setDetail] = useState<ProblemSetDetail | null>(null)
   const [bank, setBank] = useState<Problem[]>([])
   const [error, setError] = useState('')
   const [importing, setImporting] = useState(false)
+  const [archiveConfirm, setArchiveConfirm] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function reload() {
@@ -42,26 +45,38 @@ export function SetsTab() {
 
   async function addProblem(problemId: string) {
     if (!detail) return
-    await apiFetch(`/api/tutor/problem-sets/${detail.id}/problems`, {
-      method: 'POST', body: JSON.stringify({ problemId }),
-    })
-    await openSet(detail.id)
-    await reload()
+    try {
+      await apiFetch(`/api/tutor/problem-sets/${detail.id}/problems`, {
+        method: 'POST', body: JSON.stringify({ problemId }),
+      })
+      await openSet(detail.id)
+      await reload()
+    } catch (err) {
+      toast((err as Error).message)
+    }
   }
 
   async function removeProblem(problemId: string) {
     if (!detail) return
-    await apiFetch(`/api/tutor/problem-sets/${detail.id}/problems/${problemId}`, { method: 'DELETE' })
-    await openSet(detail.id)
-    await reload()
+    try {
+      await apiFetch(`/api/tutor/problem-sets/${detail.id}/problems/${problemId}`, { method: 'DELETE' })
+      await openSet(detail.id)
+      await reload()
+    } catch (err) {
+      toast((err as Error).message)
+    }
   }
 
   async function reorder(problemIds: string[]) {
     if (!detail) return
-    await apiFetch(`/api/tutor/problem-sets/${detail.id}/order`, {
-      method: 'PUT', body: JSON.stringify({ problemIds }),
-    })
-    await openSet(detail.id)
+    try {
+      await apiFetch(`/api/tutor/problem-sets/${detail.id}/order`, {
+        method: 'PUT', body: JSON.stringify({ problemIds }),
+      })
+      await openSet(detail.id)
+    } catch (err) {
+      toast((err as Error).message)
+    }
   }
 
   function move(index: number, dir: -1 | 1) {
@@ -70,7 +85,17 @@ export function SetsTab() {
     const j = index + dir
     if (j < 0 || j >= ids.length) return
     ;[ids[index], ids[j]] = [ids[j], ids[index]]
-    reorder(ids)
+    void reorder(ids)
+  }
+
+  async function archiveSet(id: string) {
+    try {
+      await apiFetch(`/api/tutor/problem-sets/${id}`, { method: 'DELETE' })
+      if (detail?.id === id) setDetail(null)
+      await reload()
+    } catch (err) {
+      toast((err as Error).message)
+    }
   }
 
   async function importFile(file: File) {
@@ -81,6 +106,7 @@ export function SetsTab() {
       const json = JSON.parse(text)
       await apiFetch('/api/tutor/problem-sets/import', { method: 'POST', body: JSON.stringify(json) })
       await reload()
+      toast('Problem set imported')
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -106,7 +132,9 @@ export function SetsTab() {
           </div>
         </div>
         {error && <p className="field-error">{error}</p>}
-        {sets && sets.length === 0 ? (
+        {sets === null ? (
+          <PageLoading />
+        ) : sets.length === 0 ? (
           <EmptyState title="No problem sets yet" description="Compose one from the bank, or import a legacy JSON file." />
         ) : (
           <div className="panel-list">
@@ -127,18 +155,21 @@ export function SetsTab() {
           <>
             <div className="page-toolbar" style={{ marginBottom: 0 }}>
               <strong>{detail.title}</strong>
-              {availableToAdd.length > 0 && (
-                <Select onValueChange={addProblem}>
-                  <SelectTrigger><SelectValue placeholder="Add problem from bank…" /></SelectTrigger>
-                  <SelectContent>
-                    {availableToAdd.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.stem_latex.replace(/\$/g, '').slice(0, 40) || '(empty stem)'}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+              <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
+                {availableToAdd.length > 0 && (
+                  <Select onValueChange={addProblem}>
+                    <SelectTrigger><SelectValue placeholder="Add problem from bank…" /></SelectTrigger>
+                    <SelectContent>
+                      {availableToAdd.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.stem_latex.replace(/\$/g, '').slice(0, 40) || '(empty stem)'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <Button variant="danger" onClick={() => setArchiveConfirm(true)}>Archive</Button>
+              </div>
             </div>
             {detail.problems.length === 0 ? (
               <p className="muted">No problems in this set yet.</p>
@@ -161,6 +192,15 @@ export function SetsTab() {
           </>
         )}
       </div>
+
+      <ConfirmDialog
+        open={archiveConfirm}
+        onOpenChange={setArchiveConfirm}
+        title={`Archive ${detail?.title || 'this set'}?`}
+        description="Assignments already using it are unaffected; it stops appearing for new ones."
+        confirmLabel="Archive"
+        onConfirm={() => detail && archiveSet(detail.id)}
+      />
     </div>
   )
 }
@@ -168,11 +208,17 @@ export function SetsTab() {
 function NewSetDialog({ onCreate }: { onCreate: (title: string) => Promise<void> }) {
   const [title, setTitle] = useState('')
   const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   async function submit() {
-    if (!title.trim()) return
-    await onCreate(title.trim())
-    setTitle(''); setOpen(false)
+    if (!title.trim() || saving) return
+    setSaving(true)
+    try {
+      await onCreate(title.trim())
+      setTitle(''); setOpen(false)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -183,7 +229,7 @@ function NewSetDialog({ onCreate }: { onCreate: (title: string) => Promise<void>
         <Field label="Title"><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
-          <Button onClick={submit}>Create</Button>
+          <Button onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Create'}</Button>
         </div>
       </DialogContent>
     </Dialog>

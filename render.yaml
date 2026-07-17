@@ -24,6 +24,10 @@ services:
       # Supabase project URL — used server-side for JWKS verification.
       - key: SUPABASE_URL
         sync: false
+      # Signs board host/guest tokens (PLAN.md §6.3). Render-generated so
+      # tokens survive redeploys instead of invalidating on every restart.
+      - key: BOARD_TOKEN_SECRET
+        generateValue: true
       # Public Supabase values baked into the client bundle at build time.
       - key: VITE_SUPABASE_URL
         sync: false

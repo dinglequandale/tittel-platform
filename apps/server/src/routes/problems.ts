@@ -8,6 +8,48 @@ export const problemsRouter = Router()
 
 const PROBLEM_TYPES = ['mc', 'multi', 'numeric', 'text', 'frq']
 
+interface FigureDraft {
+  id: string
+  latex: string
+  label?: string
+  packages?: string[]
+  libraries?: string[]
+  svg?: string
+}
+
+// A problem's figures are stored SVG, but that SVG arrives from the client
+// (the editor's "Preview" round-trip) and is later injected verbatim via
+// dangerouslySetInnerHTML in the runner/review — so the server can never
+// trust it. Re-render every figure from its latex here instead, which both
+// sanitizes (only our own TikZ renderer's output is ever stored) and
+// guarantees svg<->latex consistency. Figures whose latex hasn't changed
+// since the stored row reuse their already-server-rendered svg rather than
+// re-running the tikz toolchain for nothing.
+async function sanitizeFigures(figures: unknown, priorFigures?: unknown): Promise<unknown> {
+  if (!Array.isArray(figures)) return figures
+  const priorById = new Map<string, FigureDraft>()
+  if (Array.isArray(priorFigures)) {
+    for (const f of priorFigures as FigureDraft[]) {
+      if (f && typeof f.id === 'string') priorById.set(f.id, f)
+    }
+  }
+  const out: FigureDraft[] = []
+  for (const fig of figures as FigureDraft[]) {
+    if (!fig || typeof fig !== 'object' || !fig.svg) {
+      out.push(fig)
+      continue
+    }
+    const prior = priorById.get(fig.id)
+    if (prior && prior.svg && prior.latex === fig.latex) {
+      out.push({ ...fig, svg: prior.svg })
+      continue
+    }
+    const svg = await renderFigureSvg(fig as Figure)
+    out.push({ ...fig, svg })
+  }
+  return out
+}
+
 // problem_tags carries no org_id of its own, so every mutation is scoped
 // through a join back to the org-owned problems/tags rows (same convention
 // as group_members in routes/students.ts).
@@ -86,6 +128,12 @@ problemsRouter.post('/problems', async (req, res) => {
   if (type === 'multi' && correct !== undefined && !Array.isArray(correct)) {
     return res.status(400).json({ error: 'correct must be an array of choice ids for multi problems' })
   }
+  let safeFigures: unknown
+  try {
+    safeFigures = await sanitizeFigures(figures ?? [])
+  } catch (err) {
+    return res.status(422).json({ error: (err as Error).message })
+  }
   const id = newId()
   const rows = await orgQuery(
     req.auth!.orgId,
@@ -101,7 +149,7 @@ problemsRouter.post('/problems', async (req, res) => {
       correct === undefined ? null : JSON.stringify(correct),
       JSON.stringify(accept ?? []),
       explanationLatex || null,
-      JSON.stringify(figures ?? []),
+      JSON.stringify(safeFigures),
       typeof difficulty === 'number' ? difficulty : null,
       source || null,
     ],
@@ -118,6 +166,19 @@ problemsRouter.patch('/problems/:id', async (req, res) => {
   }
   if (type === 'multi' && correct !== undefined && !Array.isArray(correct)) {
     return res.status(400).json({ error: 'correct must be an array of choice ids for multi problems' })
+  }
+  let safeFigures: unknown = undefined
+  if (figures !== undefined) {
+    const [prior] = await orgQuery<{ figures: unknown }>(
+      req.auth!.orgId,
+      `select figures from problems where org_id = $1 and id = $2`,
+      [req.params.id],
+    )
+    try {
+      safeFigures = await sanitizeFigures(figures, prior?.figures)
+    } catch (err) {
+      return res.status(422).json({ error: (err as Error).message })
+    }
   }
   const rows = await orgQuery(
     req.auth!.orgId,
@@ -142,7 +203,7 @@ problemsRouter.patch('/problems/:id', async (req, res) => {
       correct === undefined ? undefined : JSON.stringify(correct),
       accept === undefined ? undefined : JSON.stringify(accept),
       explanationLatex,
-      figures === undefined ? undefined : JSON.stringify(figures),
+      safeFigures === undefined ? undefined : JSON.stringify(safeFigures),
       difficulty,
       source,
     ],

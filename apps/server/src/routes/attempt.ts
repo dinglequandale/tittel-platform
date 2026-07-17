@@ -135,6 +135,12 @@ attemptRouter.post('/:token/response', async (req, res) => {
   if (typeof problemId !== 'string') return res.status(400).json({ error: 'problemId is required' })
   const delta = Math.max(0, Math.floor(Number(timeSpentMsDelta) || 0))
 
+  const { rows: inSet } = await pool.query(
+    `select 1 from set_problems where set_id = $1 and problem_id = $2`,
+    [at.set_id, problemId],
+  )
+  if (!inSet[0]) return res.status(400).json({ error: 'problemId is not part of this attempt' })
+
   await pool.query(
     `insert into responses (id, attempt_id, problem_id, answer, marked_for_review, time_spent_ms, change_count)
      values ($1, $2, $3, $4, $5, $6, $7)

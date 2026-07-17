@@ -40,8 +40,14 @@ async function resolveConnection(
     if (!payload || payload.boardId !== boardId) return null
     return { role: payload.role, persistent: true }
   }
+  const persistent = await isPersistentBoard(boardId)
+  // The `?role=host` fallback is only for the unauthenticated, non-persistent
+  // /try quick-board path. A persistent board with no valid boardToken is
+  // always a guest — otherwise anyone with the board id could self-grant
+  // host (camera control, write-access grants, quiz answer keys/stats).
+  if (persistent) return { role: 'guest', persistent: true }
   const role = url.searchParams.get('role') === 'host' ? 'host' : 'guest'
-  return { role, persistent: await isPersistentBoard(boardId) }
+  return { role, persistent: false }
 }
 
 server.on('upgrade', (req, socket, head) => {
@@ -56,6 +62,12 @@ server.on('upgrade', (req, socket, head) => {
 
   if (parts[0] === 'connect' && parts[1]) {
     const boardId = decodeURIComponent(parts[1])
+    // TODO(security): the tldraw sync socket accepts writes from any guest
+    // regardless of role — access control here is client-side-only (the
+    // guest UI just doesn't show editing tools). Fixing properly means
+    // passing `isReadonly` per-session and rewiring write-access grants
+    // through the sync layer itself; out of scope for this pass (HANDOFF.md
+    // B7). `resolved.role` is available here if that work happens later.
     resolveConnection(boardId, url)
       .then(async (resolved) => {
         if (!resolved) {

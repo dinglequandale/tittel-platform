@@ -4,12 +4,12 @@ import { SignJWT, jwtVerify } from 'jose'
 // load once we know whether the visitor is the board's host (auth-derived) or
 // a guest, then carried by the WS handshake for both the tldraw sync socket
 // and the ControlChannel — replacing the legacy `#host` URL-fragment model.
-// Signed with a random secret generated at process boot: tokens are minted and
-// verified by this same running process within a class's lifetime, so there's
-// no need for a persisted signing key (a restart simply requires a page reload,
-// which re-mints a token anyway).
+// Signed with BOARD_TOKEN_SECRET so tokens survive a redeploy mid-lesson;
+// falls back to a per-boot random secret (dev convenience) if unset — a live
+// class loses tokens on restart in that case, same as before this fix.
 const secret = new TextEncoder().encode(
-  Array.from({ length: 32 }, () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0')).join(''),
+  process.env.BOARD_TOKEN_SECRET ||
+    Array.from({ length: 32 }, () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0')).join(''),
 )
 
 export interface BoardTokenPayload {

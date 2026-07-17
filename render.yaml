@@ -28,6 +28,10 @@ services:
       # tokens survive redeploys instead of invalidating on every restart.
       - key: BOARD_TOKEN_SECRET
         generateValue: true
+      # Powers AI lesson-plan/worksheet import (POST /api/tutor/ai-import).
+      # Optional: the endpoint 503s and the UI hides the feature if unset.
+      - key: ANTHROPIC_API_KEY
+        sync: false
       # Public Supabase values baked into the client bundle at build time.
       - key: VITE_SUPABASE_URL
         sync: false

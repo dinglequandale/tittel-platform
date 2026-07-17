@@ -15,6 +15,7 @@ import { attemptRouter } from './routes/attempt.ts'
 import { portalRouter } from './routes/portal.ts'
 import { boardsRouter, boardJoinRouter } from './routes/board.ts'
 import { boardAssetsRouter } from './board/assets.ts'
+import { aiImportRouter } from './routes/aiImport.ts'
 
 // The configured Express app — defined separately from the listen() bootstrap
 // (src/index.ts) so it can also be imported elsewhere (e.g. tests) without
@@ -24,7 +25,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const webDist = path.resolve(__dirname, '../../web/dist')
 
 export const app = express()
-app.use(express.json({ limit: '8mb' }))
+// POST /api/tutor/ai-import carries a base64'd document (up to ~40mb) and
+// parses its own body at a larger limit (aiImport.ts) — exclude it here so
+// this 8mb limit doesn't reject it before that route-level parser runs.
+app.use((req, res, next) => {
+  if (req.path === '/api/tutor/ai-import') return next()
+  express.json({ limit: '8mb' })(req, res, next)
+})
 
 // ---------------------------------------------------------------------------
 // API. Feature routers land phase by phase (PLAN.md §10); /api/health and
@@ -52,6 +59,7 @@ app.use('/api/tutor', requireTutor, problemSetsRouter)
 app.use('/api/tutor', requireTutor, lessonsRouter)
 app.use('/api/tutor', requireTutor, assignmentsRouter)
 app.use('/api/tutor', requireTutor, boardsRouter)
+app.use('/api/tutor', requireTutor, aiImportRouter)
 
 // Phase 2 — student-facing magic-link surfaces (no Supabase auth; the token
 // itself is the access control — see attemptQuery/studentQuery in db.ts).

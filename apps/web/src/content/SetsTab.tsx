@@ -7,7 +7,19 @@ import {
 import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
 import { RichText } from '../lib/Math.tsx'
+import { AiImportReview } from './AiImportReview.tsx'
+import type { AiImportDraft } from './AiImportReview.tsx'
 import type { Problem, ProblemSetDetail, ProblemSetSummary } from './types.ts'
+
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+  }
+  return btoa(binary)
+}
 
 export function SetsTab() {
   const toast = useToast()
@@ -17,6 +29,8 @@ export function SetsTab() {
   const [error, setError] = useState('')
   const [importing, setImporting] = useState(false)
   const [archiveConfirm, setArchiveConfirm] = useState(false)
+  const [aiEnabled, setAiEnabled] = useState(false)
+  const [aiDraft, setAiDraft] = useState<{ draft: AiImportDraft; filename: string } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function reload() {
@@ -29,6 +43,9 @@ export function SetsTab() {
   }
 
   useEffect(() => { reload() }, [])
+  useEffect(() => {
+    apiFetch('/api/tutor/ai-import/status').then((r) => setAiEnabled(!!r.enabled)).catch(() => {})
+  }, [])
 
   async function openSet(id: string) {
     const { problemSet } = await apiFetch(`/api/tutor/problem-sets/${id}`)
@@ -117,6 +134,20 @@ export function SetsTab() {
 
   const availableToAdd = bank.filter((p) => !detail?.problems.some((sp) => sp.id === p.id))
 
+  if (aiDraft) {
+    return (
+      <AiImportReview
+        draft={aiDraft.draft}
+        filename={aiDraft.filename}
+        onDiscard={() => setAiDraft(null)}
+        onCommitted={(setId) => {
+          setAiDraft(null)
+          reload().then(() => openSet(setId))
+        }}
+      />
+    )
+  }
+
   return (
     <div className="split-panel">
       <div>
@@ -128,6 +159,11 @@ export function SetsTab() {
             <Button variant="ghost" onClick={() => fileRef.current?.click()} disabled={importing}>
               {importing ? 'Importing…' : 'Import JSON'}
             </Button>
+            {aiEnabled && (
+              <AiImportDialog
+                onImported={(draft, filename) => setAiDraft({ draft, filename })}
+              />
+            )}
             <NewSetDialog onCreate={createSet} />
           </div>
         </div>
@@ -202,6 +238,57 @@ export function SetsTab() {
         onConfirm={() => detail && archiveSet(detail.id)}
       />
     </div>
+  )
+}
+
+function AiImportDialog({ onImported }: { onImported: (draft: AiImportDraft, filename: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [hint, setHint] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [error, setError] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  async function handleFile(file: File) {
+    setImporting(true)
+    setError('')
+    try {
+      const dataBase64 = await fileToBase64(file)
+      const { draft } = await apiFetch('/api/tutor/ai-import', {
+        method: 'POST',
+        body: JSON.stringify({ filename: file.name, mimeType: file.type, dataBase64, hint: hint.trim() || undefined }),
+      })
+      onImported(draft, file.name)
+      setOpen(false)
+      setHint('')
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setImporting(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button variant="ghost">Import from document (AI)</Button></DialogTrigger>
+      <DialogContent>
+        <DialogTitle>Import from document</DialogTitle>
+        <p className="muted">Upload a lesson plan or worksheet (PDF, DOCX, or text) — Claude extracts the problems for you to review before anything is saved.</p>
+        <Field label="Hint (optional)">
+          <Input value={hint} onChange={(e) => setHint(e.target.value)} placeholder="e.g. SAT math, answers are on the last page" />
+        </Field>
+        <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md" style={{ display: 'none' }}
+          onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
+        {importing && <p className="muted">Reading your document…</p>}
+        {error && <p className="field-error">{error}</p>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+          <DialogClose asChild><Button variant="ghost" disabled={importing}>Cancel</Button></DialogClose>
+          <Button onClick={() => fileRef.current?.click()} disabled={importing}>
+            {importing ? 'Reading…' : 'Choose file'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

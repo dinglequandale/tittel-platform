@@ -47,6 +47,7 @@ export function RunnerPage() {
   const [marked, setMarked] = useState<Record<string, boolean>>({})
   const [remaining, setRemaining] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [starting, setStarting] = useState(false)
 
   const answersRef = useRef(answers)
   answersRef.current = answers
@@ -56,7 +57,7 @@ export function RunnerPage() {
   const debounce = useRef<number | undefined>(undefined)
   const submittedRef = useRef(false)
 
-  useEffect(() => {
+  function loadPayload() {
     if (!attemptToken) return
     apiFetch(`/api/attempt/${attemptToken}`)
       .then((d: AttemptPayload) => {
@@ -72,7 +73,20 @@ export function RunnerPage() {
         setMarked(m)
       })
       .catch((e) => setError((e as Error).message))
-  }, [attemptToken])
+  }
+
+  useEffect(() => { loadPayload() }, [attemptToken])
+
+  async function begin() {
+    setStarting(true)
+    try {
+      await apiFetch(`/api/attempt/${attemptToken}/start`, { method: 'POST' })
+      loadPayload()
+    } catch (e) {
+      setError((e as Error).message)
+      setStarting(false)
+    }
+  }
 
   function save(problemId: string, opts: { answer?: unknown; marked?: boolean; timeDelta?: number; changed?: boolean }) {
     const answer = opts.answer !== undefined ? opts.answer : answersRef.current[problemId] ?? null
@@ -145,6 +159,20 @@ export function RunnerPage() {
       <main className="page">
         <h1>Already submitted</h1>
         <p><Link to={`/review/${attemptToken}`}>Review your answers →</Link></p>
+      </main>
+    )
+  }
+
+  if (data.status === 'pending') {
+    const minutes = data.timeLimitSec ? Math.round(data.timeLimitSec / 60) : null
+    return (
+      <main className="page">
+        <h1>{data.assignmentTitle || 'Assignment'}</h1>
+        <p className="muted">{data.studentName}</p>
+        <p className="muted">
+          {minutes ? `${minutes} minutes · ` : ''}{data.problems.length} questions
+        </p>
+        <Button onClick={begin} disabled={starting}>{starting ? 'Starting…' : 'Begin'}</Button>
       </main>
     )
   }

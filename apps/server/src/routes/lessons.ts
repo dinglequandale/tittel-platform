@@ -101,6 +101,7 @@ lessonsRouter.get('/lessons/:id/export', async (req, res) => {
     [req.params.id],
   )
   if (!rows[0]) return res.status(404).json({ error: 'not found' })
-  res.setHeader('Content-Disposition', `attachment; filename="${rows[0].title}.json"`)
+  const safe = rows[0].title.replace(/[^\w .-]+/g, '_')
+  res.setHeader('Content-Disposition', `attachment; filename="${safe}.json"`)
   res.json(rows[0].doc)
 })

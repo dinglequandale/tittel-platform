@@ -124,6 +124,7 @@ create table if not exists lessons (
   doc         jsonb not null default '{}',
   version     int not null default 1,
   archived_at timestamptz,
+  created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
 create index if not exists lessons_org_idx on lessons(org_id);
@@ -251,3 +252,12 @@ create table if not exists quiz_events (
   created_at  timestamptz not null default now()
 );
 create index if not exists quiz_events_org_idx on quiz_events(org_id);
+
+-- =============================================================================
+-- migrations (idempotent)
+-- =============================================================================
+-- `create table if not exists` above does nothing for columns added to a table
+-- that already exists on a deployed DB. Every new column needs an idempotent
+-- `alter table ... add column if not exists ...` here too.
+
+alter table lessons add column if not exists created_at timestamptz not null default now();

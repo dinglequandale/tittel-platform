@@ -83,6 +83,9 @@ problemsRouter.post('/problems', async (req, res) => {
   if (typeof stemLatex !== 'string' || !stemLatex.trim()) {
     return res.status(400).json({ error: 'stemLatex is required' })
   }
+  if (type === 'multi' && correct !== undefined && !Array.isArray(correct)) {
+    return res.status(400).json({ error: 'correct must be an array of choice ids for multi problems' })
+  }
   const id = newId()
   const rows = await orgQuery(
     req.auth!.orgId,
@@ -112,6 +115,9 @@ problemsRouter.patch('/problems/:id', async (req, res) => {
     req.body ?? {}
   if (type !== undefined && !PROBLEM_TYPES.includes(type)) {
     return res.status(400).json({ error: `type must be one of ${PROBLEM_TYPES.join(', ')}` })
+  }
+  if (type === 'multi' && correct !== undefined && !Array.isArray(correct)) {
+    return res.status(400).json({ error: 'correct must be an array of choice ids for multi problems' })
   }
   const rows = await orgQuery(
     req.auth!.orgId,

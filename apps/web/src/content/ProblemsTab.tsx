@@ -42,7 +42,9 @@ function toDraft(p: Problem): Draft {
     type: p.type,
     stemLatex: p.stem_latex,
     choices: p.choices.length ? p.choices : [{ id: 'A', content: '' }, { id: 'B', content: '' }],
-    correctText: typeof p.correct === 'string' ? p.correct : p.correct ? JSON.stringify(p.correct) : '',
+    correctText: Array.isArray(p.correct)
+      ? p.correct.join(', ')
+      : typeof p.correct === 'string' ? p.correct : p.correct ? JSON.stringify(p.correct) : '',
     acceptText: (p.accept ?? []).join(', '),
     explanationLatex: p.explanation_latex ?? '',
     figures: p.figures ?? [],
@@ -123,7 +125,9 @@ export function ProblemsTab() {
         type: draft.type,
         stemLatex: draft.stemLatex,
         choices: draft.type === 'mc' || draft.type === 'multi' ? draft.choices : [],
-        correct: draft.correctText || undefined,
+        correct: draft.type === 'multi'
+          ? draft.correctText.split(',').map((s) => s.trim()).filter(Boolean)
+          : draft.correctText || undefined,
         accept: draft.acceptText.split(',').map((s) => s.trim()).filter(Boolean),
         explanationLatex: draft.explanationLatex || undefined,
         figures,
@@ -230,7 +234,7 @@ export function ProblemsTab() {
           </Field>
         )}
 
-        <Field label={draft.type === 'mc' || draft.type === 'multi' ? 'Correct choice id' : 'Correct answer'}>
+        <Field label={draft.type === 'mc' ? 'Correct choice id' : draft.type === 'multi' ? 'Correct choice ids (comma-separated)' : 'Correct answer'}>
           <Input value={draft.correctText} onChange={(e) => setDraft((d) => ({ ...d, correctText: e.target.value }))} />
         </Field>
         <Field label="Accepted equivalent answers (comma-separated, optional)">

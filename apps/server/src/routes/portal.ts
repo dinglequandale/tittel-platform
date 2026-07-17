@@ -30,7 +30,7 @@ portalRouter.get('/:token', async (req, res) => {
        join assignments asg on asg.id = ascd.assignment_id
        join problem_sets ps on ps.id = asg.set_id
        left join attempts att on att.assignment_id = asg.id and att.student_id = st.id
-      where st.portal_token = $1
+      where st.portal_token = $1 and asg.archived_at is null
       order by asg.created_at desc`,
   )
 

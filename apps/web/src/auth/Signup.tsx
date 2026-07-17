@@ -12,15 +12,29 @@ export function Signup() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
+  const [checkInbox, setCheckInbox] = useState(false)
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError(undefined)
-    const { error } = await supabase.auth.signUp({ email, password })
+    const { data, error } = await supabase.auth.signUp({ email, password })
     setBusy(false)
     if (error) return setError(error.message)
+    if (!data.session) {
+      setCheckInbox(true)
+      return
+    }
     navigate('/app')
+  }
+
+  if (checkInbox) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 px-4">
+        <h1 className="font-display text-2xl">{BRAND_NAME}</h1>
+        <p className="text-sm text-ink-2">Check your inbox — we sent a confirmation link to {email}.</p>
+      </main>
+    )
   }
 
   return (

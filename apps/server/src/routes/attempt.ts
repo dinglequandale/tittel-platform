@@ -23,7 +23,7 @@ async function loadAttempt(token: string): Promise<AttemptRow | undefined> {
        from attempts a
        join assignments asg on asg.id = a.assignment_id
        join students s on s.id = a.student_id
-      where a.attempt_token = $1`,
+      where a.attempt_token = $1 and asg.archived_at is null`,
   )
   return rows[0]
 }
@@ -63,22 +63,15 @@ async function gradeAttempt(attemptId: string, setId: string): Promise<void> {
   }
 }
 
-// GET the runner payload. Starts the server-authoritative timer on first
-// open; auto-submits (grades + locks) if the window has already elapsed —
-// the student never has to click through a "time's up" prompt to have their
-// work actually count. Never returns correct answers.
+// GET the runner payload. Never returns correct answers. Does not start the
+// timer — that only happens via POST /:token/start — so opening the link
+// (e.g. an email scanner prefetching it) can't burn a student's time limit.
+// Still auto-submits (grades + locks) if an already-started window has
+// elapsed, so the student never has to click through a "time's up" prompt
+// to have their work actually count.
 attemptRouter.get('/:token', async (req, res) => {
   const at = await loadAttempt(req.params.token)
   if (!at) return res.status(404).json({ error: 'not found' })
-
-  if (at.status === 'pending') {
-    await pool.query(
-      `update attempts set status = 'active', started_at = now() where id = $1 and started_at is null`,
-      [at.id],
-    )
-    at.status = 'active'
-    at.started_at = new Date().toISOString()
-  }
 
   let remaining = remainingSeconds(at)
   if (at.status === 'active' && remaining !== null && remaining <= 0) {
@@ -109,6 +102,20 @@ attemptRouter.get('/:token', async (req, res) => {
     problems,
     responses,
   })
+})
+
+// Explicit start: flips pending -> active. Only the student clicking
+// "Begin" should trigger this (see A3 in HANDOFF.md) — GET must stay inert.
+attemptRouter.post('/:token/start', async (req, res) => {
+  const at = await loadAttempt(req.params.token)
+  if (!at) return res.status(404).json({ error: 'not found' })
+  if (at.status === 'pending') {
+    await pool.query(
+      `update attempts set status = 'active', started_at = now() where id = $1 and started_at is null`,
+      [at.id],
+    )
+  }
+  res.json({ ok: true })
 })
 
 // Autosave one answer. Accumulates per-question time + change count (analytics).

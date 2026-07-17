@@ -16,6 +16,9 @@ export default defineConfig({
     port: 5373,
     proxy: {
       '/api': { target: SERVER },
+      '/uploads': { target: SERVER },
+      '/connect': { target: SERVER, ws: true },
+      '/control': { target: SERVER, ws: true },
     },
     // packages/shared and packages/ui are consumed as TS+CSS source, not a build.
     fs: { allow: ['..'] },

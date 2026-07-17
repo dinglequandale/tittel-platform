@@ -51,17 +51,32 @@ async function resolveTutorAuth(token: string): Promise<TutorAuth | null> {
 
   let user = rows[0]
   if (!user) {
+    // Two parallel first-requests can both reach here (e.g. two page loads
+    // firing auth'd fetches at once). `on conflict do nothing` makes the
+    // users insert the race's single source of truth: whoever's insert
+    // lands first wins, the loser's org becomes an orphan and gets deleted.
     const orgId = newId()
     const userId = newId()
     await pool.query(
       `insert into orgs (id, name, plan, trial_ends_at) values ($1, $2, 'trial', now() + interval '30 days')`,
       [orgId, email ? `${email.split('@')[0]}'s org` : 'New org'],
     )
-    await pool.query(
-      `insert into users (id, org_id, supabase_uid, email, role) values ($1, $2, $3, $4, 'owner')`,
+    const inserted = await pool.query<{ id: string; org_id: string; role: 'owner' | 'tutor' }>(
+      `insert into users (id, org_id, supabase_uid, email, role) values ($1, $2, $3, $4, 'owner')
+       on conflict (supabase_uid) do nothing
+       returning id, org_id, role`,
       [userId, orgId, supabaseUid, email],
     )
-    user = { id: userId, org_id: orgId, role: 'owner' }
+    if (inserted.rows[0]) {
+      user = inserted.rows[0]
+    } else {
+      await pool.query('delete from orgs where id = $1', [orgId])
+      const { rows: rows2 } = await pool.query<{ id: string; org_id: string; role: 'owner' | 'tutor' }>(
+        'select id, org_id, role from users where supabase_uid = $1',
+        [supabaseUid],
+      )
+      user = rows2[0]
+    }
   }
 
   return { supabaseUid, email, userId: user.id, orgId: user.org_id, role: user.role }

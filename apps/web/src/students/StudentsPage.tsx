@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Button, Field, Input, Table, EmptyState, CopyButton, PageLoading, ConfirmDialog,
   Dialog, DialogTrigger, DialogContent, DialogTitle, DialogClose,
@@ -14,16 +15,22 @@ interface Student {
   portal_token: string
   notes: string | null
   created_at: string
+  board_id: string | null
 }
 
 interface Group {
   id: string
   name: string
   members: { id: string; name: string }[]
+  board_id: string | null
 }
 
 function portalUrl(token: string): string {
   return `${window.location.origin}/s/${token}`
+}
+
+function boardUrl(id: string): string {
+  return `${window.location.origin}/b/${id}`
 }
 
 export function StudentsPage() {
@@ -52,12 +59,33 @@ export function StudentsPage() {
     reload()
   }, [])
 
-  async function createStudent(name: string, email: string, notes: string) {
-    await apiFetch('/api/tutor/students', {
+  async function createStudent(name: string, email: string, notes: string, withBoard: boolean) {
+    const { student } = await apiFetch('/api/tutor/students', {
       method: 'POST',
       body: JSON.stringify({ name, email: email || undefined, notes: notes || undefined }),
     })
+    if (withBoard) {
+      await apiFetch(`/api/tutor/students/${student.id}/board`, { method: 'POST' })
+    }
     await reload()
+  }
+
+  async function createStudentBoard(id: string) {
+    try {
+      await apiFetch(`/api/tutor/students/${id}/board`, { method: 'POST' })
+      await reload()
+    } catch (err) {
+      toast((err as Error).message)
+    }
+  }
+
+  async function createGroupBoard(id: string) {
+    try {
+      await apiFetch(`/api/tutor/groups/${id}/board`, { method: 'POST' })
+      await reload()
+    } catch (err) {
+      toast((err as Error).message)
+    }
   }
 
   async function updateStudent(id: string, name: string, email: string, notes: string) {
@@ -135,6 +163,7 @@ export function StudentsPage() {
               <th>Name</th>
               <th>Email</th>
               <th>Portal link</th>
+              <th>Board</th>
               <th>Notes</th>
               <th />
             </tr>
@@ -149,6 +178,17 @@ export function StudentsPage() {
                     <code>{portalUrl(s.portal_token)}</code>
                     <CopyButton text={portalUrl(s.portal_token)} />
                   </div>
+                </td>
+                <td>
+                  {s.board_id ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                      <code>{boardUrl(s.board_id)}</code>
+                      <CopyButton text={boardUrl(s.board_id)} />
+                      <Link to={`/b/${s.board_id}`}><Button variant="ghost">Open</Button></Link>
+                    </div>
+                  ) : (
+                    <Button variant="ghost" onClick={() => createStudentBoard(s.id)}>Create board</Button>
+                  )}
                 </td>
                 <td>{s.notes || <span className="muted">—</span>}</td>
                 <td style={{ display: 'flex', gap: '0.375rem' }}>
@@ -195,6 +235,18 @@ export function StudentsPage() {
                   </span>
                 ))}
               </div>
+              <div className="muted" style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                {g.board_id ? (
+                  <>
+                    <span>Group board:</span>
+                    <code>{boardUrl(g.board_id)}</code>
+                    <CopyButton text={boardUrl(g.board_id)} />
+                    <Link to={`/b/${g.board_id}`}><Button variant="ghost">Open</Button></Link>
+                  </>
+                ) : (
+                  <Button variant="ghost" onClick={() => createGroupBoard(g.id)}>Create group board</Button>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -229,11 +281,12 @@ export function StudentsPage() {
   )
 }
 
-function NewStudentDialog({ onCreate }: { onCreate: (name: string, email: string, notes: string) => Promise<void> }) {
+function NewStudentDialog({ onCreate }: { onCreate: (name: string, email: string, notes: string, withBoard: boolean) => Promise<void> }) {
   const toast = useToast()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [notes, setNotes] = useState('')
+  const [withBoard, setWithBoard] = useState(true)
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -241,7 +294,7 @@ function NewStudentDialog({ onCreate }: { onCreate: (name: string, email: string
     if (!name.trim() || saving) return
     setSaving(true)
     try {
-      await onCreate(name.trim(), email.trim(), notes.trim())
+      await onCreate(name.trim(), email.trim(), notes.trim(), withBoard)
       setName(''); setEmail(''); setNotes(''); setOpen(false)
       toast('Student added')
     } catch (err) {
@@ -259,6 +312,10 @@ function NewStudentDialog({ onCreate }: { onCreate: (name: string, email: string
         <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Email (optional)"><Input value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
         <Field label="Notes (optional)"><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+        <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <input type="checkbox" checked={withBoard} onChange={(e) => setWithBoard(e.target.checked)} />
+          Also create their whiteboard
+        </label>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
           <Button onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Create'}</Button>

@@ -9,10 +9,16 @@ export const studentsRouter = Router()
 studentsRouter.get('/students', async (req, res) => {
   const rows = await orgQuery(
     req.auth!.orgId,
-    `select id, name, email, portal_token, report_token, notes, created_at
-       from students
-      where org_id = $1 and archived_at is null
-      order by name`,
+    `select s.id, s.name, s.email, s.portal_token, s.report_token, s.notes, s.created_at,
+            b.id as board_id
+       from students s
+       left join lateral (
+         select id from boards
+          where student_id = s.id and archived_at is null
+          order by created_at desc limit 1
+       ) b on true
+      where s.org_id = $1 and s.archived_at is null
+      order by s.name`,
   )
   res.json({ students: rows })
 })
@@ -63,6 +69,38 @@ studentsRouter.delete('/students/:id', async (req, res) => {
   res.status(204).end()
 })
 
+// Get-or-create the student's persistent board (PLAN.md §6.3 board-per-
+// student flow, HANDOFF.md D1) — a tutor can copy this link right before a
+// 1:1 lesson without having to remember whether one already exists.
+studentsRouter.post('/students/:id/board', async (req, res) => {
+  const orgId = req.auth!.orgId
+  const [student] = await orgQuery<{ id: string; name: string }>(
+    orgId,
+    `select id, name from students where org_id = $1 and id = $2 and archived_at is null`,
+    [req.params.id],
+  )
+  if (!student) return res.status(404).json({ error: 'student not found' })
+
+  let [board] = await orgQuery<{ id: string }>(
+    orgId,
+    `select id from boards
+      where org_id = $1 and student_id = $2 and archived_at is null
+      order by created_at desc limit 1`,
+    [req.params.id],
+  )
+  if (!board) {
+    const boardId = newId()
+    ;[board] = await orgQuery<{ id: string }>(
+      orgId,
+      `insert into boards (id, org_id, student_id, title, is_ephemeral)
+       values ($2, $1, $3, $4, false)
+       returning id`,
+      [boardId, req.params.id, `${student.name} — board`],
+    )
+  }
+  res.json({ boardId: board.id })
+})
+
 // --- Groups --------------------------------------------------------------------
 
 studentsRouter.get('/groups', async (req, res) => {
@@ -73,12 +111,19 @@ studentsRouter.get('/groups', async (req, res) => {
               json_agg(json_build_object('id', s.id, 'name', s.name) order by s.name)
                 filter (where s.id is not null),
               '[]'
-            ) as members
+            ) as members,
+            bd.id as board_id
        from groups g
        left join group_members gm on gm.group_id = g.id
        left join students s on s.id = gm.student_id and s.archived_at is null
+       left join lateral (
+         select b.id from classes c
+          join boards b on b.class_id = c.id and b.archived_at is null
+          where c.group_id = g.id and c.archived_at is null
+          order by b.created_at desc limit 1
+       ) bd on true
       where g.org_id = $1 and g.archived_at is null
-      group by g.id
+      group by g.id, bd.id
       order by g.name`,
   )
   res.json({ groups: rows })
@@ -97,6 +142,55 @@ studentsRouter.post('/groups', async (req, res) => {
     [id, name.trim()],
   )
   res.status(201).json({ group: { ...rows[0], members: [] } })
+})
+
+// Get-or-create the group's shared board (HANDOFF.md D1): group-class
+// students all get one fixed board, keyed through a `classes` row (mode
+// 'large' so the join page name-gates guests, same as any large class)
+// rather than boards.class_id pointing straight at the group.
+studentsRouter.post('/groups/:id/board', async (req, res) => {
+  const orgId = req.auth!.orgId
+  const [group] = await orgQuery<{ id: string; name: string }>(
+    orgId,
+    `select id, name from groups where org_id = $1 and id = $2 and archived_at is null`,
+    [req.params.id],
+  )
+  if (!group) return res.status(404).json({ error: 'group not found' })
+
+  let [cls] = await orgQuery<{ id: string }>(
+    orgId,
+    `select id from classes where org_id = $1 and group_id = $2 and archived_at is null limit 1`,
+    [req.params.id],
+  )
+  if (!cls) {
+    const classId = newId()
+    ;[cls] = await orgQuery<{ id: string }>(
+      orgId,
+      `insert into classes (id, org_id, name, slug, mode, group_id)
+       values ($2, $1, $3, $4, 'large', $5)
+       returning id`,
+      [classId, group.name, req.params.id, req.params.id],
+    )
+  }
+
+  let [board] = await orgQuery<{ id: string }>(
+    orgId,
+    `select id from boards
+      where org_id = $1 and class_id = $2 and archived_at is null
+      order by created_at desc limit 1`,
+    [cls.id],
+  )
+  if (!board) {
+    const boardId = newId()
+    ;[board] = await orgQuery<{ id: string }>(
+      orgId,
+      `insert into boards (id, org_id, class_id, title, is_ephemeral)
+       values ($2, $1, $3, $4, false)
+       returning id`,
+      [boardId, cls.id, `${group.name} — board`],
+    )
+  }
+  res.json({ boardId: board.id })
 })
 
 studentsRouter.delete('/groups/:id', async (req, res) => {

@@ -11,10 +11,13 @@ export const boardsRouter = Router()
 boardsRouter.get('/boards', async (req, res) => {
   const rows = await orgQuery(
     req.auth!.orgId,
-    `select id, title, class_id, student_id, lesson_id, is_ephemeral, created_at
-       from boards
-      where org_id = $1 and archived_at is null
-      order by created_at desc`,
+    `select b.id, b.title, b.class_id, b.student_id, b.lesson_id, b.is_ephemeral, b.created_at,
+            s.name as student_name, c.name as class_name
+       from boards b
+       left join students s on s.id = b.student_id
+       left join classes c on c.id = b.class_id
+      where b.org_id = $1 and b.archived_at is null
+      order by b.created_at desc`,
   )
   res.json({ boards: rows })
 })

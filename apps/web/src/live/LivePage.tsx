@@ -16,7 +16,15 @@ interface BoardSummary {
   title: string | null
   class_id: string | null
   student_id: string | null
+  student_name: string | null
+  class_name: string | null
   created_at: string
+}
+
+function boardOwner(b: BoardSummary): string | null {
+  if (b.student_name) return b.student_name
+  if (b.class_name) return b.class_name
+  return null
 }
 
 // Tutor-facing board management (PLAN.md §6.3). The board page itself
@@ -73,6 +81,7 @@ export function LivePage() {
           <thead>
             <tr>
               <th>Title</th>
+              <th>For</th>
               <th>Link</th>
               <th>Created</th>
               <th />
@@ -82,6 +91,7 @@ export function LivePage() {
             {boards?.map((b) => (
               <tr key={b.id}>
                 <td>{b.title || <span className="muted">Untitled board</span>}</td>
+                <td>{boardOwner(b) || <span className="muted">—</span>}</td>
                 <td>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
                     <code>{boardUrl(b.id)}</code>

@@ -42,13 +42,22 @@ export function ReviewPage() {
     apiFetch(`/api/attempt/${attemptToken}/review`).then(setData).catch((e) => setError(e.message))
   }, [attemptToken])
 
-  if (error) return <main className="page"><h1>Couldn't open this review</h1><p className="muted">{error}</p></main>
-  if (!data) return <main className="page"><p className="muted">Loading…</p></main>
+  if (error) {
+    return (
+      <main className="page">
+        <div className="page-card page-error">
+          <h1 style={{ fontFamily: 'var(--font-display)' }}>Couldn't open this review</h1>
+          <p>{error}</p>
+        </div>
+      </main>
+    )
+  }
+  if (!data) return <main className="page"><p className="page-loading">Loading…</p></main>
 
   const responseOf = new Map(data.responses.map((r) => [r.problem_id, r]))
 
   return (
-    <div className="page" style={{ maxWidth: 720, margin: '0 auto', padding: '1.5rem 1rem' }}>
+    <div className="page">
       <h1 style={{ fontFamily: 'var(--font-display)' }}>{data.assignmentTitle || 'Review'}</h1>
       <p className="muted">
         {data.studentName} · Score: {data.score} / {data.total}

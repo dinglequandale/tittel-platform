@@ -152,7 +152,7 @@ function NewBoardDialog({ onCreate }: { onCreate: (title: string) => Promise<voi
         <Field label="Title (optional)">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} />
         </Field>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+        <div className="row-end">
           <DialogClose asChild>
             <Button variant="ghost">Cancel</Button>
           </DialogClose>

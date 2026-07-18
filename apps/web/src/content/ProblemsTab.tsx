@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Button, Field, Input, EmptyState, PageLoading, ConfirmDialog } from '@tittel/ui'
+import {
+  Button, Field, Input, EmptyState, PageLoading, ConfirmDialog,
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
 import { RichText } from '../lib/Math.tsx'
@@ -201,9 +204,12 @@ export function ProblemsTab() {
       <div className="editor-card">
         <div className="form-row">
           <Field label="Type">
-            <select className="input" value={draft.type} onChange={(e) => setDraft((d) => ({ ...d, type: e.target.value as Problem['type'] }))}>
-              {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
+            <Select value={draft.type} onValueChange={(v) => setDraft((d) => ({ ...d, type: v as Problem['type'] }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </Field>
           <Field label="Difficulty (optional)">
             <Input value={draft.difficulty} onChange={(e) => setDraft((d) => ({ ...d, difficulty: e.target.value }))} />

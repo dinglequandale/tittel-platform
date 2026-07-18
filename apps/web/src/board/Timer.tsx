@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { X } from 'lucide-react'
 import type { ControlChannel } from './controlChannel.ts'
 
 type Pos = { x: number; y: number }
@@ -199,7 +200,7 @@ export function Timer({
       >
         <span className="timer-label">⏱ Timer</span>
         {isHost && (
-          <button className="timer-close-btn" onClick={onHide} title="Hide timer">✕</button>
+          <button className="timer-close-btn" onClick={onHide} title="Hide timer"><X size={14} /></button>
         )}
       </div>
 

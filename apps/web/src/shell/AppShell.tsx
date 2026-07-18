@@ -27,9 +27,9 @@ export function AppShell() {
             <div className="shell-sidebar-brand">{BRAND_NAME}</div>
             <nav className="flex flex-col gap-1">
               {NAV.map(({ to, label, icon: Icon, end }) => (
-                <NavLink key={to} to={to} end={end} className="shell-nav-item">
+                <NavLink key={to} to={to} end={end} className="shell-nav-item" title={label}>
                   <Icon size={16} strokeWidth={1.75} />
-                  {label}
+                  <span className="shell-nav-label">{label}</span>
                 </NavLink>
               ))}
             </nav>

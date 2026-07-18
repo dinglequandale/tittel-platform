@@ -316,7 +316,7 @@ function NewStudentDialog({ onCreate }: { onCreate: (name: string, email: string
           <input type="checkbox" checked={withBoard} onChange={(e) => setWithBoard(e.target.checked)} />
           Also create their whiteboard
         </label>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+        <div className="row-end">
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
           <Button onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Create'}</Button>
         </div>
@@ -359,7 +359,7 @@ function EditStudentDialog({
         <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Email (optional)"><Input value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
         <Field label="Notes (optional)"><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+        <div className="row-end">
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
           <Button onClick={submit} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Button>
         </div>
@@ -393,7 +393,7 @@ function NewGroupDialog({ onCreate }: { onCreate: (name: string) => Promise<void
       <DialogContent>
         <DialogTitle>New group</DialogTitle>
         <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+        <div className="row-end">
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
           <Button onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Create'}</Button>
         </div>

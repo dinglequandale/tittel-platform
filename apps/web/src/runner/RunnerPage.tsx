@@ -190,13 +190,24 @@ export function RunnerPage() {
     return () => window.clearInterval(h)
   }, [data, remaining === null, doSubmit])
 
-  if (error) return <main className="page"><h1>Couldn't open this assignment</h1><p className="muted">{error}</p></main>
-  if (!data) return <main className="page"><p className="muted">Loading…</p></main>
+  if (error) {
+    return (
+      <main className="page">
+        <div className="page-card page-error">
+          <h1 style={{ fontFamily: 'var(--font-display)' }}>Couldn't open this assignment</h1>
+          <p>{error}</p>
+        </div>
+      </main>
+    )
+  }
+  if (!data) return <main className="page"><p className="page-loading">Loading…</p></main>
   if (data.submitted) {
     return (
       <main className="page">
-        <h1>Already submitted</h1>
-        <p><Link to={`/review/${attemptToken}`}>Review your answers →</Link></p>
+        <div className="page-card">
+          <h1 style={{ fontFamily: 'var(--font-display)' }}>Already submitted</h1>
+          <p><Link to={`/review/${attemptToken}`}>Review your answers →</Link></p>
+        </div>
       </main>
     )
   }
@@ -205,13 +216,15 @@ export function RunnerPage() {
     const minutes = data.timeLimitSec ? Math.round(data.timeLimitSec / 60) : null
     return (
       <main className="page">
-        <h1>{data.assignmentTitle || 'Assignment'}</h1>
-        <p className="muted">{data.studentName}</p>
-        <p className="muted">
-          {minutes ? `${minutes} minutes · ` : ''}{data.problems.length} questions
-          {data.dueAt && ` · due ${new Date(data.dueAt).toLocaleDateString()}`}
-        </p>
-        <Button onClick={begin} disabled={starting}>{starting ? 'Starting…' : 'Begin'}</Button>
+        <div className="page-card" style={{ textAlign: 'center', gap: '0.75rem' }}>
+          <h1 style={{ fontFamily: 'var(--font-display)' }}>{data.assignmentTitle || 'Assignment'}</h1>
+          <p className="muted">{data.studentName}</p>
+          <p className="muted">
+            {minutes ? `${minutes} minutes · ` : ''}{data.problems.length} questions
+            {data.dueAt && ` · due ${new Date(data.dueAt).toLocaleDateString()}`}
+          </p>
+          <Button onClick={begin} disabled={starting} style={{ alignSelf: 'center' }}>{starting ? 'Starting…' : 'Begin'}</Button>
+        </div>
       </main>
     )
   }
@@ -244,7 +257,7 @@ export function RunnerPage() {
   }
 
   return (
-    <div className="page" style={{ maxWidth: 720, margin: '0 auto', padding: '1.5rem 1rem' }}>
+    <div className="page">
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <strong>{data.assignmentTitle || 'Assignment'}</strong>
         {remaining !== null && <span className={lowTime ? 'badge badge-incorrect' : 'badge'}>{mmss(remaining)}</span>}
@@ -327,7 +340,7 @@ export function RunnerPage() {
           <p className="muted">
             {unansweredCount} question{unansweredCount === 1 ? ' is' : 's are'} unanswered — submit anyway?
           </p>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+          <div className="row-end">
             <DialogClose asChild><Button variant="ghost">Keep working</Button></DialogClose>
             <Button variant="danger" onClick={() => { setConfirmSubmit(false); void doSubmit() }}>Submit anyway</Button>
           </div>

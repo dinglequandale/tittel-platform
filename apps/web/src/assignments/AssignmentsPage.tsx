@@ -280,7 +280,7 @@ function NewAssignmentDialog({
             {students.length === 0 && <span className="muted">No students yet.</span>}
           </div>
         </Field>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+        <div className="row-end">
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
           <Button onClick={submit} disabled={!setId || selected.length === 0 || saving}>{saving ? 'Creating…' : 'Create'}</Button>
         </div>

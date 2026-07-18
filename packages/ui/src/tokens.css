@@ -3,9 +3,30 @@
    UI icons, default-shadcn gray-card-grid look, rounded-2xl-everything, shadows
    heavier than the two elevation tokens, more than one accent color. */
 
-/* TODO(design): self-host Fraunces + Inter (OFL) woff2 under ./fonts/ and add
-   @font-face rules — see PLAN.md §8.2, §14. Falls back to system stacks until
-   the font files land so `vite build` doesn't fail resolving missing assets. */
+/* Self-hosted variable fonts (OFL) — subset to latin, weight axis only.
+   Sourced from Google Fonts' latest release via @fontsource-variable at
+   copy time; no runtime dependency on that package. */
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./fonts/fraunces-variable.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'Fraunces';
+  font-style: italic;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./fonts/fraunces-variable-italic.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./fonts/inter-variable.woff2') format('woff2-variations');
+}
 
 :root {
   /* Surfaces */

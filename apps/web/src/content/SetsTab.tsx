@@ -281,7 +281,7 @@ function AiImportDialog({ onImported }: { onImported: (draft: AiImportDraft, fil
           onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
         {importing && <p className="muted">Reading your document…</p>}
         {error && <p className="field-error">{error}</p>}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+        <div className="row-end">
           <DialogClose asChild><Button variant="ghost" disabled={importing}>Cancel</Button></DialogClose>
           <Button onClick={() => fileRef.current?.click()} disabled={importing}>
             {importing ? 'Reading…' : 'Choose file'}
@@ -314,7 +314,7 @@ function NewSetDialog({ onCreate }: { onCreate: (title: string) => Promise<void>
       <DialogContent>
         <DialogTitle>New problem set</DialogTitle>
         <Field label="Title"><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+        <div className="row-end">
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
           <Button onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Create'}</Button>
         </div>

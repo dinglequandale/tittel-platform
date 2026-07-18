@@ -12,6 +12,7 @@ import {
   type TLComponents,
 } from 'tldraw'
 import 'tldraw/tldraw.css'
+import { Lock, Unlock, Timer as TimerIcon, Calculator as CalculatorIcon, FileDown, Link as LinkIcon } from 'lucide-react'
 import { useSync } from '@tldraw/sync'
 import { makeAssetStore } from './assetStore.ts'
 import { setupCameraSync, type FollowController } from './cameraSync.ts'
@@ -294,16 +295,20 @@ export function BoardCanvas({
             title="Let students roam pages/zoom freely and use their own calculators"
             onClick={() => toggleFreeReign(!freeReign)}
           >
-            {freeReign ? '🔓 Free rein: On' : '🔒 Free rein: Off'}
+            {freeReign ? <Unlock size={14} /> : <Lock size={14} />}
+            {freeReign ? 'Free rein: On' : 'Free rein: Off'}
           </button>
           <button className="dock-btn" onClick={() => toggleTimer(!timerOpen)}>
-            {timerOpen ? 'Hide timer' : '⏱ Timer'}
+            <TimerIcon size={14} />
+            {timerOpen ? 'Hide timer' : 'Timer'}
           </button>
           <button className="dock-btn" onClick={() => setCalcOpen((v) => !v)}>
-            {calcOpen ? 'Hide calculator' : '🧮 Calculator'}
+            <CalculatorIcon size={14} />
+            {calcOpen ? 'Hide calculator' : 'Calculator'}
           </button>
           <button className="dock-btn" onClick={exportPdf}>
-            📄 Export PDF
+            <FileDown size={14} />
+            Export PDF
           </button>
         </div>
       )}
@@ -311,7 +316,8 @@ export function BoardCanvas({
       {!isHost && studentSoloCalc && (
         <div className="tutor-dock">
           <button className="dock-btn" onClick={() => setPersonalCalcOpen((v) => !v)}>
-            {personalCalcOpen ? 'Hide calculator' : '🧮 My calculator'}
+            <CalculatorIcon size={14} />
+            {personalCalcOpen ? 'Hide calculator' : 'My calculator'}
           </button>
         </div>
       )}
@@ -406,7 +412,7 @@ function ShareControl({ boardId, collapsed, onCopied }: { boardId: string; colla
   if (collapsed) {
     return (
       <button className="dock-btn" title={link} onClick={copy}>
-        {copied ? 'Copied!' : '🔗 Copy link'}
+        {copied ? 'Copied!' : <><LinkIcon size={14} /> Copy link</>}
       </button>
     )
   }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { BRAND_NAME } from '@tittel/shared'
 import { apiFetch } from '../lib/api.ts'
 
 interface Assignment {
@@ -28,14 +29,28 @@ export function PortalPage() {
   }, [studentToken])
 
   if (error) {
-    return <main className="page"><h1>Couldn't open this portal</h1><p className="muted">{error}</p></main>
+    return (
+      <main className="page">
+        <div className="page-brand">{BRAND_NAME}</div>
+        <div className="page-card page-error">
+          <h1 style={{ fontFamily: 'var(--font-display)' }}>Couldn't open this portal</h1>
+          <p>{error}</p>
+        </div>
+      </main>
+    )
   }
   if (!assignments) {
-    return <main className="page"><p className="muted">Loading…</p></main>
+    return (
+      <main className="page">
+        <div className="page-brand">{BRAND_NAME}</div>
+        <p className="page-loading">Loading…</p>
+      </main>
+    )
   }
 
   return (
-    <main className="page" style={{ maxWidth: 640, margin: '0 auto', padding: '2rem 1rem' }}>
+    <main className="page">
+      <div className="page-brand">{BRAND_NAME}</div>
       <h1 style={{ fontFamily: 'var(--font-display)' }}>Hi, {studentName}</h1>
       {assignments.length === 0 ? (
         <p className="muted">Nothing assigned yet.</p>

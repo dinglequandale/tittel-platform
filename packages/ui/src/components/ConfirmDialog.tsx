@@ -1,5 +1,5 @@
 import { Button } from './Button.tsx'
-import { Dialog, DialogContent, DialogTitle, DialogClose } from './Dialog.tsx'
+import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from './Dialog.tsx'
 
 export interface ConfirmDialogProps {
   open: boolean
@@ -16,9 +16,9 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent {...(!description && { 'aria-describedby': undefined })}>
         <DialogTitle>{title}</DialogTitle>
-        {description && <p className="muted">{description}</p>}
+        {description && <DialogDescription>{description}</DialogDescription>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
           <Button variant="danger" onClick={() => { onOpenChange(false); onConfirm() }}>{confirmLabel}</Button>

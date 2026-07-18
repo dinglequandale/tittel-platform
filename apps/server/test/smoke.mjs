@@ -66,13 +66,21 @@ try {
   check('server printed "listening" before we trust it', listening)
 
   if (listening) {
+    // /api/health probes the DB and reports ok:false/503 when it's unreachable
+    // (Phase G) — this dev environment may or may not have DATABASE_URL set,
+    // so assert the status/body pair is consistent rather than assuming one.
     const health = await fetch(`${BASE}/api/health`)
     const body = await health.json()
-    check('/api/health responds 200', health.status === 200)
-    check('/api/health reports ok:true', body.ok === true)
+    check(
+      '/api/health status matches its ok field (200+ok:true or 503+ok:false)',
+      (health.status === 200 && body.ok === true) || (health.status === 503 && body.ok === false),
+    )
 
     const session = await fetch(`${BASE}/api/tutor/session`)
     check('/api/tutor/session rejects unauthenticated requests', session.status === 401)
+
+    const students = await fetch(`${BASE}/api/tutor/students`)
+    check('/api/tutor/students rejects unauthenticated requests', students.status === 401)
 
     const missing = await fetch(`${BASE}/api/nope`)
     check('unmatched /api route is a 404', missing.status === 404)

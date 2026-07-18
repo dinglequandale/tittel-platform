@@ -63,3 +63,12 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+---
+
+## Project facts (Slate / tittel-platform)
+
+- **Run:** `npm run dev` (server + web together), `npm run typecheck`, `npm test`, `npm run build`, `npm run migrate`. Monorepo via npm workspaces (`apps/*`, `packages/*`); `apps/server` runs on `tsx` directly, no build step.
+- **Tenancy rule:** every tenant-owned query goes through `orgQuery`/`studentQuery`/`attemptQuery` in `apps/server/src/db.ts` — each regex-checks the SQL references its scoping column (`org_id` / `portal_token` / `attempt_token`) and throws if not. Raw `pool.query` is reserved for `db.ts`/`migrate.ts`. Never bypass this for a "quick" query.
+- **Schema migrations:** `db/schema.sql` uses `create table if not exists` throughout. New columns go in the `-- migrations (idempotent)` section at the bottom as `alter table ... add column if not exists ...` — the schema file is applied repeatedly, not versioned.
+- **AI import:** the lesson-plan/worksheet import feature (`apps/server/src/routes/aiImport.ts`) is gated on `ANTHROPIC_API_KEY` — unset means the feature reports `enabled:false` and its routes 404/disable client-side, not an error.

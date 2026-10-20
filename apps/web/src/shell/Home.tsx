@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, Play, Check } from 'lucide-react'
+import { FlipNumber, Reveal, paletteFor, PALETTE } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
 import { useSession } from '../lib/useSession.ts'
 
@@ -61,31 +62,33 @@ export function Home() {
   const doneCount = steps.filter((s) => s.done).length
   const showOnboarding = doneCount < steps.length && assignments !== null && students !== null && setCount !== null
 
+  const stepColors = ['blue', 'mint', 'gold'] as const
+
   return (
     <div className="screen">
       <div className="screen-head">
-        <h1>{greeting()}{displayName && `, ${displayName}`}</h1>
+        <h1>
+          {greeting()}
+          {displayName && <>, <span className="serif-em">{displayName}</span></>}
+        </h1>
         <p>Here's what needs your attention today.</p>
       </div>
 
       {showOnboarding && (
-        <div className="surface-card" style={{ padding: '20px 24px', marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <span style={{ fontSize: 15, fontWeight: 600 }}>Get started</span>
-            <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{doneCount} of {steps.length} done</span>
+        <div className="surface-card onboard">
+          <div className="onboard-head">
+            <span className="card-title-lg">Get started</span>
+            <span className="list-row-sub num">{doneCount} of {steps.length} done</span>
           </div>
-          <div className="progress" style={{ height: 4, marginBottom: 16 }}>
-            <i style={{ width: `${(doneCount / steps.length) * 100}%` }} />
-          </div>
-          <div style={{ display: 'flex', gap: 14 }}>
-            {steps.map((s) => (
-              <div key={s.label} style={{ flex: 1, display: 'flex', gap: 10, alignItems: 'flex-start', padding: 12, borderRadius: 8, background: s.done ? 'var(--accent-wash)' : 'transparent' }}>
-                <span style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, marginTop: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: s.done ? 'var(--accent)' : 'transparent', border: s.done ? 'none' : '1.75px solid var(--ink-3)' }}>
-                  {s.done && <Check size={12} strokeWidth={2.6} color="#fff" />}
+          <div className="onboard-steps">
+            {steps.map((s, i) => (
+              <div key={s.label} className="step" data-done={s.done}>
+                <span className="step-num" data-c={stepColors[i]} data-done={s.done}>
+                  {s.done ? <Check size={14} strokeWidth={3} /> : <FlipNumber value={i + 1} delay={i * 140} />}
                 </span>
                 <div>
-                  <div style={{ fontSize: 13.5, fontWeight: 600 }}>{s.label}</div>
-                  <div style={{ fontSize: 12.5, color: 'var(--ink-2)' }}>{s.hint}</div>
+                  <div className="step-title">{s.label}</div>
+                  <div className="step-hint">{s.hint}</div>
                 </div>
               </div>
             ))}
@@ -93,24 +96,24 @@ export function Home() {
         </div>
       )}
 
-      <div className="card-grid-2" style={{ marginBottom: 24 }}>
+      <Reveal className="card-grid-2 home-cards">
         <div className="surface-card card-pad">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <div className="card-title">Students</div>
-            <Link to="/app/students" style={{ fontSize: 12.5, color: 'var(--ink-3)', textDecoration: 'none' }}>View all</Link>
+          <div className="card-head">
+            <div className="card-title-lg">Students</div>
+            <Link to="/app/students" className="card-link">View all</Link>
           </div>
           {students === null ? (
             <p className="muted">Loading…</p>
           ) : students.length === 0 ? (
-            <p className="muted">No students yet — add your first to get started.</p>
+            <p className="muted">No students yet. Add your first to get started.</p>
           ) : (
             students.slice(0, 4).map((s) => (
-              <Link key={s.id} to="/app/students" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--surface-2)', textDecoration: 'none', color: 'inherit' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span className="avatar-sq">{initials(s.name)}</span>
+              <Link key={s.id} to="/app/students" className="list-row">
+                <div className="list-row-main">
+                  <span className="avatar-sq" data-c={paletteFor(s.id)}>{initials(s.name)}</span>
                   <div>
-                    <div style={{ fontSize: 13.5, fontWeight: 600 }}>{s.name}</div>
-                    <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{s.email || 'No email on file'}</div>
+                    <div className="list-row-title">{s.name}</div>
+                    <div className="list-row-sub">{s.email || 'No email on file'}</div>
                   </div>
                 </div>
                 <span className={s.board_id ? 'badge badge-correct' : 'badge badge-warning'}>{s.board_id ? 'Ready' : 'Needs board'}</span>
@@ -120,31 +123,33 @@ export function Home() {
         </div>
 
         <div className="surface-card card-pad">
-          <div className="card-title" style={{ marginBottom: 14 }}>Upcoming</div>
+          <div className="card-head">
+            <div className="card-title-lg">Upcoming</div>
+          </div>
           {assignments === null ? (
             <p className="muted">Loading…</p>
           ) : assignments.length === 0 ? (
             <p className="muted">No assignments yet.</p>
           ) : (
-            assignments.slice(0, 4).map((a) => {
+            assignments.slice(0, 4).map((a, i) => {
               const pct = a.assigned ? Math.round((a.submitted / a.assigned) * 100) : 0
               return (
-                <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--surface-2)' }}>
+                <div key={a.id} className="list-row">
                   <div>
-                    <div style={{ fontSize: 13.5, fontWeight: 600 }}>{a.title || a.set_title}</div>
-                    <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{a.assigned} student{a.assigned === 1 ? '' : 's'} · {dueLabel(a)}</div>
+                    <div className="list-row-title">{a.title || a.set_title}</div>
+                    <div className="list-row-sub">{a.assigned} student{a.assigned === 1 ? '' : 's'} · {dueLabel(a)}</div>
                   </div>
-                  <div className="ring" style={{ background: `conic-gradient(var(--accent) ${pct * 3.6}deg, var(--surface-2) 0deg)` }}>
-                    <span>{pct}</span>
+                  <div className="ring" style={{ background: `conic-gradient(var(--${PALETTE[i % 4]}) ${pct * 3.6}deg, var(--surface-2) 0deg)` }}>
+                    <span className="num">{pct}</span>
                   </div>
                 </div>
               )
             })
           )}
         </div>
-      </div>
+      </Reveal>
 
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      <div className="home-quick-row">
         <Link to="/app/students" className="home-quick">
           <Plus size={17} strokeWidth={1.9} className="quick-action-icon" /> New student
         </Link>

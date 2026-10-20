@@ -56,7 +56,7 @@
 }
 
 .board-start-btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -93,7 +93,7 @@
 }
 
 .mode-option:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -217,7 +217,7 @@
 
 .name-gate-card input:focus-visible {
   border-color: var(--accent);
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -335,7 +335,7 @@
 }
 
 .dock-btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -494,7 +494,7 @@
 }
 
 .calc-switch:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -568,7 +568,7 @@
 }
 
 .timer-close-btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -614,7 +614,7 @@
 }
 
 .timer-input:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
   border-color: var(--accent);
 }
@@ -655,7 +655,7 @@
 }
 
 .timer-btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 

@@ -87,7 +87,7 @@ what's left.
 ```
 --paper:  #FFFFFF   (bg)          --ink:   #0F0F0F
 --paper-2:#F6F6F4   (sidebar, wells) --ink-2: #5F625F (= site --muted)
---rule:   #E6E6E3                  --ink-3: #9A9C99
+--rule:   #E6E6E3                  --ink-3: #6F726F   --ink-4: #9A9C99 (decorative only)
 --coral:  #FF4F12   brand / hover / ∎
 --blue:   #2140E8   links, focus ring, info. Text-safe (7.1:1 on white)
 --mint:   #2FC48D   --gold: #F2B705   --pink: #E0559A   (categorical only)
@@ -105,9 +105,12 @@ are worse. Rules:
 - **Semantic colours must not collide with brand colours.** Coral can never mean "wrong."
   `--correct: #12805A` (deep mint, 4.9:1), `--incorrect: #D4183D` (5.3:1) (the site's `C.red`, distinct from
   coral), `--warning: #8A6200` (deep gold, 5.5:1). All checked against white.
-- `--ink-3` (and today's `#A1A1AA`) is ~2.8:1, so use it only for disabled or decorative marks.
-  Meta text ("No email on file", timestamps) uses `--ink-2` (6.2:1). The current app uses ink-3
-  for meta text in many places.
+- **As built in O1:** `--ink-3` became `#6F726F` (4.9:1 on white, 4.5:1 on paper-2), so its many
+  meta-text uses pass AA without edits. The old grey (`#9A9C99`, 2.8:1) survives only as `--ink-4`
+  for decorative or disabled marks, never text.
+- Semantic colours drop to ~4.1:1 on their own 14% washes (badges, avatars). Text on a wash uses
+  `--correct-ink #0E6B4B`, `--incorrect-ink #B3122F`, or `--coral-ink #B83200` (all ≥5.1:1).
+  Before O1 the badges failed AA.
 - Dark theme: defer for the shell. Runner and board dark can come later (PLAN §8.2 still applies to
   those).
 
@@ -115,14 +118,13 @@ are worse. Rules:
 
 - **Outfit** (variable 300–900) for UI and display. **EB Garamond Italic 700** for emphasis. Both
   are OFL. **Self-host** the woff2 in `packages/ui/src/fonts/` (the site uses the Google CDN; the app
-  must not). Delete the Fraunces files (Inter: see Numbers below).
+  must not). Fraunces and Inter were deleted in O1.
 - Display (page titles, landing): 600, `letter-spacing: -0.035em`, `line-height: 0.86` for
   multi-line hero type, lowercase for scrambled section headings (site convention).
 - UI: 14px chrome, 15–16px body, 18px+ on student surfaces (PLAN's density rule stands).
-- **Numbers:** Outfit may lack tabular figures. In O1, check the font's GSUB for `tnum` (fontTools).
-  If it's missing, add a `--font-num` stack: keep the existing `inter-variable.woff2`, use it with
-  `tnum` on `.num` cells, timers, and stat tiles only, and delete only the Fraunces files. Timers
-  that jitter look broken.
+- **Numbers (verified in O1 with fontTools):** Outfit ships `tnum`, but its digits are
+  proportional by default. Anything that sits in a column or ticks (tables, timers, stats, rings)
+  needs `font-variant-numeric: tabular-nums` (the `.num` class). Timers that jitter look broken.
 - KaTeX stays Computer Modern. Never restyle math.
 
 ### 2.3 Shape, space, elevation
@@ -347,6 +349,10 @@ time goes to teaching on it (from O2), recruiting partners, and the two licence 
   (`MathArt`, `FlipNumber`, `Reveal`, `QedLoader`, `Wordmark`, restyled core components;
   `Scramble` lands in O4), drop Tailwind, clear inline styles, meta + ∎ favicon.
   *Accept:* every route renders in the new language; AA verified; reduced motion = zero animation.
+  **Done 2026-10-20 (branch `overhaul`).** Carried forward: inline styles were cleared on Home
+  only (24 → 1). Students, Assignments, Runner, and others still carry ~60 inline blocks; they use
+  tokens, so they restyle correctly, and each gets swept when its phase reworks the page. Tailwind's
+  preflight is vendored as `packages/ui/src/reset.css` (in `@layer base`, same cascade as before).
 - **O2 Teach on it (dogfood).** PDF onto board, quiz overlay + stats, library lesson load, games
   port, B7 fix, Storage-backed assets, board chrome restyle.
   *Accept:* Konrad teaches every class that week on the platform; the smoke suite covers quiz
@@ -378,7 +384,7 @@ an assignment graded with a follow-up created). Partner bar to continue past O6:
    symbol"). Unverified for domain or trademark.
 3. **Button:** ink pill, white text, hover `#D93A00` (§2.1).
 4. **Tailwind:** dropped.
-5. **Tabular figures:** verify in O1; Inter fallback for numerals only (§2.2).
+5. **Tabular figures:** resolved. Outfit has `tnum`, so no second face is needed (§2.2).
 6. **Order:** design foundation first, but capped at 3 days; then product depth on the board.
    Delight is concentrated on student/parent surfaces.
 7. Still Konrad's (blocking only where noted): the final name (blocks O5), tldraw's written

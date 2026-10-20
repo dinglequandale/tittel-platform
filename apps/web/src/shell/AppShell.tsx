@@ -1,6 +1,6 @@
 import { NavLink, Outlet, Link, useLocation } from 'react-router-dom'
 import { Home, Users, BookOpen, PenTool, ClipboardList, BarChart3, Settings, Search, Plus } from 'lucide-react'
-import { Shell } from '@tittel/ui'
+import { Shell, Wordmark, Qed } from '@tittel/ui'
 import { BRAND_NAME } from '@tittel/shared'
 import { supabase } from '../lib/supabase.ts'
 import { useSession } from '../lib/useSession.ts'
@@ -37,8 +37,7 @@ export function AppShell() {
         sidebar={
           <>
             <div className="shell-brand">
-              <div className="shell-brand-mark" />
-              <span className="shell-brand-name">{BRAND_NAME}</span>
+              <Wordmark name={BRAND_NAME} />
             </div>
             <nav className="shell-nav">
               {NAV.map(({ to, label, icon: Icon, end }) => (
@@ -64,7 +63,7 @@ export function AppShell() {
         }
         topbar={
           <>
-            <span className="shell-topbar-title">{title}</span>
+            <span className="shell-topbar-title">{title}<Qed /></span>
             <div className="shell-topbar-actions">
               <div className="shell-search">
                 <Search size={15} strokeWidth={1.9} />

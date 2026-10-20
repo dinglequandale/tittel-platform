@@ -16,7 +16,7 @@ import { TryLanding } from './board/TryLanding.tsx'
 import { LivePage } from './live/LivePage.tsx'
 import { AnalyticsPage } from './analytics/AnalyticsPage.tsx'
 import { SettingsPage } from './settings/SettingsPage.tsx'
-import { ComingSoon } from './ComingSoon.tsx'
+import { NotFound } from './NotFound.tsx'
 
 // Route map — PLAN.md §4.3. Student-facing surfaces (/try, /b, /s, /hw,
 // /review) are chromeless and ported in Phases 2-3; they're stubbed here so
@@ -45,7 +45,7 @@ export function Router() {
       <Route path="/s/:studentToken" element={<PortalPage />} />
       <Route path="/hw/:attemptToken" element={<RunnerPage />} />
       <Route path="/review/:attemptToken" element={<ReviewPage />} />
-      <Route path="*" element={<ComingSoon label="Not found" />} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }

@@ -154,7 +154,7 @@ export function StudentsPage() {
 
   return (
     <div className="screen">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div className="page-toolbar">
         <div className="filter-pills">
           <button className="filter-pill" data-active={filter === 'all'} onClick={() => setFilter('all')}>
             All ({students?.length ?? 0})

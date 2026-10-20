@@ -1,59 +1,82 @@
-/* Slate design tokens — PLAN.md §8.2. Binding, not inspirational.
-   Ban list: blue-purple gradients, glassmorphism/backdrop-blur cards, emoji as
-   UI icons, default-shadcn gray-card-grid look, rounded-2xl-everything, shadows
-   heavier than the two elevation tokens, more than one accent color. */
+/* Design tokens — OVERHAUL.md §2 (supersedes PLAN.md §8). Visual language from
+   Konrad's tutoring site: white paper, near-black ink, Outfit set tight, EB
+   Garamond italic for emphasis, a coral ∎ as the brand device, and a five-colour
+   math palette used only as categorical colour. Contrast values in comments are
+   against white and were checked, not eyeballed. */
 
-/* Self-hosted variable fonts (OFL) — subset to latin, weight axis only.
-   Sourced from Google Fonts' latest release via @fontsource-variable at
-   copy time; no runtime dependency on that package. */
+/* Self-hosted (OFL), latin subset, from @fontsource at copy time. */
 @font-face {
-  font-family: 'Fraunces';
+  font-family: 'Outfit';
   font-style: normal;
   font-display: swap;
   font-weight: 100 900;
-  src: url('./fonts/fraunces-variable.woff2') format('woff2-variations');
+  src: url('./fonts/outfit-variable.woff2') format('woff2-variations');
 }
 @font-face {
-  font-family: 'Fraunces';
+  font-family: 'EB Garamond';
   font-style: italic;
   font-display: swap;
-  font-weight: 100 900;
-  src: url('./fonts/fraunces-variable-italic.woff2') format('woff2-variations');
-}
-@font-face {
-  font-family: 'Inter';
-  font-style: normal;
-  font-display: swap;
-  font-weight: 100 900;
-  src: url('./fonts/inter-variable.woff2') format('woff2-variations');
+  font-weight: 700;
+  src: url('./fonts/eb-garamond-italic-700.woff2') format('woff2');
 }
 
 :root {
-  /* Surfaces */
-  --bg: #FAF9F6;
-  --surface: #FFFFFF;
-  --surface-2: #F1EFEA;
+  color-scheme: light;
 
-  /* Ink */
-  --ink: #1A1A1A;
-  --ink-2: #52525B;
-  --ink-3: #A1A1AA;
+  /* Paper & ink */
+  --paper: #FFFFFF;
+  --paper-2: #F6F6F4;     /* sidebar, wells */
+  --paper-3: #EEEEEB;     /* pressed / track */
+  --rule: #E6E6E3;
+  --ink: #0F0F0F;
+  --ink-2: #5F625F;       /* 6.2:1 — secondary text */
+  --ink-3: #6F726F;       /* 4.9:1 (4.5 on paper-2) — meta text */
+  --ink-4: #9A9C99;       /* 2.8:1 — decorative/disabled only, never text */
 
-  /* Lines */
-  --line: #E4E2DC;
+  /* Brand */
+  --coral: #FF4F12;        /* the ∎, graphics, fills without text */
+  --coral-strong: #D93A00; /* 4.6:1 — white text on it passes AA */
+  --blue: #2140E8;         /* 7.1:1 — links, focus, info */
 
-  /* Accent — deep pine. One accent: links, primary buttons, active nav, focus rings. */
-  --accent: #1E5C48;
-  --accent-hover: #174A3A;
-  --accent-wash: #E8F0EC;
+  /* Math palette — categorical only (tags, groups, avatars, step numbers,
+     chart series). Fills, never text: use the -text variants for text. */
+  --mint: #2FC48D;
+  --gold: #F2B705;
+  --pink: #E0559A;
+  --blue-wash: #E9ECFD;
+  --mint-wash: #E3F7EF;
+  --gold-wash: #FDF4D6;
+  --coral-wash: #FFE9E1;
+  --pink-wash: #FBE8F1;
 
-  /* Semantic */
-  --correct: #1E7F4F;
-  --incorrect: #B4372F;
-  --warning: #B87A1E;
-  --info: var(--accent);
+  /* Semantic — deliberately distinct from brand coral (coral never means wrong) */
+  --correct: #12805A;      /* 4.9:1 */
+  --incorrect: #D4183D;    /* 5.3:1 */
+  --warning: #8A6200;      /* 5.5:1 */
+  --info: var(--blue);
+  --focus: var(--blue);
+  /* Text on a ~14% wash of its own colour (badges, avatars): the base
+     colours drop to ~4.1:1 there, these hold >=5.1:1. */
+  --correct-ink: #0E6B4B;
+  --incorrect-ink: #B3122F;
+  --coral-ink: #B83200;
 
-  /* Type scale (px) */
+  /* Role aliases kept so existing screens restyle through the swap.
+     "accent" is now ink: primary buttons, active states, progress. */
+  --bg: var(--paper);
+  --surface: var(--paper);
+  --surface-2: var(--paper-2);
+  --line: var(--rule);
+  --accent: var(--ink);
+  --accent-hover: var(--coral-strong);
+  --accent-wash: var(--paper-2);
+
+  /* Type */
+  --font-display: 'Outfit', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Outfit', 'Segoe UI', system-ui, sans-serif;
+  --font-serif: 'EB Garamond', Georgia, serif;
+  --tracking-display: -0.035em;
+  --tracking-tight: -0.02em;
   --text-xs: 13px;
   --text-sm: 14px;
   --text-base: 16px;
@@ -61,8 +84,6 @@
   --text-xl: 22px;
   --text-2xl: 28px;
   --text-3xl: 36px;
-  --font-display: 'Fraunces', ui-serif, Georgia, serif;
-  --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
 
   /* Space (4px base) */
   --space-1: 4px;
@@ -75,39 +96,30 @@
   --space-16: 64px;
 
   /* Shape */
-  --radius-control: 6px;
-  --radius-card: 10px;
+  --radius-pill: 999px;   /* buttons, tabs, chips */
+  --radius-control: 10px; /* inputs, selects, menu items */
+  --radius-card: 12px;    /* cards, frames, dialogs */
+  --radius-chip: 6px;     /* small squares (step numbers, avatars) */
 
-  /* Elevation — nothing heavier than these two */
-  --shadow-1: 0 1px 2px rgb(0 0 0 / .06);
-  --shadow-2: 0 4px 16px rgb(0 0 0 / .10);
+  /* Elevation — borders carry depth; shadows only on floating layers */
+  --shadow-1: 0 1px 2px rgb(0 0 0 / .04);
+  --shadow-2: 0 8px 30px rgb(0 0 0 / .08);
 
-  /* Motion */
-  --ease: cubic-bezier(.2, .8, .4, 1);
+  /* Motion — spring only for entry/celebration, never for dialogs or menus */
+  --ease-spring: cubic-bezier(.2, 1.45, .4, 1);
+  --ease-pop: cubic-bezier(.2, 1.6, .4, 1);
+  --ease-out: cubic-bezier(.2, .8, .4, 1);
+  --ease: var(--ease-out);
   --duration-micro: 150ms;
+  --duration-pop: 300ms;
   --duration-panel: 220ms;
+  --duration-reveal: 650ms;
 }
 
-:root[data-theme='dark'] {
-  --bg: #141412;
-  --surface: #1C1B18;
-  --surface-2: #242320;
+/* Dark theme is deferred (OVERHAUL.md §2.1); nothing sets data-theme today. */
 
-  --ink: #F1EFEA;
-  --ink-2: #B8B6AE;
-  --ink-3: #6E6C64;
-
-  --line: #322F29;
-
-  --accent: #3EA37D;
-  --accent-hover: #4DBE93;
-  --accent-wash: #16261F;
-
-  --correct: #3EA37D;
-  --incorrect: #E0665C;
-  --warning: #D99A42;
-  --info: var(--accent);
-}
+/* Element reset lives in reset.css (vendored Tailwind preflight). */
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 body {
   background: var(--bg);
@@ -115,16 +127,27 @@ body {
   font-family: var(--font-body);
   font-size: var(--text-base);
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 h1, h2, h3, h4 {
   font-family: var(--font-display);
-  line-height: 1.2;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: var(--tracking-tight);
 }
 
+/* Numbers that sit in columns or tick (tables, timers, stats) */
+.num, time { font-variant-numeric: tabular-nums; }
+
+/* Garamond italic emphasis — inside headings and copy, never UI labels */
+.serif-em { font-family: var(--font-serif); font-style: italic; font-weight: 700; letter-spacing: 0; }
+
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
   }
 }

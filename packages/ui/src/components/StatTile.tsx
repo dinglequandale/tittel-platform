@@ -1,4 +1,5 @@
 import clsx from 'clsx'
+import { FlipNumber } from './FlipNumber.tsx'
 
 export interface StatTileProps {
   label: string
@@ -10,7 +11,7 @@ export function StatTile({ label, value, trend }: StatTileProps) {
   return (
     <div className="stat-tile">
       <div className="stat-tile-label">{label}</div>
-      <div className="stat-tile-value">{value}</div>
+      <div className="stat-tile-value"><FlipNumber value={value} /></div>
       {trend && (
         <div className={clsx('stat-tile-trend', `stat-tile-trend-${trend.direction}`)}>
           {trend.direction === 'up' ? '↑' : '↓'} {trend.label}

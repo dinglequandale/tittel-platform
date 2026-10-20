@@ -1,13 +1,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
 
 // Ports offset from both source repos (whiteboard 5173, sat-homework 5273) so
 // all three can run side by side during the port (PLAN.md §4.2).
 const SERVER = 'http://localhost:6060'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react()],
   build: {
     outDir: 'dist',
     emptyOutDir: true,
@@ -21,6 +20,8 @@ export default defineConfig({
       '/control': { target: SERVER, ws: true },
     },
     // packages/shared and packages/ui are consumed as TS+CSS source, not a build.
-    fs: { allow: ['..'] },
+    // Allow the repo root ('../..' from apps/web): '..' only reached apps/, so
+    // url() assets under packages/ui (the fonts) were 403 in dev.
+    fs: { allow: ['../..'] },
   },
 })

@@ -1,22 +1,29 @@
 import { Link } from 'react-router-dom'
-import { Button } from '@tittel/ui'
+import { MathArt, Qed, Wordmark } from '@tittel/ui'
 import { BRAND_NAME, BRAND_TAGLINE } from '@tittel/shared'
 
-// Real landing page (hero demo board, pricing, the 650->760 story) is a
-// Phase 7 build (PLAN.md §12) — this stub proves the route + design tokens.
+// Placeholder landing in the new visual language. The lean landing (hero
+// scramble ported from the website) is O5 and the showpiece is O7
+// (OVERHAUL.md §3); headline copy here is provisional.
 export function Landing() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center gap-6 px-4 text-center">
-      <h1 className="font-display text-3xl">{BRAND_NAME}</h1>
-      <p className="text-lg text-ink-2">{BRAND_TAGLINE}</p>
-      <div className="flex gap-3">
-        <Link to="/signup">
-          <Button>Start a trial</Button>
-        </Link>
-        <Link to="/login">
-          <Button variant="secondary">Sign in</Button>
-        </Link>
-      </div>
-    </main>
+    <div className="landing">
+      <Link to="/" className="corner corner-tl" aria-label={`${BRAND_NAME} home`}><Wordmark name={BRAND_NAME} /></Link>
+      <Link to="/login" className="corner corner-tr">sign in</Link>
+      <main className="landing-hero">
+        <div className="landing-stage" aria-hidden="true">
+          <MathArt name="pythagoras" className="landing-card landing-card-1" />
+          <MathArt name="orange" className="landing-card landing-card-2" />
+          <MathArt name="euler" className="landing-card landing-card-3" />
+          <MathArt name="sheet" className="landing-card landing-card-4" />
+        </div>
+        <h1 className="landing-headline">teach the <span className="serif-em">why</span><Qed /></h1>
+        <p className="landing-lede">{BRAND_TAGLINE}</p>
+        <div className="landing-cta">
+          <Link to="/signup" className="btn btn-primary">Start a trial</Link>
+          <Link to="/try" className="btn btn-secondary">Try a free board</Link>
+        </div>
+      </main>
+    </div>
   )
 }

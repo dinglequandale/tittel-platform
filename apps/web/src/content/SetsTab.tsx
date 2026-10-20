@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Sparkles, FileText, ChevronLeft } from 'lucide-react'
 import {
   Button, Field, Input, EmptyState, PageLoading, ConfirmDialog,
   Dialog, DialogTrigger, DialogContent, DialogTitle, DialogClose,
@@ -148,100 +149,103 @@ export function SetsTab() {
     )
   }
 
-  return (
-    <div className="split-panel">
+  if (detail) {
+    return (
       <div>
-        <div className="page-toolbar" style={{ marginBottom: '0.75rem' }}>
-          <strong>Sets</strong>
-          <div className="toolbar-actions">
-            <input ref={fileRef} type="file" accept="application/json" style={{ display: 'none' }}
-              onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])} />
-            <Button variant="ghost" onClick={() => fileRef.current?.click()} disabled={importing}>
-              {importing ? 'Importing…' : 'Import JSON'}
-            </Button>
-            {aiEnabled && (
-              <AiImportDialog
-                onImported={(draft, filename) => setAiDraft({ draft, filename })}
-              />
-            )}
-            <NewSetDialog onCreate={createSet} />
-          </div>
-        </div>
-        {error && <p className="field-error">{error}</p>}
-        {sets === null ? (
-          <PageLoading />
-        ) : sets.length === 0 ? (
-          <EmptyState title="No problem sets yet" description="Compose one from the bank, or import a legacy JSON file." />
-        ) : (
-          <div className="panel-list">
-            {sets?.map((s) => (
-              <button key={s.id} className="panel-list-item" data-active={detail?.id === s.id} onClick={() => openSet(s.id)}>
-                <span className="item-title">{s.title}</span>
-                <span className="item-meta">{s.problem_count} problems · {s.template}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="editor-card">
-        {!detail ? (
-          <p className="muted">Select a set, or create a new one.</p>
-        ) : (
-          <>
-            <div className="page-toolbar" style={{ marginBottom: 0 }}>
-              <strong>{detail.title}</strong>
-              <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
-                {availableToAdd.length > 0 && (
-                  <Select onValueChange={addProblem}>
-                    <SelectTrigger><SelectValue placeholder="Add problem from bank…" /></SelectTrigger>
-                    <SelectContent>
-                      {availableToAdd.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.stem_latex.replace(/\$/g, '').slice(0, 40) || '(empty stem)'}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                <Button variant="danger" onClick={() => setArchiveConfirm(true)}>Archive</Button>
-              </div>
+        <button className="content-back" onClick={() => setDetail(null)}>
+          <ChevronLeft size={14} strokeWidth={2} /> Back to sets
+        </button>
+        <div className="editor-card">
+          <div className="page-toolbar" style={{ marginBottom: 0 }}>
+            <strong>{detail.title}</strong>
+            <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
+              {availableToAdd.length > 0 && (
+                <Select onValueChange={addProblem}>
+                  <SelectTrigger><SelectValue placeholder="Add problem from bank…" /></SelectTrigger>
+                  <SelectContent>
+                    {availableToAdd.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.stem_latex.replace(/\$/g, '').slice(0, 40) || '(empty stem)'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <Button variant="danger" onClick={() => setArchiveConfirm(true)}>Archive</Button>
             </div>
-            {detail.problems.length === 0 ? (
-              <p className="muted">No problems in this set yet.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {detail.problems.map((p, i) => (
-                  <div key={p.id} className="set-problem-row">
-                    <div style={{ minWidth: 0 }}>
-                      <RichText text={p.stem_latex} figures={p.figures.filter((f): f is typeof f & { svg: string } => !!f.svg)} />
-                    </div>
-                    <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
-                      <Button variant="ghost" onClick={() => move(i, -1)} disabled={i === 0}>↑</Button>
-                      <Button variant="ghost" onClick={() => move(i, 1)} disabled={i === detail.problems.length - 1}>↓</Button>
-                      <Button variant="ghost" onClick={() => removeProblem(p.id)}>Remove</Button>
-                    </div>
+          </div>
+          {detail.problems.length === 0 ? (
+            <p className="muted">No problems in this set yet.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {detail.problems.map((p, i) => (
+                <div key={p.id} className="set-problem-row">
+                  <div style={{ minWidth: 0 }}>
+                    <RichText text={p.stem_latex} figures={p.figures.filter((f): f is typeof f & { svg: string } => !!f.svg)} />
                   </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+                  <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
+                    <Button variant="ghost" onClick={() => move(i, -1)} disabled={i === 0}>↑</Button>
+                    <Button variant="ghost" onClick={() => move(i, 1)} disabled={i === detail.problems.length - 1}>↓</Button>
+                    <Button variant="ghost" onClick={() => removeProblem(p.id)}>Remove</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
-      <ConfirmDialog
-        open={archiveConfirm}
-        onOpenChange={setArchiveConfirm}
-        title={`Archive ${detail?.title || 'this set'}?`}
-        description="Assignments already using it are unaffected; it stops appearing for new ones."
-        confirmLabel="Archive"
-        onConfirm={() => detail && archiveSet(detail.id)}
-      />
+        <ConfirmDialog
+          open={archiveConfirm}
+          onOpenChange={setArchiveConfirm}
+          title={`Archive ${detail.title || 'this set'}?`}
+          description="Assignments already using it are unaffected; it stops appearing for new ones."
+          confirmLabel="Archive"
+          onConfirm={() => archiveSet(detail.id)}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 18 }}>
+        <AiImportDialog
+          enabled={aiEnabled}
+          onImported={(draft, filename) => setAiDraft({ draft, filename })}
+        />
+        <NewSetDialog onCreate={createSet} />
+        <input ref={fileRef} type="file" accept="application/json" style={{ display: 'none' }}
+          onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])} />
+        <Button variant="ghost" onClick={() => fileRef.current?.click()} disabled={importing}>
+          {importing ? 'Importing…' : 'Import JSON'}
+        </Button>
+      </div>
+      {error && <p className="field-error">{error}</p>}
+      {sets === null ? (
+        <PageLoading />
+      ) : sets.length === 0 ? (
+        <EmptyState title="No problem sets yet" description="Generate one from a lesson plan or worksheet, or assemble one from the bank." />
+      ) : (
+        <div className="card-grid-3">
+          {sets.map((s) => (
+            <button key={s.id} className="surface-card entity-card" onClick={() => openSet(s.id)}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <div className="entity-card-icon" style={{ background: 'var(--surface-2)', color: 'var(--ink-2)', marginBottom: 0 }}>
+                  <FileText size={17} strokeWidth={1.8} />
+                </div>
+                <span className="badge">{s.template}</span>
+              </div>
+              <div className="entity-card-title">{s.title}</div>
+              <div className="entity-card-meta"><span>{s.problem_count} problems</span></div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
-function AiImportDialog({ onImported }: { onImported: (draft: AiImportDraft, filename: string) => void }) {
+function AiImportDialog({ enabled, onImported }: { enabled: boolean; onImported: (draft: AiImportDraft, filename: string) => void }) {
   const [open, setOpen] = useState(false)
   const [hint, setHint] = useState('')
   const [importing, setImporting] = useState(false)
@@ -268,11 +272,21 @@ function AiImportDialog({ onImported }: { onImported: (draft: AiImportDraft, fil
     }
   }
 
+  if (!enabled) {
+    return (
+      <Button variant="primary" disabled title="Set ANTHROPIC_API_KEY on the server to turn this on">
+        <Sparkles size={16} strokeWidth={1.75} /> Generate from document
+      </Button>
+    )
+  }
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button variant="ghost">Import from document (AI)</Button></DialogTrigger>
+      <DialogTrigger asChild>
+        <Button variant="primary"><Sparkles size={16} strokeWidth={1.75} /> Generate from document</Button>
+      </DialogTrigger>
       <DialogContent>
-        <DialogTitle>Import from document</DialogTitle>
+        <DialogTitle>Generate a set from a document</DialogTitle>
         <p className="muted">Upload a lesson plan or worksheet (PDF, DOCX, or text) — Claude extracts the problems for you to review before anything is saved.</p>
         <Field label="Hint (optional)">
           <Input value={hint} onChange={(e) => setHint(e.target.value)} placeholder="e.g. SAT math, answers are on the last page" />
@@ -310,7 +324,7 @@ function NewSetDialog({ onCreate }: { onCreate: (title: string) => Promise<void>
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button>New set</Button></DialogTrigger>
+      <DialogTrigger asChild><Button variant="secondary">New blank set</Button></DialogTrigger>
       <DialogContent>
         <DialogTitle>New problem set</DialogTitle>
         <Field label="Title"><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>

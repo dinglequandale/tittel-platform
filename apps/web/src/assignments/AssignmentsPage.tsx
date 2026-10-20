@@ -102,9 +102,8 @@ export function AssignmentsPage() {
   }
 
   return (
-    <div>
-      <div className="page-toolbar">
-        <h1>Assignments</h1>
+    <div className="screen">
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 18 }}>
         <NewAssignmentDialog sets={sets} students={students} onCreate={create} />
       </div>
       {error && <p className="field-error">{error}</p>}
@@ -114,29 +113,36 @@ export function AssignmentsPage() {
       ) : assignments.length === 0 ? (
         <EmptyState title="No assignments yet" description="Assign a problem set to one or more students." />
       ) : (
-        <Table>
-          <thead>
-            <tr>
-              <th>Title</th><th>Set</th><th>Timing</th><th>Due</th><th>Progress</th><th />
-            </tr>
-          </thead>
-          <tbody>
-            {assignments?.map((a) => (
-              <tr key={a.id}>
-                <td>{a.title || <span className="muted">Untitled</span>}</td>
-                <td>{a.set_title}</td>
-                <td>{a.time_limit_sec ? `${Math.round(a.time_limit_sec / 60)} min` : 'Untimed'}</td>
-                <td>{a.due_at ? new Date(a.due_at).toLocaleDateString() : <span className="muted">—</span>}</td>
-                <td>{a.submitted} / {a.assigned} submitted</td>
-                <td style={{ display: 'flex', gap: '0.375rem' }}>
+        <div className="surface-card">
+          {assignments.map((a) => {
+            const pct = a.assigned ? Math.round((a.submitted / a.assigned) * 100) : 0
+            return (
+              <div key={a.id} className="data-row" style={{ gap: 20 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+                    {a.title || 'Untitled'}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>
+                    {a.set_title} · {a.assigned} student{a.assigned === 1 ? '' : 's'}
+                    {' · '}{a.time_limit_sec ? `${Math.round(a.time_limit_sec / 60)} min` : 'Untimed'}
+                    {a.due_at ? ` · Due ${new Date(a.due_at).toLocaleDateString()}` : ''}
+                  </div>
+                </div>
+                <div style={{ width: 160 }}>
+                  <div className="progress"><i style={{ width: `${pct}%` }} /></div>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-3)', textAlign: 'right', marginTop: 6 }}>
+                    {a.submitted}/{a.assigned} submitted
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '0.375rem' }}>
                   <Button variant="ghost" onClick={() => viewLinks(a.id)}>Links</Button>
                   <Button variant="ghost" onClick={() => viewAnalytics(a.id)}>Analytics</Button>
                   <Button variant="ghost" onClick={() => setArchiveTarget(a)}>Archive</Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
+                </div>
+              </div>
+            )
+          })}
+        </div>
       )}
 
       {analyticsFor && analytics && (

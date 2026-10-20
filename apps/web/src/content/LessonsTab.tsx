@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { BookOpen, ChevronLeft } from 'lucide-react'
 import { Button, EmptyState, PageLoading, ConfirmDialog } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
@@ -69,63 +70,62 @@ export function LessonsTab() {
       .catch((err) => toast((err as Error).message))
   }
 
-  return (
-    <div className="split-panel">
+  if (detail) {
+    return (
       <div>
-        <div className="page-toolbar" style={{ marginBottom: '0.75rem' }}>
-          <strong>Lessons</strong>
-          <div className="toolbar-actions">
-            <input ref={fileRef} type="file" accept="application/json" style={{ display: 'none' }}
-              onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])} />
-            <Button variant="ghost" onClick={() => fileRef.current?.click()} disabled={importing}>
-              {importing ? 'Importing…' : 'Import JSON'}
-            </Button>
-          </div>
-        </div>
-        {error && <p className="field-error">{error}</p>}
-        {lessons === null ? (
-          <PageLoading />
-        ) : lessons.length === 0 ? (
-          <EmptyState title="No lessons yet" description="Import a lesson-plan JSON file to get started." />
-        ) : (
-          <div className="panel-list">
-            {lessons?.map((l) => (
-              <button key={l.id} className="panel-list-item" data-active={detail?.id === l.id} onClick={() => openLesson(l.id)}>
-                <span className="item-title">{l.title}</span>
-                <span className="item-meta">v{l.version}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="editor-card">
-        {!detail ? (
-          <p className="muted">Select a lesson to view its pages, or import one.</p>
-        ) : (
-          <>
-            <div className="page-toolbar" style={{ marginBottom: 0 }}>
-              <strong>{detail.title}</strong>
-              <div className="toolbar-actions">
-                <Button variant="ghost" onClick={() => exportLesson(detail.id, detail.title)}>Export JSON</Button>
-                <Button variant="danger" onClick={() => setArchiveConfirm(true)}>Archive</Button>
-              </div>
+        <button className="content-back" onClick={() => setDetail(null)}>
+          <ChevronLeft size={14} strokeWidth={2} /> Back to lessons
+        </button>
+        <div className="editor-card">
+          <div className="page-toolbar" style={{ marginBottom: 0 }}>
+            <strong>{detail.title}</strong>
+            <div className="toolbar-actions">
+              <Button variant="ghost" onClick={() => exportLesson(detail.id, detail.title)}>Export JSON</Button>
+              <Button variant="danger" onClick={() => setArchiveConfirm(true)}>Archive</Button>
             </div>
-            <pre className="preview-card" style={{ overflow: 'auto', maxHeight: 480, fontSize: '0.8125rem' }}>
-              {JSON.stringify(detail.doc, null, 2)}
-            </pre>
-          </>
-        )}
-      </div>
+          </div>
+          <pre className="preview-card" style={{ overflow: 'auto', maxHeight: 480, fontSize: '0.8125rem' }}>
+            {JSON.stringify(detail.doc, null, 2)}
+          </pre>
+        </div>
 
-      <ConfirmDialog
-        open={archiveConfirm}
-        onOpenChange={setArchiveConfirm}
-        title="Archive this lesson?"
-        description="It's removed from the lesson bank."
-        confirmLabel="Archive"
-        onConfirm={() => detail && archive(detail.id)}
-      />
+        <ConfirmDialog
+          open={archiveConfirm}
+          onOpenChange={setArchiveConfirm}
+          title="Archive this lesson?"
+          description="It's removed from the lesson bank."
+          confirmLabel="Archive"
+          onConfirm={() => archive(detail.id)}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 18 }}>
+        <input ref={fileRef} type="file" accept="application/json" style={{ display: 'none' }}
+          onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])} />
+        <Button variant="ghost" onClick={() => fileRef.current?.click()} disabled={importing}>
+          {importing ? 'Importing…' : 'Import JSON'}
+        </Button>
+      </div>
+      {error && <p className="field-error">{error}</p>}
+      {lessons === null ? (
+        <PageLoading />
+      ) : lessons.length === 0 ? (
+        <EmptyState title="No lessons yet" description="Import a lesson-plan JSON file to get started." />
+      ) : (
+        <div className="card-grid-3">
+          {lessons.map((l) => (
+            <button key={l.id} className="surface-card entity-card" onClick={() => openLesson(l.id)}>
+              <div className="entity-card-icon"><BookOpen size={17} strokeWidth={1.8} /></div>
+              <div className="entity-card-title">{l.title}</div>
+              <div className="entity-card-meta"><span>Lesson</span><span>v{l.version}</span></div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

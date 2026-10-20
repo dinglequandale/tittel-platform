@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { PenTool } from 'lucide-react'
 import {
-  Button, Table, EmptyState, Field, Input, CopyButton, PageLoading, ConfirmDialog,
+  Button, PageLoading, ConfirmDialog, CopyButton, Field, Input,
   Dialog, DialogTrigger, DialogContent, DialogTitle, DialogClose,
 } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
@@ -65,52 +67,44 @@ export function LivePage() {
   }
 
   return (
-    <div>
-      <div className="page-toolbar">
-        <h1>Live</h1>
-        <NewBoardDialog onCreate={createBoard} />
-      </div>
+    <div className="screen">
       {error && <p className="field-error">{error}</p>}
 
       {boards === null ? (
         <PageLoading />
-      ) : boards.length === 0 ? (
-        <EmptyState title="No boards yet" description="Start a persistent board — its link stays the same every session." />
       ) : (
-        <Table>
-          <thead>
-            <tr>
-              <th>Title</th>
-              <th>For</th>
-              <th>Link</th>
-              <th>Created</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {boards?.map((b) => (
-              <tr key={b.id}>
-                <td>{b.title || <span className="muted">Untitled board</span>}</td>
-                <td>{boardOwner(b) || <span className="muted">—</span>}</td>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                    <code>{boardUrl(b.id)}</code>
-                    <CopyButton text={boardUrl(b.id)} />
+        <>
+          {boards.length > 0 && (
+            <div className="card-grid-3" style={{ marginBottom: 24 }}>
+              {boards.map((b) => (
+                <div key={b.id} className="surface-card" style={{ padding: 20 }}>
+                  <div style={{ fontSize: 14.5, fontWeight: 600, marginBottom: 4 }}>
+                    {b.title || 'Untitled board'}
                   </div>
-                </td>
-                <td>{new Date(b.created_at).toLocaleDateString()}</td>
-                <td style={{ display: 'flex', gap: '0.375rem' }}>
-                  <Link to={`/b/${b.id}`}>
-                    <Button variant="ghost">Open</Button>
-                  </Link>
-                  <Button variant="ghost" onClick={() => setArchiveTarget(b)}>
-                    Archive
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
+                  <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 16 }}>
+                    {boardOwner(b) || 'No roster'} · created {new Date(b.created_at).toLocaleDateString()}
+                  </div>
+                  <Link to={`/b/${b.id}`} className="card-cta">Open board</Link>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                    <CopyButton text={boardUrl(b.id)} />
+                    <Button variant="ghost" onClick={() => setArchiveTarget(b)}>Archive</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="dashed-cta">
+            <div className="dashed-cta-icon">
+              <PenTool size={21} strokeWidth={1.8} />
+            </div>
+            <div className="dashed-cta-body">
+              <div className="dashed-cta-title">Start a persistent board</div>
+              <div className="dashed-cta-sub">Its link stays the same every session — send it once and reuse it.</div>
+            </div>
+            <NewBoardDialog onCreate={createBoard} trigger={<Button variant="secondary">New board</Button>} />
+          </div>
+        </>
       )}
 
       <ConfirmDialog
@@ -125,7 +119,7 @@ export function LivePage() {
   )
 }
 
-function NewBoardDialog({ onCreate }: { onCreate: (title: string) => Promise<void> }) {
+function NewBoardDialog({ onCreate, trigger }: { onCreate: (title: string) => Promise<void>; trigger: ReactNode }) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [saving, setSaving] = useState(false)
@@ -144,9 +138,7 @@ function NewBoardDialog({ onCreate }: { onCreate: (title: string) => Promise<voi
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>New board</Button>
-      </DialogTrigger>
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent>
         <DialogTitle>New board</DialogTitle>
         <Field label="Title (optional)">

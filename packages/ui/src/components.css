@@ -93,10 +93,12 @@
 .table th {
   position: sticky;
   top: 0;
-  background: var(--surface-2);
-  color: var(--ink-2);
-  font-weight: 500;
-  font-size: var(--text-xs);
+  background: var(--surface);
+  color: var(--ink-3);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
   border-bottom: 1px solid var(--line);
 }
 .table td { border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
@@ -133,68 +135,121 @@
 .stat-tile-trend-down { color: var(--incorrect); }
 
 /* --- Shell (sidebar/topbar) --------------------------------------------------- */
-.shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; background: var(--bg); }
+.shell { display: grid; grid-template-columns: 232px 1fr; height: 100vh; background: var(--bg); }
+.shell-body { display: flex; flex-direction: column; min-width: 0; height: 100vh; overflow: hidden; }
 .shell-sidebar {
   border-right: 1px solid var(--line);
-  background: var(--surface);
-  padding: var(--space-4);
+  background: var(--surface-2);
+  padding: 20px 14px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
 }
-.shell-sidebar-brand { font-family: var(--font-display); font-size: var(--text-lg); margin-bottom: var(--space-6); }
+
+/* Brand mark: pine diamond + Fraunces wordmark */
+.shell-brand { display: flex; align-items: center; gap: 9px; padding: 6px 8px 22px 8px; }
+.shell-brand-mark { width: 10px; height: 10px; background: var(--accent); transform: rotate(45deg); border-radius: 2px; }
+.shell-brand-name { font-family: var(--font-display); font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
+
+.shell-nav { display: flex; flex-direction: column; gap: 2px; }
 .shell-nav-item {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  height: 36px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-control);
+  gap: 11px;
+  padding: 9px 12px;
+  border-radius: 8px;
   color: var(--ink-2);
   font-size: var(--text-sm);
+  font-weight: 500;
   text-decoration: none;
 }
-.shell-nav-item:hover { background: var(--surface-2); color: var(--ink); }
-.shell-nav-item[aria-current='page'] { background: var(--accent-wash); color: var(--accent); font-weight: 500; }
+.shell-nav-item:hover { background: var(--accent-wash); color: var(--accent); }
+.shell-nav-item[aria-current='page'] { background: var(--accent-wash); color: var(--accent); }
 .shell-nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.shell-sidebar-spacer { flex: 1; }
+
+/* Org / account footer pinned to the sidebar bottom */
+.shell-sidebar-footer { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 8px; }
+.shell-org { display: flex; align-items: center; gap: 9px; }
+.shell-org-avatar {
+  width: 30px; height: 30px; flex-shrink: 0;
+  border-radius: 8px; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-size: 13px; font-weight: 600;
+}
+.shell-org-meta { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
+.shell-org-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell-org-sub { font-size: 11.5px; color: var(--ink-3); background: none; border: none; padding: 0; text-align: left; cursor: pointer; font-family: var(--font-body); }
+.shell-org-sub:hover { color: var(--accent); }
+.shell-org-sub:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
 .shell-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 56px;
-  padding: 0 var(--space-6);
+  flex-shrink: 0;
+  height: 64px;
+  padding: 0 28px;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
 }
-.shell-main { padding: var(--space-6); overflow: auto; }
+.shell-topbar-title { font-family: var(--font-display); font-size: 22px; font-weight: 600; }
+.shell-topbar-actions { display: flex; align-items: center; gap: 14px; }
+.shell-search {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface-2); border-radius: 20px;
+  padding: 8px 14px; width: 240px;
+  color: var(--ink-3); font-size: var(--text-xs);
+  border: none; cursor: text; font-family: var(--font-body);
+}
+.shell-new-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--accent); color: #fff;
+  padding: 8px 16px; border-radius: var(--radius-control);
+  font-size: 13.5px; font-weight: 600; text-decoration: none;
+  border: none; cursor: pointer; font-family: var(--font-body);
+}
+.shell-new-btn:hover { background: var(--accent-hover); }
+.shell-new-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.shell-main { flex: 1; overflow-y: auto; padding: 32px 36px 60px 36px; }
 
 /* Below 900px (laptop half-screen): sidebar collapses to an icon rail —
    labels hide, nav items center on their icon. */
 @media (max-width: 900px) {
   .shell { grid-template-columns: 64px 1fr; }
   .shell-sidebar { padding: var(--space-2); align-items: center; }
-  .shell-sidebar-brand { display: none; }
-  .shell-nav-item { justify-content: center; width: 40px; padding: 0; }
-  .shell-nav-label { display: none; }
+  .shell-brand { padding: 6px 0 18px 0; }
+  .shell-brand-name, .shell-nav-label, .shell-org-meta { display: none; }
+  .shell-nav-item { justify-content: center; padding: 9px 0; }
   .shell-topbar { padding: 0 var(--space-4); }
+  .shell-search { display: none; }
   .shell-main { padding: var(--space-4); }
 }
 
-/* --- Tabs --------------------------------------------------------------------- */
-.tabs-list { display: flex; gap: var(--space-4); border-bottom: 1px solid var(--line); }
-.tabs-trigger {
-  padding: var(--space-2) 0;
-  border-bottom: 2px solid transparent;
-  color: var(--ink-2);
-  font-size: var(--text-sm);
-  background: none;
-  border-top: none;
-  border-left: none;
-  border-right: none;
-  cursor: pointer;
+/* --- Tabs (segmented pill control, per design comp) --------------------------- */
+.tabs-list {
+  display: inline-flex;
+  gap: 6px;
+  background: var(--surface-2);
+  padding: 4px;
+  border-radius: 9px;
+  width: fit-content;
+  margin-bottom: 20px;
 }
-.tabs-trigger[data-state='active'] { color: var(--accent); border-bottom-color: var(--accent); }
-.tabs-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tabs-trigger {
+  padding: 7px 15px;
+  border-radius: 7px;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+}
+.tabs-trigger[data-state='active'] { background: var(--surface); color: var(--accent); }
+.tabs-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* --- Dialog / Popover / Menu ---------------------------------------------------- */
 .overlay { position: fixed; inset: 0; background: rgb(0 0 0 / 0.3); animation: fade var(--duration-panel) var(--ease); }
@@ -300,3 +355,112 @@
   text-align: center;
   padding: var(--space-4) 0;
 }
+
+/* --- Design screens (dashboard / content / analytics reskin) ----------------- */
+/* Shared building blocks for the authenticated app screens — matched to the
+   Slate design comp. Statuses reuse the dark-mode-aware .badge-* classes. */
+.screen { max-width: 1080px; }
+.screen-narrow { max-width: 920px; }
+
+.screen-head { margin-bottom: 26px; }
+.screen-head h1 { font-family: var(--font-display); font-size: 28px; font-weight: 500; margin: 0; }
+.screen-head p { font-size: 14.5px; color: var(--ink-2); margin: 4px 0 0; }
+
+.surface-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-card); }
+.card-pad { padding: 20px 22px; }
+.card-title { font-size: 15px; font-weight: 600; }
+
+.card-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.card-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.card-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+@media (max-width: 900px) {
+  .card-grid-2, .card-grid-3, .card-grid-4 { grid-template-columns: 1fr; }
+}
+
+.avatar-sq {
+  width: 28px; height: 28px; flex-shrink: 0;
+  border-radius: 7px; background: var(--surface-2); color: var(--ink-2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600;
+}
+.avatar-lg {
+  width: 52px; height: 52px; border-radius: 12px;
+  background: var(--accent-wash); color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-size: 20px; font-weight: 600; flex-shrink: 0;
+}
+
+/* Data list rows inside a surface-card (students / assignments / bank) */
+.data-row { display: flex; align-items: center; gap: 16px; padding: 13px 20px; border-bottom: 1px solid var(--surface-2); font-size: 13.5px; }
+.data-row:last-child { border-bottom: none; }
+a.data-row, button.data-row { width: 100%; text-align: left; background: none; color: inherit; font-family: inherit; cursor: pointer; text-decoration: none; }
+a.data-row:hover, button.data-row:hover { background: var(--bg); }
+.data-row-name { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.data-head { display: flex; align-items: center; gap: 16px; padding: 12px 20px; font-size: 12px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid var(--line); }
+
+/* Segmented pill control (content tabs) */
+.seg { display: flex; gap: 6px; background: var(--surface-2); padding: 4px; border-radius: 9px; width: fit-content; }
+.seg button {
+  font-size: 13px; font-weight: 600; padding: 7px 15px; border-radius: 7px;
+  border: none; background: none; color: var(--ink-2); cursor: pointer; font-family: var(--font-body);
+}
+.seg button[data-active='true'] { background: var(--surface); color: var(--accent); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Filter pills (students) */
+.filter-pills { display: flex; gap: 8px; }
+.filter-pill {
+  font-size: 13px; font-weight: 500; padding: 7px 14px; border-radius: 20px;
+  border: none; background: none; color: var(--ink-2); cursor: pointer; font-family: var(--font-body);
+}
+.filter-pill[data-active='true'] { background: var(--accent-wash); color: var(--accent); font-weight: 600; }
+.filter-pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Entity cards (lessons / problem sets) — hover lift + accent border */
+.entity-card { display: block; width: 100%; text-align: left; padding: 18px; text-decoration: none; color: inherit; cursor: pointer; font-family: var(--font-body); font-size: var(--text-sm); }
+.entity-card:hover { box-shadow: var(--shadow-2); border-color: var(--accent); }
+.entity-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Back link (content editor → library) */
+.content-back { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 18px; padding: 0; background: none; border: none; cursor: pointer; font-family: var(--font-body); font-size: 13px; color: var(--ink-2); }
+.content-back:hover { color: var(--accent); }
+.entity-card-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 8px;
+  background: var(--accent-wash); color: var(--accent); margin-bottom: 14px;
+}
+.entity-card-title { font-size: 14.5px; font-weight: 600; margin-bottom: 8px; line-height: 1.35; }
+.entity-card-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-3); }
+
+.tag-chip { font-size: 11px; font-weight: 600; background: var(--surface-2); color: var(--ink-2); padding: 3px 8px; border-radius: 20px; }
+
+/* Progress bar + completion ring */
+.progress { height: 6px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.progress > i { display: block; height: 100%; background: var(--accent); }
+.ring { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; }
+.ring > span { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--surface); font-size: 9.5px; font-weight: 600; }
+
+/* Mastery / bar-list rows (analytics) */
+.bar-row { display: flex; align-items: center; gap: 16px; padding: 9px 0; }
+.bar-row-label { width: 200px; font-size: 13px; font-weight: 500; }
+.bar-track { flex: 1; height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.bar-track > i { display: block; height: 100%; }
+.bar-row-val { width: 38px; text-align: right; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Dashed call-to-action row (live / upload) */
+.dashed-cta { border: 1.5px dashed var(--line); border-radius: var(--radius-card); padding: 30px; display: flex; align-items: center; gap: 20px; background: var(--surface); }
+.dashed-cta-icon { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 10px; background: var(--surface-2); color: var(--accent); flex-shrink: 0; }
+.dashed-cta-body { flex: 1; }
+.dashed-cta-title { font-size: 14.5px; font-weight: 600; }
+.dashed-cta-sub { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+
+/* Full-width accent CTA inside a card (Start class / Open board) */
+.card-cta { display: block; width: 100%; text-align: center; background: var(--accent); color: #fff; padding: 9px; border: none; border-radius: var(--radius-control); font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; font-family: var(--font-body); }
+.card-cta:hover { background: var(--accent-hover); }
+.card-cta:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Settings rows */
+.kv-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--surface-2); }
+.kv-row:last-child { border-bottom: none; }
+.kv-row-key { font-size: 13px; color: var(--ink-2); }
+.kv-row-val { font-size: 13px; font-weight: 600; }

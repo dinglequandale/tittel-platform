@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Button, Field, Input, Table, EmptyState, CopyButton, PageLoading, ConfirmDialog,
+  Button, Field, Input, EmptyState, CopyButton, PageLoading, ConfirmDialog,
   Dialog, DialogTrigger, DialogContent, DialogTitle, DialogClose,
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@tittel/ui'
@@ -41,6 +41,18 @@ export function StudentsPage() {
   const [editing, setEditing] = useState<Student | null>(null)
   const [archiveTarget, setArchiveTarget] = useState<Student | null>(null)
   const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null)
+  const [filter, setFilter] = useState<'all' | 'board' | 'noboard'>('all')
+
+  // Which group(s) each student belongs to — the students endpoint doesn't
+  // carry this, so join it in from the groups list for the table's Group column.
+  const groupOf = new Map<string, string>()
+  for (const g of groups ?? []) {
+    for (const m of g.members) if (!groupOf.has(m.id)) groupOf.set(m.id, g.name)
+  }
+
+  const withBoard = (students ?? []).filter((s) => s.board_id)
+  const noBoard = (students ?? []).filter((s) => !s.board_id)
+  const shown = filter === 'board' ? withBoard : filter === 'noboard' ? noBoard : (students ?? [])
 
   async function reload() {
     try {
@@ -141,9 +153,19 @@ export function StudentsPage() {
   }
 
   return (
-    <div>
-      <div className="page-toolbar">
-        <h1>Students</h1>
+    <div className="screen">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div className="filter-pills">
+          <button className="filter-pill" data-active={filter === 'all'} onClick={() => setFilter('all')}>
+            All ({students?.length ?? 0})
+          </button>
+          <button className="filter-pill" data-active={filter === 'board'} onClick={() => setFilter('board')}>
+            With board ({withBoard.length})
+          </button>
+          <button className="filter-pill" data-active={filter === 'noboard'} onClick={() => setFilter('noboard')}>
+            Needs board ({noBoard.length})
+          </button>
+        </div>
         <div className="toolbar-actions">
           <NewGroupDialog onCreate={createGroup} />
           <NewStudentDialog onCreate={createStudent} />
@@ -157,48 +179,35 @@ export function StudentsPage() {
       ) : students.length === 0 ? (
         <EmptyState title="No students yet" description="Add your first student to get started." />
       ) : (
-        <Table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Portal link</th>
-              <th>Board</th>
-              <th>Notes</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {students.map((s) => (
-              <tr key={s.id}>
-                <td>{s.name}</td>
-                <td>{s.email || <span className="muted">—</span>}</td>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                    <code>{portalUrl(s.portal_token)}</code>
-                    <CopyButton text={portalUrl(s.portal_token)} />
-                  </div>
-                </td>
-                <td>
-                  {s.board_id ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                      <code>{boardUrl(s.board_id)}</code>
-                      <CopyButton text={boardUrl(s.board_id)} />
-                      <Link to={`/b/${s.board_id}`}><Button variant="ghost">Open</Button></Link>
-                    </div>
-                  ) : (
-                    <Button variant="ghost" onClick={() => createStudentBoard(s.id)}>Create board</Button>
-                  )}
-                </td>
-                <td>{s.notes || <span className="muted">—</span>}</td>
-                <td style={{ display: 'flex', gap: '0.375rem' }}>
-                  <Button variant="ghost" onClick={() => setEditing(s)}>Edit</Button>
-                  <Button variant="ghost" onClick={() => setArchiveTarget(s)}>Archive</Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
+        <div className="surface-card" style={{ overflow: 'hidden' }}>
+          <div className="stu-row stu-head">
+            <span>Name</span><span>Group</span><span>Portal</span><span>Board</span><span>Status</span><span />
+          </div>
+          {shown.map((s) => (
+            <div key={s.id} className="stu-row">
+              <div className="data-row-name">
+                <span className="avatar-sq">{s.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}</span>
+                <span>{s.name}</span>
+              </div>
+              <span style={{ color: 'var(--ink-2)' }}>{groupOf.get(s.id) || <span className="muted">—</span>}</span>
+              <CopyButton text={portalUrl(s.portal_token)} />
+              <span>
+                {s.board_id ? (
+                  <Link to={`/b/${s.board_id}`}><Button variant="ghost">Open board</Button></Link>
+                ) : (
+                  <Button variant="ghost" onClick={() => createStudentBoard(s.id)}>Create board</Button>
+                )}
+              </span>
+              <span className={s.board_id ? 'badge badge-correct' : 'badge badge-warning'}>
+                {s.board_id ? 'Ready' : 'Needs board'}
+              </span>
+              <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }}>
+                <Button variant="ghost" onClick={() => setEditing(s)}>Edit</Button>
+                <Button variant="ghost" onClick={() => setArchiveTarget(s)}>Archive</Button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       <h2 style={{ marginTop: '2rem', fontFamily: 'var(--font-display)', fontSize: '1.125rem' }}>Groups</h2>

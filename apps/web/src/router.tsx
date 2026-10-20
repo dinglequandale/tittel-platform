@@ -5,7 +5,6 @@ import { Signup } from './auth/Signup.tsx'
 import { RequireAuth } from './shell/RequireAuth.tsx'
 import { AppShell } from './shell/AppShell.tsx'
 import { Home } from './shell/Home.tsx'
-import { ModulePlaceholder } from './shell/ModulePlaceholder.tsx'
 import { StudentsPage } from './students/StudentsPage.tsx'
 import { ContentPage } from './content/ContentPage.tsx'
 import { AssignmentsPage } from './assignments/AssignmentsPage.tsx'
@@ -15,6 +14,8 @@ import { ReviewPage } from './review/ReviewPage.tsx'
 import { BoardPage } from './board/BoardPage.tsx'
 import { TryLanding } from './board/TryLanding.tsx'
 import { LivePage } from './live/LivePage.tsx'
+import { AnalyticsPage } from './analytics/AnalyticsPage.tsx'
+import { SettingsPage } from './settings/SettingsPage.tsx'
 import { ComingSoon } from './ComingSoon.tsx'
 
 // Route map — PLAN.md §4.3. Student-facing surfaces (/try, /b, /s, /hw,
@@ -35,8 +36,8 @@ export function Router() {
           <Route path="content" element={<ContentPage />} />
           <Route path="live" element={<LivePage />} />
           <Route path="assignments" element={<AssignmentsPage />} />
-          <Route path="analytics" element={<ModulePlaceholder title="Analytics" />} />
-          <Route path="settings" element={<ModulePlaceholder title="Settings" />} />
+          <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Route>
 

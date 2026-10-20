@@ -4,7 +4,7 @@ export function Shell({ sidebar, topbar, children }: { sidebar: ReactNode; topba
   return (
     <div className="shell">
       <aside className="shell-sidebar">{sidebar}</aside>
-      <div>
+      <div className="shell-body">
         {topbar && <header className="shell-topbar">{topbar}</header>}
         <main className="shell-main">{children}</main>
       </div>

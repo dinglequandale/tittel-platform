@@ -529,6 +529,9 @@ the aha (live board + a graded attempt) in under 10 minutes without documentatio
 
 ## 8. Design system — "Slate" visual language (closes gap #3)
 
+> **SUPERSEDED 2026-10-20 by `OVERHAUL.md` §1–2** (Konrad's call: the website's whimsical
+> editorial style replaces "quiet academic"). Kept for history; do not build from it.
+
 The current apps look default because nothing was specified. This section is the specification;
 the executing model must treat it as binding, not inspirational.
 

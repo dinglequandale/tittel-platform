@@ -6,20 +6,17 @@ import { TagsTab } from './TagsTab.tsx'
 
 export function ContentPage() {
   return (
-    <div>
-      <div className="page-toolbar">
-        <h1>Content</h1>
-      </div>
-      <Tabs defaultValue="problems">
+    <div className="screen">
+      <Tabs defaultValue="lessons">
         <TabsList>
-          <TabsTrigger value="problems">Problems</TabsTrigger>
-          <TabsTrigger value="sets">Sets</TabsTrigger>
           <TabsTrigger value="lessons">Lessons</TabsTrigger>
+          <TabsTrigger value="sets">Problem sets</TabsTrigger>
+          <TabsTrigger value="problems">Problem bank</TabsTrigger>
           <TabsTrigger value="tags">Tags</TabsTrigger>
         </TabsList>
-        <TabsContent value="problems"><ProblemsTab /></TabsContent>
-        <TabsContent value="sets"><SetsTab /></TabsContent>
         <TabsContent value="lessons"><LessonsTab /></TabsContent>
+        <TabsContent value="sets"><SetsTab /></TabsContent>
+        <TabsContent value="problems"><ProblemsTab /></TabsContent>
         <TabsContent value="tags"><TagsTab /></TabsContent>
       </Tabs>
     </div>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { loadDesmos } from './desmos.ts'
+import { emptyState, type GraphState } from '@tittel/graph'
+import { GraphCalculator, isGraphState } from '../graph/GraphCalculator.tsx'
 import type { ControlChannel } from './controlChannel.ts'
 
 // The floating panel's position/size, in CSS pixels (top-left anchored).
@@ -27,24 +28,20 @@ function clampPos(g: Geom): Geom {
   }
 }
 
-// We only broadcast state changes that happen within this window after a real
-// local interaction (pointer/keyboard) on our own calculator. Desmos mutates
-// state on its own after setState (recomputed values, slider bounds, running
-// animations) and keeps firing 'change'; those have no local interaction behind
-// them, so a receiver never echoes them back — which is what breaks the
-// two-editor feedback loop, regardless of whether getState/setState is stable.
-const INTERACTION_WINDOW_MS = 1500
+// Trailing throttle for broadcasting edits, so fast typing and drags stay calm.
+const SEND_EVERY_MS = 60
 
-// A floating Desmos panel.
+// A floating graphing-calculator panel (our own, GRAPH-SPEC G1).
 //  - Tutor (host): always an editor. Changes broadcast to everyone; a footer
 //    switch toggles whether students may edit too.
-//  - Student (guest): a live mirror, read-only by default (transparent shield).
-//    When the tutor enables editing, the shield lifts and the student can drive
-//    the shared calculator; their changes flow back to everyone.
+//  - Student (guest): a live mirror, read-only by default. When the tutor
+//    enables editing, the student can drive the shared calculator; their
+//    changes flow back to everyone.
 //
-// Echo suppression is content-based: we never broadcast a state equal to the one
-// we last sent or applied. This is timing-independent, so two editors can't
-// ping-pong updates at each other (the bug that caused the calculator to glitch).
+// No echo loop is possible: we broadcast only from GraphCalculator's onChange,
+// which fires for user edits only, and applying a remote state never calls it.
+// (The Desmos version needed an interaction-timing workaround, PLAN §9.2,
+// because Desmos rewrote its own state after every setState.)
 export function Calculator({
   channel,
   isHost,
@@ -66,12 +63,12 @@ export function Calculator({
   /** A private, non-synced scratch calculator (free reign): full edit, no relay. */
   personal?: boolean
 }) {
-  const mountRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-  const calcRef = useRef<any>(null)
-  const amEditorRef = useRef(isHost || personal)
-  const lastInteractionRef = useRef(0)
-  const [error, setError] = useState<string | null>(null)
+  const [graph, setGraph] = useState<GraphState>(() =>
+    !personal && isGraphState(initialState) ? initialState : emptyState(),
+  )
+  const graphRef = useRef(graph)
+  graphRef.current = graph
 
   const amEditor = isHost || canEdit || personal
 
@@ -134,109 +131,52 @@ export function Calculator({
     el.addEventListener('pointerup', onUp)
   }
 
-  // Reflect edit access without recreating the calculator.
-  useEffect(() => {
-    amEditorRef.current = amEditor
-    calcRef.current?.updateSettings?.({ lockViewport: !amEditor })
-  }, [amEditor])
+  // Broadcasting: trailing-throttled, user edits only (see the note above).
+  const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastSent = useRef(0)
+  const amEditorRef = useRef(amEditor)
+  amEditorRef.current = amEditor
+  const flush = () => {
+    sendTimer.current = null
+    lastSent.current = performance.now()
+    channel.send({ type: 'calc', action: 'state', state: graphRef.current })
+  }
+  const onUserChange = (next: GraphState) => {
+    setGraph(next)
+    graphRef.current = next
+    if (personal || !amEditorRef.current) return
+    const wait = SEND_EVERY_MS - (performance.now() - lastSent.current)
+    if (wait <= 0) flush()
+    else if (!sendTimer.current) sendTimer.current = setTimeout(flush, wait)
+  }
 
   useEffect(() => {
-    let disposed = false
-    const cleanups: Array<() => void> = []
-    // The last state we sent OR applied. We never re-broadcast this exact state.
-    let syncedJSON = ''
-    let lastSent = 0
-    let timer: ReturnType<typeof setTimeout> | null = null
-
-    loadDesmos()
-      .then((Desmos) => {
-        if (disposed || !mountRef.current) return
-        const calc = Desmos.GraphingCalculator(mountRef.current, {
-          autosize: true,
-          expressions: true,
-          settingsMenu: isHost,
-          lockViewport: !amEditorRef.current,
-        })
-        calcRef.current = calc
-
-        // Track genuine local interaction with this calculator. Only such
-        // changes are allowed to broadcast (see INTERACTION_WINDOW_MS).
-        const markInteraction = () => {
-          lastInteractionRef.current = performance.now()
-        }
-        const el = mountRef.current!
-        const interactionEvents = ['pointerdown', 'pointermove', 'pointerup', 'keydown', 'wheel', 'input']
-        interactionEvents.forEach((e) => el.addEventListener(e, markInteraction, true))
-        cleanups.push(() => interactionEvents.forEach((e) => el.removeEventListener(e, markInteraction, true)))
-
-        const applyRemote = (state: unknown) => {
-          const json = JSON.stringify(state)
-          if (json === syncedJSON) return // already showing this — no disruptive setState
-          calc.setState(state, { allowUndo: false })
-          // Record what's actually on screen now so the resulting 'change' event
-          // doesn't bounce it straight back out.
-          syncedJSON = JSON.stringify(calc.getState())
-        }
-
-        const broadcast = () => {
-          timer = null
-          if (!amEditorRef.current) return
-          // Only emit changes driven by our own recent interaction — never the
-          // churn from applying a remote update. This is the loop breaker.
-          if (performance.now() - lastInteractionRef.current > INTERACTION_WINDOW_MS) return
-          const json = JSON.stringify(calc.getState())
-          if (json === syncedJSON) return // nothing genuinely new
-          syncedJSON = json
-          lastSent = performance.now()
-          channel.send({ type: 'calc', action: 'state', state: JSON.parse(json) })
-        }
-        // Throttle change-driven broadcasts (trailing), so fast typing stays calm.
-        const onChange = () => {
-          if (!amEditorRef.current) return
-          const elapsed = performance.now() - lastSent
-          if (elapsed >= 80) broadcast()
-          else if (!timer) timer = setTimeout(broadcast, 80 - elapsed)
-        }
-
-        // A personal scratch calculator is fully local — no relay in or out.
-        if (!personal) {
-          cleanups.push(channel.on('calc', (m) => m.action === 'state' && m.state && applyRemote(m.state)))
-          calc.observeEvent('change', onChange)
-          cleanups.push(() => {
-            if (timer) clearTimeout(timer)
-            calc.unobserveEvent('change')
-          })
-
-          if (isHost) {
-            const pushOpen = () => {
-              channel.send({ type: 'calc', action: 'open' })
-              syncedJSON = JSON.stringify(calc.getState())
-              channel.send({ type: 'calc', action: 'state', state: JSON.parse(syncedJSON) })
-              // Re-assert position/size so students sync even if the first geom
-              // broadcast raced the socket opening (or after a reconnect).
-              channel.send({ type: 'calc', action: 'geom', geom: geomRef.current })
-            }
-            pushOpen()
-            cleanups.push(channel.on('open', pushOpen))
-            cleanups.push(() => channel.send({ type: 'calc', action: 'close' }))
-          } else if (initialState) {
-            applyRemote(initialState)
-          }
-        }
-      })
-      .catch((e) => setError(e?.message ?? String(e)))
-
-    return () => {
-      disposed = true
-      cleanups.forEach((fn) => fn())
-      if (calcRef.current) {
-        calcRef.current.destroy()
-        calcRef.current = null
+    // A personal scratch calculator is fully local: no relay in or out.
+    if (personal) return
+    const off = channel.on('calc', (m) => {
+      if (m.action === 'state' && isGraphState(m.state)) setGraph(m.state)
+    })
+    let offOpen: (() => void) | undefined
+    if (isHost) {
+      const pushOpen = () => {
+        channel.send({ type: 'calc', action: 'open' })
+        channel.send({ type: 'calc', action: 'state', state: graphRef.current })
+        // Re-assert position/size so students sync even if the first geom
+        // broadcast raced the socket opening (or after a reconnect).
+        channel.send({ type: 'calc', action: 'geom', geom: geomRef.current })
       }
+      pushOpen()
+      offOpen = channel.on('open', pushOpen)
     }
-    // channel/isHost stable per mount; initialState read once; canEdit handled above.
+    return () => {
+      off()
+      offOpen?.()
+      if (sendTimer.current) clearTimeout(sendTimer.current)
+      if (isHost) channel.send({ type: 'calc', action: 'close' })
+    }
+    // channel/isHost/personal are stable per mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channel, isHost])
+  }, [channel, isHost, personal])
 
   return (
     <div
@@ -257,19 +197,12 @@ export function Calculator({
         onPointerDown={geomEditable ? startDrag : undefined}
       >
         <span className="calc-title">
-          {personal ? 'My calculator' : `Desmos${!isHost && !canEdit ? ' · live' : ''}`}
+          {personal ? 'My calculator' : `Calculator${!isHost && !canEdit ? ' · live' : ''}`}
         </span>
         {!isHost && canEdit && !personal && <span className="calc-badge">you can edit</span>}
       </div>
       <div className="calc-body">
-        {error ? (
-          <div className="calc-error">{error}</div>
-        ) : (
-          <>
-            <div ref={mountRef} className="calc-desmos" />
-            {!amEditor && <div className="calc-shield" />}
-          </>
-        )}
+        <GraphCalculator state={graph} onChange={onUserChange} editable={amEditor} />
       </div>
       {isHost && (
         <div className="calc-access">

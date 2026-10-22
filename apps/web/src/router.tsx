@@ -17,6 +17,7 @@ import { LivePage } from './live/LivePage.tsx'
 import { AnalyticsPage } from './analytics/AnalyticsPage.tsx'
 import { SettingsPage } from './settings/SettingsPage.tsx'
 import { NotFound } from './NotFound.tsx'
+import { GraphPlayground } from './graph/GraphPlayground.tsx'
 
 // Route map — PLAN.md §4.3. Student-facing surfaces (/try, /b, /s, /hw,
 // /review) are chromeless and ported in Phases 2-3; they're stubbed here so
@@ -45,6 +46,7 @@ export function Router() {
       <Route path="/s/:studentToken" element={<PortalPage />} />
       <Route path="/hw/:attemptToken" element={<RunnerPage />} />
       <Route path="/review/:attemptToken" element={<ReviewPage />} />
+      {import.meta.env.DEV && <Route path="/dev/graph" element={<GraphPlayground />} />}
       <Route path="*" element={<NotFound />} />
     </Routes>
   )

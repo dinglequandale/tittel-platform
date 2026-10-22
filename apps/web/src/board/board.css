@@ -381,7 +381,7 @@
   max-width: 38vw;
 }
 
-/* Floating Desmos panel (resizable), parked bottom-right above the dock. */
+/* Floating calculator panel (resizable), parked bottom-right above the dock. */
 .calc-panel {
   position: fixed;
   right: 12px;
@@ -438,26 +438,6 @@
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
-}
-
-.calc-desmos {
-  position: absolute;
-  inset: 0;
-}
-
-/* Transparent shield: students see the live calculator but can't touch it. */
-.calc-shield {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  background: transparent;
-  cursor: default;
-}
-
-.calc-error {
-  padding: 1rem;
-  color: var(--incorrect);
-  font-size: 0.85rem;
 }
 
 /* Tutor-only footer: one switch to let all students edit the calculator. */

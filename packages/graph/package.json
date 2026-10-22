@@ -1,0 +1,20 @@
+{
+  "name": "@tittel/graph",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Clean-room graphing calculator engine (docs/GRAPH-SPEC.md): LaTeX parser, evaluator, plotter, points of interest.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx test/engine.test.mjs"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}

@@ -339,6 +339,25 @@ Priority: **A** = G1, **B** = G2, **C** = G3, **D** = G4 (see §6).
 
 **SAT mode** = feature flags: images, folders and notes off; log mode forced (§1).
 
+**G1 status (2026-10-22):**
+- **Built.**
+  - Engine: `packages/graph`, with 68 tests (`npm test`) covering catalogue items 1–10, 14–15,
+    26–27 and 34, plus the G1 golden cases.
+  - UI: `apps/web/src/graph`, on the vendored MathQuill.
+  - Board: `Calculator.tsx` now uses our calculator, `desmos.ts` is deleted, and sync is plain
+    full-state broadcast on user edits.
+- **Verified in the browser** (dev-only `/dev/graph`):
+  - typing (`sinx` → `\sin x`), Enter for new rows
+  - live curves, the add-slider prompt, slider drag
+  - curve selection, the exact POI card `(π/2, 1)`, export to a row
+  - the `= 0.333333333333` value chip with fraction toggle, undo, dragging `(a, a²)`
+- **Deviations:**
+  - Sync is full state, not ops (§2.3). It's simpler; state is a few KB and the server caps
+    it at 256 KB. Revisit if it ever matters.
+  - Inequalities, implicit curves, the keypad and slider animation are G2/G3 as planned.
+- **Not yet verified:** visual styling by eye (screenshots were unavailable), and a two-window
+  board session. Konrad browser-check.
+
 ---
 
 ## 7. Golden test cases (seed set; extend continuously)

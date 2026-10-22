@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
+    "@tittel/graph": "*",
     "@tittel/shared": "*",
     "@tittel/ui": "*",
     "@tldraw/sync": "3.15.5",

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Button, Dialog, DialogContent, DialogTitle, DialogClose } from '@tittel/ui'
-import { apiFetch } from '../lib/api.ts'
+import { apiFetch, linkErrorMessage } from '../lib/api.ts'
 import { RichText } from '../lib/Math.tsx'
 
 interface RChoice { id: string; content: string }
@@ -56,7 +56,9 @@ export function RunnerPage() {
   const markedRef = useRef(marked)
   markedRef.current = marked
   const timeRef = useRef<{ problemId: string; at: number } | null>(null)
-  const debounce = useRef<number | undefined>(undefined)
+  // One pending save per question, so answering the next question quickly
+  // can't cancel the previous one's save.
+  const debounce = useRef<Record<string, number>>({})
   const submittedRef = useRef(false)
   const dataRef = useRef(data)
   dataRef.current = data
@@ -78,7 +80,7 @@ export function RunnerPage() {
         setAnswers(a)
         setMarked(m)
       })
-      .catch((e) => setError((e as Error).message))
+      .catch((e) => setError(linkErrorMessage(e)))
   }
 
   useEffect(() => { loadPayload() }, [attemptToken])
@@ -94,24 +96,24 @@ export function RunnerPage() {
     }
   }
 
-  function save(problemId: string, opts: { answer?: unknown; marked?: boolean; timeDelta?: number; changed?: boolean }) {
+  function save(problemId: string, opts: { answer?: unknown; marked?: boolean; timeDelta?: number; changed?: boolean }): Promise<void> {
     const answer = opts.answer !== undefined ? opts.answer : answersRef.current[problemId] ?? null
     const markedForReview = opts.marked !== undefined ? opts.marked : !!markedRef.current[problemId]
-    void apiFetch(`/api/attempt/${attemptToken}/response`, {
+    return apiFetch(`/api/attempt/${attemptToken}/response`, {
       method: 'POST',
       body: JSON.stringify({
         problemId, answer, markedForReview,
         timeSpentMsDelta: opts.timeDelta ?? 0, changed: !!opts.changed,
       }),
-    }).catch(() => {})
+    }).then(() => {}, () => {})
   }
 
-  function flushTimeFor(problemId: string) {
+  function flushTimeFor(problemId: string): Promise<void> | undefined {
     const t = timeRef.current
     if (!t || t.problemId !== problemId) return
     const delta = Date.now() - t.at
     timeRef.current = null
-    if (delta >= 250) save(problemId, { timeDelta: delta })
+    if (delta >= 250) return save(problemId, { timeDelta: delta })
   }
 
   useEffect(() => {
@@ -119,7 +121,7 @@ export function RunnerPage() {
     const p = data.problems[idx]
     if (!p) return
     timeRef.current = { problemId: p.id, at: Date.now() }
-    return () => flushTimeFor(p.id)
+    return () => void flushTimeFor(p.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx, data])
 
@@ -145,7 +147,13 @@ export function RunnerPage() {
       navigator.sendBeacon(`/api/attempt/${attemptToken}/response`, new Blob([body], { type: 'application/json' }))
     }
     function onVisibility() {
-      if (document.visibilityState === 'hidden') flushBeacon()
+      if (document.visibilityState === 'hidden') {
+        flushBeacon()
+        return
+      }
+      // flushBeacon stopped the clock; restart it for the question on screen.
+      const p = dataRef.current?.problems[idxRef.current]
+      if (p && !dataRef.current?.submitted) timeRef.current = { problemId: p.id, at: Date.now() }
     }
     window.addEventListener('pagehide', flushBeacon)
     document.addEventListener('visibilitychange', onVisibility)
@@ -159,8 +167,17 @@ export function RunnerPage() {
     if (submittedRef.current) return
     submittedRef.current = true
     setSubmitting(true)
+    // Answers typed in the last moment are still waiting in their debounce.
+    // Save them (and the current question's time) before grading, or the
+    // submit lands first and the late save 409s: the answer is lost.
+    const pendingIds = Object.keys(debounce.current)
+    for (const h of Object.values(debounce.current)) window.clearTimeout(h)
+    debounce.current = {}
     const cur = data?.problems[idx]
-    if (cur) flushTimeFor(cur.id)
+    await Promise.all([
+      ...pendingIds.map((id) => save(id, { changed: true })),
+      cur ? flushTimeFor(cur.id) : undefined,
+    ])
     try {
       await apiFetch(`/api/attempt/${attemptToken}/submit`, { method: 'POST' })
       navigate(`/review/${attemptToken}`)
@@ -231,6 +248,16 @@ export function RunnerPage() {
 
   const problems = data.problems
   const p = problems[idx]
+  if (!p) {
+    return (
+      <main className="page">
+        <div className="page-card">
+          <h1 style={{ fontFamily: 'var(--font-display)' }}>No questions yet</h1>
+          <p className="muted">This assignment is empty. Let your tutor know.</p>
+        </div>
+      </main>
+    )
+  }
   const isAnswered = (q: RProblem) => {
     const a = answers[q.id]
     return a != null && a !== '' && !(Array.isArray(a) && a.length === 0)
@@ -240,9 +267,13 @@ export function RunnerPage() {
   const lowTime = remaining !== null && remaining < 60
 
   function setAnswer(value: unknown, changed = true) {
-    setAnswers((a) => ({ ...a, [p.id]: value }))
-    window.clearTimeout(debounce.current)
-    debounce.current = window.setTimeout(() => save(p.id, { answer: value, changed }), 500)
+    const id = p.id
+    setAnswers((a) => ({ ...a, [id]: value }))
+    window.clearTimeout(debounce.current[id])
+    debounce.current[id] = window.setTimeout(() => {
+      delete debounce.current[id]
+      save(id, { answer: value, changed })
+    }, 500)
   }
 
   function toggleMark() {

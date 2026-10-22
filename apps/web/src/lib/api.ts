@@ -25,3 +25,11 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
   }
   return body
 }
+
+/** Error copy for a student/guest magic link: a 404 means the link itself is dead. */
+export function linkErrorMessage(err: unknown): string {
+  if ((err as { status?: number }).status === 404) {
+    return "This link isn't active anymore. Ask your tutor for a new one."
+  }
+  return (err as Error).message
+}

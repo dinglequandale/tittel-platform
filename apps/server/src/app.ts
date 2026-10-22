@@ -77,9 +77,16 @@ app.use(boardAssetsRouter)
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not found' }))
 
 // Central error handler so a thrown/rejected route returns JSON, not an HTML 500.
+// Body-parser errors (malformed JSON, oversized body) carry their own 4xx
+// status and a client-safe message. Anything else is ours: log it, and don't
+// hand raw DB/driver text to anonymous student and guest callers.
 app.use('/api', (err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const status = (err as { status?: number })?.status
+  if (status && status >= 400 && status < 500) {
+    return res.status(status).json({ error: (err as Error).message })
+  }
   console.error('[api error]', err)
-  res.status(500).json({ error: (err as Error)?.message ?? 'internal error' })
+  res.status(500).json({ error: 'internal error' })
 })
 
 // ---------------------------------------------------------------------------

@@ -104,6 +104,11 @@ function currentPlayerUserId(room: Room): string | null {
   return gm.players[turn]?.userId ?? null
 }
 
+// Calculator state is stored on the room and relayed to everyone, and guests
+// can send it once students may edit. A real state is a few KB; anything
+// past this is dropped rather than held in memory and fanned out.
+const MAX_CALC_STATE_LEN = 256 * 1024
+
 function safeSend(ws: WebSocket, payload: unknown) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload))
 }
@@ -164,6 +169,7 @@ export function handleControl(ws: WebSocket, room: Room, role: 'host' | 'guest')
   }
 
   ws.on('message', (data) => {
+    let text: string
     let msg: {
       type?: string
       action?: string
@@ -191,7 +197,8 @@ export function handleControl(ws: WebSocket, room: Room, role: 'host' | 'guest')
       view?: unknown
     }
     try {
-      msg = JSON.parse(data.toString())
+      text = data.toString()
+      msg = JSON.parse(text)
     } catch {
       return
     }
@@ -248,7 +255,7 @@ export function handleControl(ws: WebSocket, room: Room, role: 'host' | 'guest')
         } else if (msg.action === 'close') {
           room.calcOpen = false
           broadcastToGuests(msg)
-        } else if (msg.action === 'state') {
+        } else if (msg.action === 'state' && text.length <= MAX_CALC_STATE_LEN) {
           room.lastCalcState = msg.state
           broadcastToOthers(msg)
         } else if (msg.action === 'geom' && msg.geom) {
@@ -338,7 +345,7 @@ export function handleControl(ws: WebSocket, room: Room, role: 'host' | 'guest')
         gm.view = msg.view
         broadcastToGuests({ type: 'game-view', view: gm.view })
       }
-    } else if (msg?.type === 'calc' && msg.action === 'state' && room.studentsCanEdit) {
+    } else if (msg?.type === 'calc' && msg.action === 'state' && room.studentsCanEdit && text.length <= MAX_CALC_STATE_LEN) {
       room.lastCalcState = msg.state
       broadcastToOthers(msg)
     } else if (msg?.type === 'quiz-seen') {

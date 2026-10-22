@@ -53,7 +53,20 @@ lessonsRouter.post('/lessons', async (req, res) => {
 })
 
 lessonsRouter.patch('/lessons/:id', async (req, res) => {
-  const { title, doc } = req.body ?? {}
+  const { title } = req.body ?? {}
+  // Same validation as create/import: a malformed `answer` block would
+  // otherwise corrupt grading.
+  let doc: unknown
+  if (req.body?.doc !== undefined) {
+    try {
+      doc = parseLessonDoc(req.body.doc)
+    } catch (err) {
+      if (err instanceof LessonParseError) {
+        return res.status(422).json({ error: err.message })
+      }
+      throw err
+    }
+  }
   const rows = await orgQuery(
     req.auth!.orgId,
     `update lessons set

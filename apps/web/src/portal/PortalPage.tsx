@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BRAND_NAME } from '@tittel/shared'
-import { apiFetch } from '../lib/api.ts'
+import { apiFetch, linkErrorMessage } from '../lib/api.ts'
 
 interface Assignment {
   assignment_id: string
@@ -25,7 +25,7 @@ export function PortalPage() {
     if (!studentToken) return
     apiFetch(`/api/portal/${studentToken}`)
       .then((d) => { setStudentName(d.studentName); setAssignments(d.assignments) })
-      .catch((e) => setError(e.message))
+      .catch((e) => setError(linkErrorMessage(e)))
   }, [studentToken])
 
   if (error) {

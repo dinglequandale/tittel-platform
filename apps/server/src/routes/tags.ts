@@ -20,7 +20,8 @@ tagsRouter.post('/tags', async (req, res) => {
   const id = newId()
   const rows = await orgQuery(
     req.auth!.orgId,
-    `insert into tags (id, org_id, name, parent_id) values ($2, $1, $3, $4)
+    `insert into tags (id, org_id, name, parent_id)
+     values ($2, $1, $3, (select id from tags where org_id = $1 and id = $4))
      returning id, name, parent_id`,
     [id, name.trim(), parentId || null],
   )

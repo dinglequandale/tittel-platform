@@ -136,14 +136,16 @@ export function BoardPage() {
           sessionStorage.setItem(NAME_KEY, name)
           setNeedsName(null)
           // Re-run the effect's join path with the now-cached name.
-          apiFetch(`/api/board/${boardId}/token`, { method: 'POST', body: JSON.stringify({ name }) }).then((res) => {
-            setResolved({
-              isHost: false,
-              mode: needsName,
-              displayName: res.displayName,
-              authParams: `boardToken=${encodeURIComponent(res.boardToken)}`,
+          apiFetch(`/api/board/${boardId}/token`, { method: 'POST', body: JSON.stringify({ name }) })
+            .then((res) => {
+              setResolved({
+                isHost: false,
+                mode: needsName,
+                displayName: res.displayName,
+                authParams: `boardToken=${encodeURIComponent(res.boardToken)}`,
+              })
             })
-          })
+            .catch((err) => setError((err as Error).message))
         }}
       />
     )

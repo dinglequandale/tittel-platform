@@ -37,3 +37,8 @@ services:
         sync: false
       - key: VITE_SUPABASE_ANON_KEY
         sync: false
+      # Desmos key for the board calculator, baked in at build time. Without
+      # it, production builds show the calculator as unavailable (the demo
+      # key is dev-only; OVERHAUL.md §5).
+      - key: VITE_DESMOS_API_KEY
+        sync: false

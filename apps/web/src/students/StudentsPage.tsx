@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   Button, Field, Input, EmptyState, CopyButton, PageLoading, ConfirmDialog,
   Dialog, DialogTrigger, DialogContent, DialogTitle, DialogClose,
-  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem, paletteFor,
 } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
@@ -186,7 +186,7 @@ export function StudentsPage() {
           {shown.map((s) => (
             <div key={s.id} className="stu-row">
               <div className="data-row-name">
-                <span className="avatar-sq">{s.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}</span>
+                <span className="avatar-sq" data-c={paletteFor(s.id)}>{s.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}</span>
                 <span>{s.name}</span>
               </div>
               <span style={{ color: 'var(--ink-2)' }}>{groupOf.get(s.id) || <span className="muted">—</span>}</span>

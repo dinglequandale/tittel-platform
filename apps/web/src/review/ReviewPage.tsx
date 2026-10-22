@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { apiFetch } from '../lib/api.ts'
+import { apiFetch, linkErrorMessage } from '../lib/api.ts'
 import { RichText } from '../lib/Math.tsx'
 
 interface RChoice { id: string; content: string }
@@ -39,7 +39,7 @@ export function ReviewPage() {
 
   useEffect(() => {
     if (!attemptToken) return
-    apiFetch(`/api/attempt/${attemptToken}/review`).then(setData).catch((e) => setError(e.message))
+    apiFetch(`/api/attempt/${attemptToken}/review`).then(setData).catch((e) => setError(linkErrorMessage(e)))
   }, [attemptToken])
 
   if (error) {
@@ -65,13 +65,14 @@ export function ReviewPage() {
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
-        {data.problems.map((p) => {
+        {data.problems.map((p, i) => {
           const r = responseOf.get(p.id)
           const correctness = r?.is_correct === true ? 'correct' : r?.is_correct === false ? 'incorrect' : 'ungraded'
           return (
             <div key={p.id} className="editor-card">
               <div className="page-toolbar" style={{ marginBottom: 0 }}>
-                <span className="muted">Question {p.ordinal + 1}</span>
+                {/* ordinals keep gaps after a problem is removed from the set */}
+                <span className="muted">Question {i + 1}</span>
                 <span className="badge" style={{
                   color: correctness === 'correct' ? 'var(--correct)' : correctness === 'incorrect' ? 'var(--incorrect)' : undefined,
                 }}>

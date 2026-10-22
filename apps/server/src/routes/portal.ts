@@ -22,13 +22,13 @@ portalRouter.get('/:token', async (req, res) => {
             ps.title as set_title,
             att.attempt_token,
             coalesce(att.status, 'pending') as status,
-            (select count(*) from set_problems sp
+            (select count(*)::int from set_problems sp
                join problems p on p.id = sp.problem_id
               where sp.set_id = asg.set_id and p.type != 'frq') as total,
-            (select count(*) from set_problems sp
+            (select count(*)::int from set_problems sp
                join problems p on p.id = sp.problem_id
               where sp.set_id = asg.set_id and p.type = 'frq') as "frqCount",
-            (select count(*) from responses r
+            (select count(*)::int from responses r
                where r.attempt_id = att.id and r.is_correct) as score
        from students st
        join assignment_student ascd on ascd.student_id = st.id

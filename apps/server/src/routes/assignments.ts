@@ -9,8 +9,8 @@ assignmentsRouter.get('/assignments', async (req, res) => {
     req.auth!.orgId,
     `select a.id, a.title, a.time_limit_sec, a.due_at, a.created_at,
             ps.title as set_title,
-            (select count(*) from assignment_student x where x.assignment_id = a.id) as assigned,
-            (select count(*) from attempts x where x.assignment_id = a.id
+            (select count(*)::int from assignment_student x where x.assignment_id = a.id) as assigned,
+            (select count(*)::int from attempts x where x.assignment_id = a.id
                and x.status in ('submitted', 'expired')) as submitted
        from assignments a
        join problem_sets ps on ps.id = a.set_id
@@ -30,8 +30,14 @@ assignmentsRouter.post('/assignments', async (req, res) => {
   }
   const orgId = req.auth!.orgId
 
-  const [set] = await orgQuery(orgId, `select id from problem_sets where org_id = $1 and id = $2`, [setId])
+  const [set] = await orgQuery<{ id: string; problem_count: number }>(
+    orgId,
+    `select s.id, (select count(*)::int from set_problems sp where sp.set_id = s.id) as problem_count
+       from problem_sets s where s.org_id = $1 and s.id = $2`,
+    [setId],
+  )
   if (!set) return res.status(404).json({ error: 'problem set not found' })
+  if (set.problem_count === 0) return res.status(400).json({ error: 'this problem set has no problems yet' })
 
   const client = await pool.connect()
   try {

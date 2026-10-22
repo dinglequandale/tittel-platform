@@ -29,6 +29,8 @@ async function loadAttempt(token: string): Promise<AttemptRow | undefined> {
   return rows[0]
 }
 
+const SAVE_GRACE_SEC = 5
+
 /** Null time_limit_sec means untimed — never expires. */
 function remainingSeconds(at: AttemptRow): number | null {
   if (at.time_limit_sec == null) return null
@@ -126,8 +128,10 @@ attemptRouter.post('/:token/response', async (req, res) => {
   if (!at) return res.status(404).json({ error: 'not found' })
   if (at.status !== 'active') return res.status(409).json({ error: 'not in progress' })
 
+  // The runner auto-submits as its countdown hits zero, flushing the last
+  // answer just before; network latency would otherwise reject that save.
   const remaining = remainingSeconds(at)
-  if (remaining !== null && remaining <= 0) {
+  if (remaining !== null && remaining <= -SAVE_GRACE_SEC) {
     await gradeAttempt(at.id, at.set_id)
     await pool.query(`update attempts set status = 'expired' where id = $1`, [at.id])
     return res.status(409).json({ error: 'time expired' })

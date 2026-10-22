@@ -16,11 +16,16 @@ import { verifyBoardToken } from './board/boardToken.ts'
 const PORT = Number(process.env.PORT) || 6060
 
 const server = http.createServer(app)
-const wss = new WebSocketServer({ noServer: true })
+// ws defaults to 100 MiB frames, which any anonymous guest could send. Real
+// frames are far smaller: snapshots cap at 5 MB and images go over /uploads.
+const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 })
 
-async function isPersistentBoard(boardId: string): Promise<boolean> {
-  const { rows } = await pool.query('select 1 from boards where id = $1', [boardId])
-  return rows.length > 0
+async function lookupBoard(boardId: string): Promise<{ archived: boolean } | null> {
+  const { rows } = await pool.query<{ archived_at: string | null }>(
+    'select archived_at from boards where id = $1',
+    [boardId],
+  )
+  return rows[0] ? { archived: rows[0].archived_at != null } : null
 }
 
 /**
@@ -34,18 +39,21 @@ async function resolveConnection(
   boardId: string,
   url: URL,
 ): Promise<{ role: 'host' | 'guest'; persistent: boolean } | null> {
+  const board = await lookupBoard(boardId)
+  // Archiving a board promises its link stops working. Tokens live for 12h,
+  // so this is checked on every connect, not only when one is minted.
+  if (board?.archived) return null
   const boardToken = url.searchParams.get('boardToken')
   if (boardToken) {
     const payload = await verifyBoardToken(boardToken)
     if (!payload || payload.boardId !== boardId) return null
     return { role: payload.role, persistent: true }
   }
-  const persistent = await isPersistentBoard(boardId)
   // The `?role=host` fallback is only for the unauthenticated, non-persistent
   // /try quick-board path. A persistent board with no valid boardToken is
   // always a guest — otherwise anyone with the board id could self-grant
   // host (camera control, write-access grants, quiz answer keys/stats).
-  if (persistent) return { role: 'guest', persistent: true }
+  if (board) return { role: 'guest', persistent: true }
   const role = url.searchParams.get('role') === 'host' ? 'host' : 'guest'
   return { role, persistent: false }
 }

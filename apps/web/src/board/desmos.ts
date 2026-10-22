@@ -1,9 +1,12 @@
 // Lazily loads the Desmos GraphingCalculator API — the <script> is only fetched
 // the first time the tutor opens the calculator, never on initial page load.
 //
-// Desmos asks apps to use their own (free) API key in production. We default to
-// Desmos's public demo key and let you override it with VITE_DESMOS_API_KEY.
-const API_KEY = import.meta.env.VITE_DESMOS_API_KEY || 'dcb31709b452b1cf9dc26972add0fda6'
+// Desmos's public demo key is for development only; production use needs our
+// own key (OVERHAUL.md §5, licensing). In a production build without
+// VITE_DESMOS_API_KEY the calculator reports itself unavailable rather than
+// quietly running on the demo key.
+const API_KEY =
+  import.meta.env.VITE_DESMOS_API_KEY || (import.meta.env.DEV ? 'dcb31709b452b1cf9dc26972add0fda6' : '')
 const SRC = `https://www.desmos.com/api/v1.11/calculator.js?apiKey=${API_KEY}`
 
 // Minimal shape of what we use from the Desmos global — full API is untyped.
@@ -17,6 +20,7 @@ export function loadDesmos(): Promise<DesmosApi> {
   const existing = (window as any).Desmos as DesmosApi | undefined
   if (existing) return Promise.resolve(existing)
   if (loadPromise) return loadPromise
+  if (!API_KEY) return Promise.reject(new Error('The calculator is not configured yet (VITE_DESMOS_API_KEY).'))
 
   loadPromise = new Promise<DesmosApi>((resolve, reject) => {
     const script = document.createElement('script')

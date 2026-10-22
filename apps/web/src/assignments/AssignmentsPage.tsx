@@ -157,9 +157,9 @@ export function AssignmentsPage() {
           <Table>
             <thead><tr><th>#</th><th>Attempts</th><th>Correct</th><th>% correct</th></tr></thead>
             <tbody>
-              {analytics.perProblem.map((p) => (
+              {analytics.perProblem.map((p, i) => (
                 <tr key={p.problemId}>
-                  <td>{p.ordinal + 1}</td>
+                  <td>{i + 1}</td>
                   <td>{p.attempts}</td>
                   <td>{p.correct}</td>
                   <td>{p.pctCorrect != null ? `${Math.round(p.pctCorrect * 100)}%` : '—'}</td>
@@ -231,15 +231,22 @@ function NewAssignmentDialog({
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
   }
 
+  // A blank or zero field used to become a 1-second time limit.
+  const minutesValid = untimed || Number(minutes) >= 1
+  const canCreate = !!setId && selected.length > 0 && minutesValid && !saving
+
   async function submit() {
-    if (!setId || selected.length === 0 || saving) return
+    if (!canCreate) return
     setSaving(true)
     try {
       await onCreate({
         setId,
         title: title.trim(),
-        timeLimitSec: untimed ? undefined : Math.max(1, Math.round(Number(minutes) * 60)),
-        dueAt: dueAt || undefined,
+        timeLimitSec: untimed ? undefined : Math.round(Number(minutes) * 60),
+        // The date picker gives a bare "YYYY-MM-DD", which the server reads as
+        // UTC midnight: the evening before, anywhere west of UTC. Due means the
+        // end of that day where the tutor is.
+        dueAt: dueAt ? new Date(`${dueAt}T23:59:59`).toISOString() : undefined,
         studentIds: selected,
       })
       setTitle(''); setSetId(''); setSelected([]); setOpen(false)
@@ -288,7 +295,7 @@ function NewAssignmentDialog({
         </Field>
         <div className="row-end">
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
-          <Button onClick={submit} disabled={!setId || selected.length === 0 || saving}>{saving ? 'Creating…' : 'Create'}</Button>
+          <Button onClick={submit} disabled={!canCreate}>{saving ? 'Creating…' : 'Create'}</Button>
         </div>
       </DialogContent>
     </Dialog>

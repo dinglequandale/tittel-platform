@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import { SignJWT, jwtVerify } from 'jose'
 
 // Short-lived signed board tokens (PLAN.md §6.3): minted server-side on page
@@ -7,9 +8,11 @@ import { SignJWT, jwtVerify } from 'jose'
 // Signed with BOARD_TOKEN_SECRET so tokens survive a redeploy mid-lesson;
 // falls back to a per-boot random secret (dev convenience) if unset — a live
 // class loses tokens on restart in that case, same as before this fix.
+if (!process.env.BOARD_TOKEN_SECRET && process.env.NODE_ENV === 'production') {
+  console.warn('[board] BOARD_TOKEN_SECRET is not set — board links break on every restart.')
+}
 const secret = new TextEncoder().encode(
-  process.env.BOARD_TOKEN_SECRET ||
-    Array.from({ length: 32 }, () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0')).join(''),
+  process.env.BOARD_TOKEN_SECRET || crypto.randomBytes(32).toString('hex'),
 )
 
 export interface BoardTokenPayload {

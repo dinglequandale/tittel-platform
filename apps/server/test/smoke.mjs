@@ -61,8 +61,9 @@ server.stderr.on('data', (d) => process.stderr.write(d))
 
 try {
   // Generous timeout: node-tikzjax's module load (Phase 1) is noticeably
-  // heavier than the Phase 0 baseline, especially on a cold cache.
-  for (let i = 0; i < 150 && !listening; i++) await wait(100)
+  // heavier than the Phase 0 baseline, especially on a cold cache, and a
+  // cold import of the Anthropic SDK + mammoth adds ~8s more. 15s flaked.
+  for (let i = 0; i < 400 && !listening; i++) await wait(100)
   check('server printed "listening" before we trust it', listening)
 
   if (listening) {

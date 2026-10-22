@@ -151,9 +151,18 @@ aiImportRouter.post('/ai-import', express.json({ limit: '40mb' }), async (req, r
         },
       ],
     })
+    // A worksheet whose draft outgrows max_tokens comes back as cut-off JSON.
+    if (message.stop_reason === 'max_tokens') {
+      return res.status(502).json({ error: 'This document has too many problems to import at once. Split it into smaller files and try again.' })
+    }
     const textBlock = message.content.find((b): b is Anthropic.TextBlock => b.type === 'text')
     if (!textBlock) return res.status(502).json({ error: 'AI import returned no output' })
-    const draft = JSON.parse(textBlock.text) as Draft
+    let draft: Draft
+    try {
+      draft = JSON.parse(textBlock.text) as Draft
+    } catch {
+      return res.status(502).json({ error: 'AI import returned an unreadable draft. Try again.' })
+    }
     res.json({ draft })
   } catch (err) {
     if (err instanceof APIError) {

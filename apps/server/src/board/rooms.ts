@@ -84,17 +84,35 @@ async function saveSnapshot(room: Room): Promise<void> {
   room.dirty = false
 }
 
+// A client opens its sync and control sockets at the same moment, so two
+// upgrades routinely race here. Without sharing the in-flight creation, each
+// would await loadSnapshot and build its own Room: the sockets split across
+// two documents and the orphan's autosave overwrites the real snapshot.
+const pendingRooms = new Map<string, Promise<Room>>()
+// A room torn down moments ago may still be writing its final snapshot.
+// A new room must wait for that write, or it loads stale state.
+const closingRooms = new Map<string, Promise<void>>()
+
 /** Looked up once per getOrCreateRoom — callers pass whether `id` has a `boards` row. */
-export async function getOrCreateRoom(id: string, persistent: boolean): Promise<Room> {
+export function getOrCreateRoom(id: string, persistent: boolean): Promise<Room> {
   const existing = rooms.get(id)
   if (existing) {
     if (existing.closeTimer) {
       clearTimeout(existing.closeTimer)
       existing.closeTimer = null
     }
-    return existing
+    return Promise.resolve(existing)
   }
+  let pending = pendingRooms.get(id)
+  if (!pending) {
+    pending = createRoom(id, persistent).finally(() => pendingRooms.delete(id))
+    pendingRooms.set(id, pending)
+  }
+  return pending
+}
 
+async function createRoom(id: string, persistent: boolean): Promise<Room> {
+  await closingRooms.get(id)
   const initialSnapshot = persistent ? await loadSnapshot(id) : null
 
   const room: Room = {
@@ -153,7 +171,12 @@ export function getRoom(id: string): Room | undefined {
 
 function scheduleClose(room: Room) {
   if (room.closeTimer) return
-  room.closeTimer = setTimeout(() => void closeRoom(room), GRACE_MS)
+  room.closeTimer = setTimeout(() => {
+    const done: Promise<void> = closeRoom(room).finally(() => {
+      if (closingRooms.get(room.id) === done) closingRooms.delete(room.id)
+    })
+    closingRooms.set(room.id, done)
+  }, GRACE_MS)
 }
 
 async function closeRoom(room: Room) {

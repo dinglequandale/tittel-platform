@@ -127,18 +127,20 @@ export function ProblemsTab() {
         }),
       )
 
+      // Empty optional fields go as null, not undefined: PATCH reads an
+      // absent field as "keep the old value", so a cleared field never cleared.
       const body = {
         type: draft.type,
         stemLatex: draft.stemLatex,
         choices: draft.type === 'mc' || draft.type === 'multi' ? draft.choices : [],
         correct: draft.type === 'multi'
           ? draft.correctText.split(',').map((s) => s.trim()).filter(Boolean)
-          : draft.correctText || undefined,
+          : draft.correctText || null,
         accept: draft.acceptText.split(',').map((s) => s.trim()).filter(Boolean),
-        explanationLatex: draft.explanationLatex || undefined,
+        explanationLatex: draft.explanationLatex || null,
         figures,
-        difficulty: draft.difficulty ? Number(draft.difficulty) : undefined,
-        source: draft.source || undefined,
+        difficulty: draft.difficulty ? Number(draft.difficulty) : null,
+        source: draft.source || null,
         tagIds: draft.tagIds,
       }
 
@@ -326,7 +328,7 @@ export function ProblemsTab() {
         open={archiveConfirm}
         onOpenChange={setArchiveConfirm}
         title="Archive this problem?"
-        description="It's removed from the bank and any sets that reference it."
+        description="It's removed from the bank. Sets and assignments that already use it keep it."
         confirmLabel="Archive"
         onConfirm={() => draft.id && archive(draft.id)}
       />

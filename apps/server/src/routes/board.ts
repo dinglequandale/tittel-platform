@@ -25,10 +25,16 @@ boardsRouter.get('/boards', async (req, res) => {
 boardsRouter.post('/boards', async (req, res) => {
   const { title, classId, studentId } = req.body ?? {}
   const id = newId()
+  // class/student ids come from the client: resolve them inside this org, or
+  // a board could point at another org's student (and GET /boards would
+  // then show that student's name).
   const rows = await orgQuery(
     req.auth!.orgId,
     `insert into boards (id, org_id, title, class_id, student_id, is_ephemeral)
-     values ($2, $1, $3, $4, $5, false)
+     values ($2, $1, $3,
+             (select id from classes where org_id = $1 and id = $4),
+             (select id from students where org_id = $1 and id = $5),
+             false)
      returning id, title, class_id, student_id, is_ephemeral, created_at`,
     [id, title || null, classId || null, studentId || null],
   )

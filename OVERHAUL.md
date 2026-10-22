@@ -300,9 +300,10 @@ scheduled for O6.)
   - **Desmos: $100/mo** (Starter, self-serve, up to 1,000 annual users; $200 to 2,500; $300 to
     5,000; graphing + scientific only). The free tier is non-commercial or a 90-day evaluation, and
     "commercial use includes any use … accessed by End Users in production." Konrad teaching paid
-    students on it counts. Plan: trial key while building O2, **Starter from the first real
-    class**. Four paying tutors cover it. The SAT-style runner keeps real Desmos, because the real
-    test embeds Desmos and fidelity is the point.
+    students on it counts. **Superseded 2026-10-21 (R14):** we build our own clean-room
+    calculator (`docs/GRAPH-SPEC.md`). Until it replaces the board's Desmos mirror, use the trial
+    key only for evaluation, and **stop the demo-key fallback in production**
+    (`apps/web/src/board/desmos.ts`).
   - **Open-source fallbacks (licences checked on GitHub; none is a drop-in):**
     - *Canvas:* Excalidraw (MIT, 134k★, very active), but it has no pages, camera-follow, or
       tldraw-sync equivalent, so switching means rewriting the board and its sync. fabric.js (MIT)
@@ -312,8 +313,8 @@ scheduled for O6.)
       (MIT, input) + Compute Engine (MIT, parse/evaluate LaTeX) + function-plot (MIT, plotting).
       JSXGraph is LGPL-3.0 (usable unmodified); Mafs is MIT but quiet since Mar 2025. GeoGebra is
       **not** an option: its apps need a commercial agreement, and the EUPL source can't be used
-      with its UI or assets. Building Desmos-lite costs weeks to save $1,200/yr, so only do it if
-      Desmos pricing changes.
+      with its UI or assets. **Decided otherwise in R14:** build it, on Desmos's own MPL-2.0
+      MathQuill fork rather than MathLive.
 - **Auth**: password reset, Google OAuth, a real `users.display_name`, org name + logo at signup.
 - **Child data (§8, R7)**: Konrad's own students start at grade 5 (under 13). Minimise data by
   default: student = display name (first name + initial suggested), no student email field unless
@@ -354,14 +355,16 @@ time goes to teaching on it (from O2), recruiting partners, and the two licence 
   tokens, so they restyle correctly, and each gets swept when its phase reworks the page. Tailwind's
   preflight is vendored as `packages/ui/src/reset.css` (in `@layer base`, same cascade as before).
 - **O2 Teach on it (dogfood).** PDF onto board, quiz overlay + stats, library lesson load, games
-  port, B7 fix, Storage-backed assets, board chrome restyle.
+  port, B7 fix, Storage-backed assets, board chrome restyle, **GRAPH-SPEC G1** (our calculator
+  replaces the board's Desmos mirror, so its sync hack is never ported).
   *Accept:* Konrad teaches every class that week on the platform; the smoke suite covers quiz
   timing and snapshot+asset survival across a restart.
 - **O3 The weekly loop.** Session persistence, the session summary (AI draft + edit + link/email),
   assign-follow-up, the lesson composer, draft-review-lesson.
   *Accept:* the recorded demo loop on prod; Konrad sends real summaries to his families.
 - **O4 Student surfaces.** White-label, portal, neutral runner (mobile), review score moment, name
-  gate, `Scramble`, SAT-style skin (if the Desmos licence allows).
+  gate, `Scramble`, SAT-style skin with **GRAPH-SPEC G2–G3** (our calculator in SAT mode, plus
+  the Scientific calculator).
 - **O5 Design partners (5 tutors, free, ~week 6).** Lean landing, password reset + Google,
   onboarding seed, child-data minimisation + legal pages, Sentry, CI, Render paid, Payment Link
   for the founding year. Each partner gets a 30-minute onboarding call; watch, don't help.
@@ -388,8 +391,7 @@ an assignment graded with a follow-up created). Partner bar to continue past O6:
 6. **Order:** design foundation first, but capped at 3 days; then product depth on the board.
    Delight is concentrated on student/parent surfaces.
 7. Still Konrad's (blocking only where noted): the final name (blocks O5), tldraw's written
-   confirmation (blocks charging money), the Desmos Starter spend of $100/mo (from the first real
-   class in O2), and whether to pay for a lawyer pass on the policies.
+   confirmation (blocks charging money), and whether to pay for a lawyer pass on the policies.
 
 ## 8. Red-team record (adversarial review, 2026-10-20)
 
@@ -402,7 +404,8 @@ relitigate it without new evidence.
 | R2 | "Why would a tutor leave Zoom + Bitpaper + Docs?" | They keep Zoom. The board has to beat Bitpaper on its home turf (**PDF on the board**) and then win with what nobody else has: live answer collection with stats. Neither is in the board today, so board parity jumps to O2. |
 | R3 | "Who pays your customer? Parents. Tutors churn when parents don't see progress." | **The session summary** is the wedge. It's weekly, visible to the payer, and saves the tutor an hour. Konrad already promises families this by hand. |
 | R4 | "The visual lesson builder is weeks of work tutors won't use; they teach from PDFs." | Cut to a composer. PDF import, AI import (exists), and bank problems cover authoring. |
-| R5 | "Your core canvas has an unpublished price. What if it eats your margin?" | Researched (§5). The pinned tldraw 3.15.5 licence allows commercial use with the watermark: $0, but get it confirmed in writing and never upgrade to 4.x unpaid. Desmos is $100/mo from the first real class. Open-source replacements exist only as building blocks, and swapping costs weeks to save little. Stay put. |
+| R5 | "Your core canvas has an unpublished price. What if it eats your margin?" | Researched (§5). The pinned tldraw 3.15.5 licence allows commercial use with the watermark: $0, but get it confirmed in writing and never upgrade to 4.x unpaid. Desmos is $100/mo; superseded by R14. |
+| R14 | "You're building a Desmos clone? That's a legal and engineering sinkhole." (2026-10-21) | Konrad's call: own the calculator. **Clean-room only** (GRAPH-SPEC §0): public docs and observation, never their code. Two facts make it viable. (1) Desmos's own math-input field is open source (MPL-2.0), so the typing feel is licensed, not copied. (2) The SAT calculator is standard Desmos minus images, folders and notes, so the target is fully documented. Phased by SAT usage (G1 board → G2 SAT core → G3 breadth). It also removes the Desmos sync hack and the $100/mo. |
 | R6 | "Tutors want *their* brand in front of parents, not yours." | White-label student/parent surfaces. The product is a small footer mark, which is also the referral loop. |
 | R7 | "Your own students are 10. COPPA." | Data minimisation by default (first name, no child email, tutor-owned parent contact), a consent attestation, and policies before partners. |
 | R8 | "You're cloning Bluebook. That's College Board's mark." | Rename to "digital-SAT-style" everywhere. Fidelity of behaviour, not branding. |

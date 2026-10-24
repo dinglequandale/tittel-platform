@@ -357,6 +357,19 @@ time goes to teaching on it (from O2), recruiting partners, and the two licence 
 - **O2 Teach on it (dogfood).** PDF onto board, quiz overlay + stats, library lesson load, games
   port, B7 fix, Storage-backed assets, board chrome restyle, **GRAPH-SPEC G1** (our calculator
   replaces the board's Desmos mirror, so its sync hack is never ported).
+  **Plan-load contract** (agreed 2026-10-24 with the FLOW-SPEC F1 work):
+  - **Entry:** `/b/:boardId?lesson=<sessionId>`. The host's board fetches
+    `GET /api/tutor/lessons-sched/:id/plan` → `{ planId, version, title, scheduledAt, doc }`,
+    injects it, then strips the param.
+  - **Page IDs are per lesson:** `page:lesson-<sessionId>-<n>`. A reload is idempotent, a plan
+    reused or edited for a later lesson gets fresh pages, and history stays per lesson.
+  - **Appends** after the board's existing pages and opens on the first new one. Page names are
+    `<Mon 27 Oct> · <plan title>`, with ` · n` added when there are several pages.
+  - **API:** `loadPlanOntoBoard(editor, planDoc, { idPrefix })` in `apps/web/src/board/`. A library
+    quick-load passes `plan-<planId>-v<version>`.
+  - **PDF plans:** O2 defines the `lessons.doc` shape. Proposed: `{ title, source: 'pdf',
+    storageKey, pageCount, pages: [] }`, each page a locked background image (Storage-backed on
+    persistent boards).
   *Accept:* Konrad teaches every class that week on the platform; the smoke suite covers quiz
   timing and snapshot+asset survival across a restart.
 - **O3 The weekly loop.** Session persistence, the session summary (AI draft + edit + link/email),

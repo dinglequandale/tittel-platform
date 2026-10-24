@@ -55,6 +55,13 @@ assignmentsRouter.post('/assignments', async (req, res) => {
       ],
     )
 
+    // Snapshot the set's problem list (schema.sql, assignment_problems).
+    await client.query(
+      `insert into assignment_problems (assignment_id, problem_id, ordinal)
+       select $1, problem_id, ordinal from set_problems where set_id = $2`,
+      [assignmentId, setId],
+    )
+
     const links: { studentId: string; studentName: string; attemptToken: string }[] = []
     for (const studentId of studentIds) {
       if (typeof studentId !== 'string') continue
@@ -130,7 +137,7 @@ assignmentsRouter.get('/assignments/:id/analytics', async (req, res) => {
   const orgId = req.auth!.orgId
   const [meta] = await orgQuery(
     orgId,
-    `select a.title, a.set_id, a.time_limit_sec, ps.title as set_title
+    `select a.title, a.time_limit_sec, ps.title as set_title
        from assignments a join problem_sets ps on ps.id = a.set_id
       where a.org_id = $1 and a.id = $2`,
     [req.params.id],
@@ -139,11 +146,11 @@ assignmentsRouter.get('/assignments/:id/analytics', async (req, res) => {
 
   const problems = await orgQuery(
     orgId,
-    `select p.id, sp.ordinal, p.type, p.stem_latex
-       from set_problems sp join problems p on p.id = sp.problem_id
-      where sp.set_id = $2 and p.org_id = $1
-      order by sp.ordinal`,
-    [meta.set_id],
+    `select p.id, ap.ordinal, p.type, p.stem_latex
+       from assignment_problems ap join problems p on p.id = ap.problem_id
+      where ap.assignment_id = $2 and p.org_id = $1
+      order by ap.ordinal`,
+    [req.params.id],
   )
   const attempts = await orgQuery<{ id: string; status: string; student_name: string }>(
     orgId,

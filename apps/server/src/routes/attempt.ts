@@ -11,7 +11,7 @@ interface AttemptRow {
   started_at: string | null
   time_limit_sec: number | null
   due_at: string | null
-  set_id: string
+  assignment_id: string
   assignment_title: string | null
   student_name: string
 }
@@ -19,7 +19,7 @@ interface AttemptRow {
 async function loadAttempt(token: string): Promise<AttemptRow | undefined> {
   const rows = await attemptQuery<AttemptRow>(
     token,
-    `select a.id, a.status, a.started_at, asg.time_limit_sec, asg.due_at, asg.set_id,
+    `select a.id, a.status, a.started_at, asg.time_limit_sec, asg.due_at, a.assignment_id,
             asg.title as assignment_title, s.name as student_name
        from attempts a
        join assignments asg on asg.id = a.assignment_id
@@ -39,15 +39,15 @@ function remainingSeconds(at: AttemptRow): number | null {
   return at.time_limit_sec - elapsed
 }
 
-// Grade every problem in the set against the attempt's saved responses,
+// Grade every problem in the assignment against the attempt's saved responses,
 // writing is_correct (and rows for unanswered problems too, so analytics
 // counts them as attempted-but-blank rather than invisible).
-async function gradeAttempt(attemptId: string, setId: string): Promise<void> {
+async function gradeAttempt(attemptId: string, assignmentId: string): Promise<void> {
   const { rows: problems } = await pool.query(
     `select p.id, p.type, p.correct, p.accept
-       from set_problems sp join problems p on p.id = sp.problem_id
-      where sp.set_id = $1`,
-    [setId],
+       from assignment_problems ap join problems p on p.id = ap.problem_id
+      where ap.assignment_id = $1`,
+    [assignmentId],
   )
   const { rows: responses } = await pool.query(
     `select problem_id, answer from responses where attempt_id = $1`,
@@ -78,17 +78,17 @@ attemptRouter.get('/:token', async (req, res) => {
 
   let remaining = remainingSeconds(at)
   if (at.status === 'active' && remaining !== null && remaining <= 0) {
-    await gradeAttempt(at.id, at.set_id)
+    await gradeAttempt(at.id, at.assignment_id)
     await pool.query(`update attempts set status = 'expired' where id = $1`, [at.id])
     at.status = 'expired'
     remaining = 0
   }
 
   const { rows: problems } = await pool.query(
-    `select p.id, sp.ordinal, p.type, p.stem_latex, p.choices, p.figures
-       from set_problems sp join problems p on p.id = sp.problem_id
-      where sp.set_id = $1 order by sp.ordinal`,
-    [at.set_id],
+    `select p.id, ap.ordinal, p.type, p.stem_latex, p.choices, p.figures
+       from assignment_problems ap join problems p on p.id = ap.problem_id
+      where ap.assignment_id = $1 order by ap.ordinal`,
+    [at.assignment_id],
   )
   const { rows: responses } = await pool.query(
     `select problem_id, answer, marked_for_review from responses where attempt_id = $1`,
@@ -132,7 +132,7 @@ attemptRouter.post('/:token/response', async (req, res) => {
   // answer just before; network latency would otherwise reject that save.
   const remaining = remainingSeconds(at)
   if (remaining !== null && remaining <= -SAVE_GRACE_SEC) {
-    await gradeAttempt(at.id, at.set_id)
+    await gradeAttempt(at.id, at.assignment_id)
     await pool.query(`update attempts set status = 'expired' where id = $1`, [at.id])
     return res.status(409).json({ error: 'time expired' })
   }
@@ -142,8 +142,8 @@ attemptRouter.post('/:token/response', async (req, res) => {
   const delta = Math.max(0, Math.floor(Number(timeSpentMsDelta) || 0))
 
   const { rows: inSet } = await pool.query(
-    `select 1 from set_problems where set_id = $1 and problem_id = $2`,
-    [at.set_id, problemId],
+    `select 1 from assignment_problems where assignment_id = $1 and problem_id = $2`,
+    [at.assignment_id, problemId],
   )
   if (!inSet[0]) return res.status(400).json({ error: 'problemId is not part of this attempt' })
 
@@ -166,7 +166,7 @@ attemptRouter.post('/:token/submit', async (req, res) => {
   const at = await loadAttempt(req.params.token)
   if (!at) return res.status(404).json({ error: 'not found' })
   if (at.status === 'submitted' || at.status === 'expired') return res.json({ ok: true, already: true })
-  await gradeAttempt(at.id, at.set_id)
+  await gradeAttempt(at.id, at.assignment_id)
   await pool.query(`update attempts set status = 'submitted', submitted_at = now() where id = $1`, [at.id])
   res.json({ ok: true })
 })
@@ -179,10 +179,10 @@ attemptRouter.get('/:token/review', async (req, res) => {
     return res.status(409).json({ error: 'not submitted' })
   }
   const { rows: problems } = await pool.query(
-    `select p.id, sp.ordinal, p.type, p.stem_latex, p.choices, p.correct, p.accept, p.explanation_latex, p.figures
-       from set_problems sp join problems p on p.id = sp.problem_id
-      where sp.set_id = $1 order by sp.ordinal`,
-    [at.set_id],
+    `select p.id, ap.ordinal, p.type, p.stem_latex, p.choices, p.correct, p.accept, p.explanation_latex, p.figures
+       from assignment_problems ap join problems p on p.id = ap.problem_id
+      where ap.assignment_id = $1 order by ap.ordinal`,
+    [at.assignment_id],
   )
   const { rows: responses } = await pool.query(
     `select problem_id, answer, is_correct, marked_for_review, time_spent_ms

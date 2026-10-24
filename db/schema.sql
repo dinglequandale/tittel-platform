@@ -159,6 +159,19 @@ create table if not exists assignment_student (
   primary key (assignment_id, student_id)
 );
 
+-- The assignment's own copy of its set's problem list, taken at creation.
+-- Editing the set afterwards (add/remove/reorder) changes only future
+-- assignments; already-assigned homework, its scores and its review stay put.
+-- Problem *content* is not copied, so fixing a typo in a problem still reaches
+-- everyone who has it.
+create table if not exists assignment_problems (
+  assignment_id text not null references assignments(id) on delete cascade,
+  problem_id    text not null references problems(id),
+  ordinal       int not null,
+  primary key (assignment_id, problem_id)
+);
+create index if not exists assignment_problems_ord_idx on assignment_problems(assignment_id, ordinal);
+
 create table if not exists attempts (
   id             text primary key,
   org_id         text not null references orgs(id) on delete cascade,
@@ -261,3 +274,13 @@ create index if not exists quiz_events_org_idx on quiz_events(org_id);
 -- `alter table ... add column if not exists ...` here too.
 
 alter table lessons add column if not exists created_at timestamptz not null default now();
+
+-- Backfill: assignments created before assignment_problems existed snapshot
+-- their set as it is now. Only touches assignments with no rows yet, so
+-- re-running is a no-op.
+insert into assignment_problems (assignment_id, problem_id, ordinal)
+select a.id, sp.problem_id, sp.ordinal
+  from assignments a
+  join set_problems sp on sp.set_id = a.set_id
+ where not exists (select 1 from assignment_problems ap where ap.assignment_id = a.id)
+on conflict do nothing;

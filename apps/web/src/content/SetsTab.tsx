@@ -174,6 +174,7 @@ export function SetsTab() {
               <Button variant="danger" onClick={() => setArchiveConfirm(true)}>Archive</Button>
             </div>
           </div>
+          <p className="muted">Changes here apply to homework you assign from now on. Already-assigned homework keeps its questions.</p>
           {detail.problems.length === 0 ? (
             <p className="muted">No problems in this set yet.</p>
           ) : (

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { Plus, Minus, Home, ListPlus } from 'lucide-react'
 import {
-  defaultViewport, exactOrDecimal, fitAspect, gridLabel, gridStep, pointLatex, pointsOfInterest,
-  sampleCurve, zoomAbout,
-  type Analysis, type GraphItem, type GraphSettings, type Poi, type Polyline, type Viewport,
+  contour, defaultViewport, exactOrDecimal, fitAspect, gridLabel, gridStep, pointLatex, pointsOfInterest,
+  regionMask, sampleCurve, zoomAbout,
+  type Analysis, type Curve, type GraphItem, type GraphSettings, type Poi, type Polyline, type RegionMask,
+  type Segments, type Viewport,
 } from '@tittel/graph'
 import { Tex } from './Tex.tsx'
 
@@ -49,7 +50,11 @@ export function GraphPaper({
   useEffect(() => {
     const el = wrapRef.current
     if (!el) return
-    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }))
+    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight })
+    // Measure now as well: ResizeObserver only reports during rendering frames,
+    // which a background tab doesn't get, so the paper would start blank there.
+    measure()
+    const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
@@ -68,39 +73,60 @@ export function GraphPaper({
     view.ymax - (py / size.h) * (view.ymax - view.ymin),
   ]
 
-  const colorOf = useMemo(() => new Map(items.map((it) => [it.id, it])), [items])
+  // Colour and visibility per row. Tables colour their points per column, so
+  // their row is never hidden as a whole.
+  const style = useMemo(() => {
+    const m = new Map<string, { color: string; hidden: boolean }>()
+    for (const it of items) m.set(it.id, it.type === 'table' ? { color: it.columns[1]?.color ?? '#000', hidden: false } : { color: it.color, hidden: !!it.hidden })
+    return m
+  }, [items])
+  const visible = (id: string) => { const st = style.get(id); return st && !st.hidden ? st : undefined }
 
-  // Sampled geometry for every visible curve, recomputed when the view or graph changes.
-  const curves = useMemo(() => {
-    if (!size.w) return []
-    const out: { id: string; color: string; lines: Polyline[] }[] = []
+  // Sampled geometry for everything visible, recomputed when the view or graph changes.
+  const geometry = useMemo(() => {
+    const curves: { id: string; color: string; dashed: boolean; lines: Polyline[] }[] = []
+    const implicits: { id: string; color: string; dashed: boolean; segs: Segments }[] = []
+    const regions: { id: string; color: string; mask: RegionMask }[] = []
+    if (!size.w) return { curves, implicits, regions }
     for (const r of analysis.rows) {
-      const it = colorOf.get(r.id)
-      if (!r.curve || !it || it.hidden) continue
-      out.push({ id: r.id, color: it.color, lines: sampleCurve(r.curve, view, size.w, size.h) })
+      const st = visible(r.id)
+      if (!st) continue
+      if (r.region) regions.push({ id: r.id, color: st.color, mask: regionMask(r.region.test, view, size.w, size.h) })
+      for (const c of r.curves ?? []) curves.push({ id: r.id, color: st.color, dashed: !!c.dashed, lines: sampleCurve(c, view, size.w, size.h) })
+      for (const im of r.implicits ?? []) {
+        const f = im.restrict ? (x: number, y: number) => (im.restrict!(x, y) ? im.f(x, y) : NaN) : im.f
+        implicits.push({ id: r.id, color: st.color, dashed: !!im.dashed, segs: contour(f, view, size.w, size.h) })
+      }
     }
-    return out
-  }, [analysis, colorOf, view, size])
+    return { curves, implicits, regions }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysis, style, view, size])
+  const { curves, implicits, regions } = geometry
 
   const points = useMemo(() => {
-    const out: { id: string; color: string; x: number; y: number; dragX?: string; dragY?: string }[] = []
+    const out: { id: string; color: string; x: number; y: number; line?: boolean; dragX?: string; dragY?: string }[] = []
     for (const r of analysis.rows) {
-      const it = colorOf.get(r.id)
-      if (!r.points || !it || it.hidden) continue
-      for (const p of r.points) if (Number.isFinite(p.x) && Number.isFinite(p.y)) out.push({ id: r.id, color: it.color, ...p })
+      const st = visible(r.id)
+      if (!r.points || !st) continue
+      for (const p of r.points) if (Number.isFinite(p.x) && Number.isFinite(p.y)) out.push({ id: r.id, ...p, color: p.color ?? st.color })
     }
     return out
-  }, [analysis, colorOf])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysis, style])
 
+  // Points of interest: explicit y = f(x) curves of the selected row, against
+  // every other visible explicit curve (G1 scope, GRAPH-SPEC §3.4).
   const pois = useMemo(() => {
-    const sel = selectedId ? analysis.byId.get(selectedId) : undefined
-    const it = selectedId ? colorOf.get(selectedId) : undefined
-    if (!sel?.curve || !it || it.hidden || !size.w) return []
+    if (!selectedId || !visible(selectedId) || !size.w) return []
+    const explicit = (c: Curve) => c.orientation === 'y' && !c.dashed
+    const mine = (analysis.byId.get(selectedId)?.curves ?? []).filter(explicit)
+    if (!mine.length) return []
     const others = analysis.rows
-      .filter((r) => r.id !== selectedId && r.curve && !colorOf.get(r.id)?.hidden)
-      .map((r) => r.curve!)
-    return pointsOfInterest(sel.curve, others, view, size.w)
-  }, [analysis, selectedId, colorOf, view, size])
+      .filter((r) => r.id !== selectedId && visible(r.id))
+      .flatMap((r) => (r.curves ?? []).filter(explicit))
+    return mine.flatMap((c, i) => pointsOfInterest(c, [...others, ...mine.filter((_, j) => j !== i)], view, size.w))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysis, selectedId, style, view, size])
 
   // Pinned labels belong to the selection they were made on.
   useEffect(() => setPinned([]), [selectedId])
@@ -179,6 +205,42 @@ export function GraphPaper({
       }
     }
 
+    // Inequality shading (fill opacity ≈ 0.4 [API]; lighter where regions overlap
+    // reads better, so 0.3).
+    for (const rg of regions) {
+      const { cols, rows, cellPx, mask } = rg.mask
+      g.fillStyle = rg.color
+      g.globalAlpha = 0.3
+      for (let r = 0; r < rows; r++) {
+        let c = 0
+        while (c < cols) {
+          if (!mask[r * cols + c]) { c++; continue }
+          const start = c
+          while (c < cols && mask[r * cols + c]) c++
+          g.fillRect(start * cellPx, r * cellPx, (c - start) * cellPx, cellPx)
+        }
+      }
+      g.globalAlpha = 1
+    }
+
+    // Implicit curves (contour segments).
+    for (const im of implicits) {
+      g.strokeStyle = im.color
+      g.globalAlpha = 0.9
+      g.lineWidth = im.id === selectedId ? 3.75 : 2.5
+      g.lineCap = 'round'
+      g.setLineDash(im.dashed ? [9, 7] : [])
+      g.beginPath()
+      for (let i = 0; i < im.segs.length; i += 4) {
+        const [ax, ay] = toPx(im.segs[i], im.segs[i + 1])
+        const [bx, by] = toPx(im.segs[i + 2], im.segs[i + 3])
+        g.moveTo(ax, ay); g.lineTo(bx, by)
+      }
+      g.stroke()
+      g.setLineDash([])
+      g.globalAlpha = 1
+    }
+
     // Curves: selected one drawn last and thicker [OBS].
     const ordered = [...curves].sort((a, b) => (a.id === selectedId ? 1 : 0) - (b.id === selectedId ? 1 : 0))
     const clamp = (v: number) => Math.max(-1e4, Math.min(1e4 + Math.max(w, h), v))
@@ -187,7 +249,8 @@ export function GraphPaper({
       g.globalAlpha = 0.9
       g.lineWidth = cv.id === selectedId ? 3.75 : 2.5
       g.lineJoin = 'round'
-      g.lineCap = 'round'
+      g.lineCap = cv.dashed ? 'butt' : 'round'
+      g.setLineDash(cv.dashed ? [9, 7] : [])
       for (const line of cv.lines) {
         g.beginPath()
         for (let i = 0; i < line.length; i += 2) {
@@ -201,6 +264,21 @@ export function GraphPaper({
         }
         g.stroke()
       }
+      g.setLineDash([])
+      g.globalAlpha = 1
+    }
+
+    // Table columns styled "lines": join each point to the previous one.
+    g.lineWidth = 2.5
+    for (let i = 1; i < points.length; i++) {
+      const p = points[i]
+      if (!p.line) continue
+      const q = points[i - 1]
+      const [ax, ay] = toPx(q.x, q.y)
+      const [bx, by] = toPx(p.x, p.y)
+      g.strokeStyle = p.color
+      g.globalAlpha = 0.9
+      g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke()
       g.globalAlpha = 1
     }
 
@@ -264,6 +342,14 @@ export function GraphPaper({
           const d = segDist(px, py, ax, ay, bx, by)
           if (d < bestD) { bestD = d; best = cv.id }
         }
+      }
+    }
+    for (const im of implicits) {
+      for (let i = 0; i < im.segs.length; i += 4) {
+        const [ax, ay] = toPx(im.segs[i], im.segs[i + 1])
+        const [bx, by] = toPx(im.segs[i + 2], im.segs[i + 3])
+        const d = segDist(px, py, ax, ay, bx, by)
+        if (d < bestD) { bestD = d; best = im.id }
       }
     }
     if (best) return best

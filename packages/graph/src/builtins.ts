@@ -1,5 +1,7 @@
 // Built-in functions and constants (GRAPH-SPEC §5). Names match Desmos's so
 // typing feels identical; implementations are ordinary maths.
+import { isList, mkList, numbers, type Value } from './values.ts'
+import * as st from './stats.ts'
 
 export const GREEK = new Set([
   'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta', 'iota', 'kappa', 'lambda',
@@ -88,8 +90,6 @@ export const BUILTINS: Record<string, Builtin> = {
   sign: { fn: ([x]) => Math.sign(x), arity: 1 },
   mod: { fn: ([a, b]) => ((a % b) + b) % b, arity: 2 },
   nthroot: { fn: ([x, n]) => nthRoot(x, n), arity: 2 },
-  min: { fn: (xs) => Math.min(...xs), arity: [1, Infinity] },
-  max: { fn: (xs) => Math.max(...xs), arity: [1, Infinity] },
   gcd: { fn: (xs) => xs.reduce(gcd2), arity: [1, Infinity] },
   lcm: { fn: (xs) => xs.reduce((a, b) => Math.abs(Math.round(a) * Math.round(b)) / gcd2(a, b)), arity: [1, Infinity] },
   nCr: { fn: ([n, k]) => choose(n, k), arity: 2 },
@@ -98,7 +98,39 @@ export const BUILTINS: Record<string, Builtin> = {
 // arctan(y, x) is the two-argument angle.
 BUILTINS.arctan.fn = ([a, b], c) => fromRad(b === undefined ? Math.atan(a) : Math.atan2(a, b), c)
 
-export const FUNCTION_NAMES = new Set(Object.keys(BUILTINS))
+/** Functions over whole lists (aggregates and list operations). They receive
+ *  the raw argument values; scalar BUILTINS instead broadcast element-wise. */
+type ListFn = (args: Value[]) => Value
+/** Aggregates accept one list or several numbers: mean([1,2]) = mean(1,2). */
+const agg = (f: (xs: number[]) => number): ListFn => (args) =>
+  f(args.length === 1 ? numbers(args[0]) : args.flatMap(numbers))
+const two = (f: (a: number[], b: number[]) => number): ListFn => ([a, b]) => f(numbers(a), numbers(b ?? NaN))
+
+export const LIST_FUNCS: Record<string, { fn: ListFn; arity: [number, number] }> = {
+  mean: { fn: agg(st.mean), arity: [1, Infinity] },
+  median: { fn: agg(st.median), arity: [1, Infinity] },
+  total: { fn: agg(st.total), arity: [1, Infinity] },
+  count: { fn: agg((xs) => xs.length), arity: [1, Infinity] },
+  min: { fn: agg((xs) => (xs.length ? Math.min(...xs) : NaN)), arity: [1, Infinity] },
+  max: { fn: agg((xs) => (xs.length ? Math.max(...xs) : NaN)), arity: [1, Infinity] },
+  stdev: { fn: agg((xs) => Math.sqrt(st.variance(xs, true))), arity: [1, Infinity] },
+  stdevp: { fn: agg((xs) => Math.sqrt(st.variance(xs, false))), arity: [1, Infinity] },
+  stddev: { fn: agg((xs) => Math.sqrt(st.variance(xs, true))), arity: [1, Infinity] },
+  var: { fn: agg((xs) => st.variance(xs, true)), arity: [1, Infinity] },
+  varp: { fn: agg((xs) => st.variance(xs, false)), arity: [1, Infinity] },
+  mad: { fn: agg(st.mad), arity: [1, Infinity] },
+  cov: { fn: two((a, b) => st.covariance(a, b, true)), arity: [2, 2] },
+  covp: { fn: two((a, b) => st.covariance(a, b, false)), arity: [2, 2] },
+  corr: { fn: two(st.corr), arity: [2, 2] },
+  spearman: { fn: two(st.spearman), arity: [2, 2] },
+  quartile: { fn: ([l, q]) => st.quartile(numbers(l), numbers(q)[0]), arity: [2, 2] },
+  quantile: { fn: ([l, q]) => st.quantile(numbers(l), numbers(q)[0]), arity: [2, 2] },
+  sort: { fn: ([l]) => mkList([...numbers(l)].sort((a, b) => a - b)), arity: [1, 1] },
+  unique: { fn: ([l]) => mkList(st.unique(numbers(l))), arity: [1, 1] },
+  join: { fn: (args) => mkList(args.flatMap((a) => (isList(a) ? a.list : [a]))), arity: [1, Infinity] },
+}
+
+export const FUNCTION_NAMES = new Set([...Object.keys(BUILTINS), ...Object.keys(LIST_FUNCS)])
 
 /** Real nth root: odd roots of negatives stay real (∛−8 = −2). */
 export function nthRoot(x: number, n: number): number {

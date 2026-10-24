@@ -1,9 +1,10 @@
 // Recursive-descent parser: MathQuill LaTeX → Statement (GRAPH-SPEC §2.2, §4).
-import { ParseError, type CompareOp, type Node, type Statement } from './ast.ts'
+import { ParseError, type CompareOp, type Node, type RelOp, type Statement } from './ast.ts'
 import { tokenize, type Tok } from './latex.ts'
 import { FUNCTION_NAMES, GREEK } from './builtins.ts'
 
-const RELATIONS = new Set(['<', '>', '<=', '>=', '='])
+const COMPARISONS = new Set(['<', '>', '<=', '>=', '='])
+const RELATIONS = new Set([...COMPARISONS, '~'])
 
 export function parseStatement(latex: string): Statement {
   const p = new Parser(tokenize(latex))
@@ -32,10 +33,10 @@ class Parser {
 
   statement(endSym?: string): Statement {
     const items: Node[] = [this.commaList(endSym)]
-    const ops: CompareOp[] = []
+    const ops: RelOp[] = []
     for (let t = this.peek(); t?.t === 'sym' && RELATIONS.has(t.v); t = this.peek()) {
       this.i++
-      ops.push(t.v as CompareOp)
+      ops.push(t.v as RelOp)
       items.push(this.commaList(endSym))
     }
     const restrictions: Statement[] = []
@@ -102,14 +103,64 @@ class Parser {
 
   postfix(): Node {
     let a = this.atom()
-    while (this.eat('!')) a = { k: 'fact', a }
-    return a
+    for (;;) {
+      if (this.eat('!')) a = { k: 'fact', a }
+      else if (this.eat('[')) { a = { k: 'index', a, idx: this.bracket(true) }; this.expect(']') }
+      else return a
+    }
+  }
+
+  /** A comparison chain (`x<0`, `-2<x<2`) or a plain expression. */
+  condition(): Node {
+    const first = this.expr()
+    const items = [first]
+    const ops: CompareOp[] = []
+    for (let t = this.peek(); t?.t === 'sym' && COMPARISONS.has(t.v); t = this.peek()) {
+      this.i++
+      ops.push(t.v as CompareOp)
+      items.push(this.expr())
+    }
+    return ops.length ? { k: 'cmp', items, ops } : first
+  }
+
+  /** Inside `[ ]`: a list, a range, or (in an index) a filter condition. */
+  bracket(inIndex: boolean): Node {
+    if (this.isSym(']')) return { k: 'listlit', items: [] }
+    const first = inIndex ? this.condition() : this.expr()
+    if (first.k === 'cmp') return first
+    const items: Node[] = [first]
+    for (;;) {
+      if (this.eat('...')) {
+        if (items.length > 2) throw new ParseError('Ranges look like [1...10] or [1,3...11]')
+        const end = this.isSym(']') ? undefined : this.expr()
+        if (!end && !inIndex) throw new ParseError('Ranges need an end, like [1...10]')
+        return { k: 'range', start: items[0], second: items[1], end }
+      }
+      if (!this.eat(',')) break
+      items.push(this.expr())
+    }
+    return { k: 'listlit', items }
+  }
+
+  piecewise(): Node {
+    const branches: { cond: Node; value?: Node }[] = []
+    let otherwise: Node | undefined
+    for (;;) {
+      const cond = this.condition()
+      if (this.eat(':')) branches.push({ cond, value: this.expr() })
+      else if (cond.k === 'cmp') branches.push({ cond })
+      else { otherwise = cond; break }
+      if (!this.eat(',')) break
+    }
+    this.expect('}}')
+    if (!branches.length) throw new ParseError('Piecewise needs a condition, like {x<0: -x, x}')
+    return { k: 'piecewise', branches, otherwise }
   }
 
   startsFactor(t = this.peek()): boolean {
     if (!t) return false
     if (t.t === 'num' || t.t === 'letter' || t.t === 'cmd') return true
-    return t.t === 'sym' && (t.v === '(' || t.v === 'absL' || t.v === '{' || t.v === 'bar')
+    return t.t === 'sym' && (t.v === '(' || t.v === 'absL' || t.v === '{' || t.v === 'bar' || t.v === '[')
   }
 
   isFunctionToken(t = this.peek()): boolean {
@@ -145,6 +196,12 @@ class Parser {
         this.expect('}')
         return a
       }
+      case '[': {
+        const l = this.bracket(false)
+        this.expect(']')
+        return l
+      }
+      case '{{': return this.piecewise()
     }
     throw new ParseError(this.done() && RELATIONS.has(t.v) ? 'Incomplete expression' : `Unexpected "${t.v}"`)
   }

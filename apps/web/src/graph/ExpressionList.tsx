@@ -1,13 +1,16 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { AlertTriangle, X } from 'lucide-react'
+import { useEffect, useRef, useState, type CSSProperties, type ClipboardEvent } from 'react'
+import { AlertTriangle, Plus, Table2, X } from 'lucide-react'
 import {
-  formatNumber, fractionLatex, pointLatex, toFraction,
-  type GraphItem, type RowResult, type SliderBounds, type Value,
+  formatNumber, fractionLatex, isList, pointLatex, toFraction,
+  type ExpressionItem, type GraphItem, type RegressionResult, type RowResult, type SliderBounds, type TableItem, type Value,
 } from '@tittel/graph'
-import { FIELD_CONFIG, loadMathQuill, type MathField } from './mathquill.ts'
+import { FIELD_CONFIG, activeField, loadMathQuill, type MathField } from './mathquill.ts'
 import { Tex } from './Tex.tsx'
 
+/** Focus target: a row id, or a table cell `${tableId}:${col}:${row}`
+ *  (row −1 = the header). */
 export interface FocusRequest { id: string; end: 'left' | 'right'; n: number }
+export const cellKey = (tableId: string, col: number, row: number) => `${tableId}:${col}:${row}`
 
 export interface RowCallbacks {
   onLatex: (id: string, latex: string) => void
@@ -20,6 +23,14 @@ export interface RowCallbacks {
   onAddSliders: (index: number, names: string[]) => void
   onSliderValue: (name: string, value: number, resolution: number) => void
   onSliderBounds: (id: string, bounds: SliderBounds) => void
+  onPaste: (index: number, text: string) => boolean
+  onFocusKey: (key: string, end?: 'left' | 'right') => void
+  table: {
+    onHeader: (id: string, col: number, latex: string) => void
+    onCell: (id: string, col: number, row: number, latex: string) => void
+    onAddColumn: (id: string) => void
+    onToggleColumn: (id: string, col: number) => void
+  }
 }
 
 export function ExpressionList({
@@ -40,18 +51,22 @@ export function ExpressionList({
 }) {
   return (
     <div className="gc-list" role="list" aria-label="Expressions">
-      {items.map((item, i) => (
-        <Row
-          key={item.id}
-          index={i}
-          item={item}
-          result={rows.get(item.id)}
-          selected={selectedId === item.id}
-          editable={editable}
-          focus={focus?.id === item.id ? focus : null}
-          {...cb}
-        />
-      ))}
+      {items.map((item, i) =>
+        item.type === 'table' ? (
+          <TableRow key={item.id} index={i} item={item} result={rows.get(item.id)} selected={selectedId === item.id} editable={editable} focus={focus} {...cb} />
+        ) : (
+          <Row
+            key={item.id}
+            index={i}
+            item={item}
+            result={rows.get(item.id)}
+            selected={selectedId === item.id}
+            editable={editable}
+            focus={focus?.id === item.id ? focus : null}
+            {...cb}
+          />
+        ),
+      )}
       {editable && (
         <button type="button" className="gc-row gc-ghost" onClick={onAppend} aria-label="Add expression">
           <span className="gc-gutter"><span className="gc-index">{items.length + 1}</span></span>
@@ -66,15 +81,16 @@ function Row({
   index, item, result, selected, editable, focus, ...cb
 }: RowCallbacks & {
   index: number
-  item: GraphItem
+  item: ExpressionItem
   result?: RowResult
   selected: boolean
   editable: boolean
   focus: FocusRequest | null
 }) {
   const [focused, setFocused] = useState(false)
-  const graphed = !!(result?.curve || result?.points)
+  const graphed = !!(result?.curves?.length || result?.implicits?.length || result?.points?.length || result?.region)
   const warn = result?.error || (result?.missing && result.missing.length > 0)
+  const curveLike = !!(result?.curves?.length || result?.implicits?.length || result?.region)
 
   return (
     <div
@@ -83,6 +99,9 @@ function Row({
       data-selected={selected || focused || undefined}
       onFocus={() => { setFocused(true); cb.onSelect(item.id) }}
       onBlur={() => setFocused(false)}
+      onPasteCapture={(e: ClipboardEvent) => {
+        if (editable && cb.onPaste(index, e.clipboardData.getData('text/plain'))) { e.preventDefault(); e.stopPropagation() }
+      }}
     >
       <div className="gc-gutter">
         <span className="gc-index">{index + 1}</span>
@@ -91,19 +110,7 @@ function Row({
             <AlertTriangle size={16} strokeWidth={2.25} />
           </span>
         ) : graphed ? (
-          <button
-            type="button"
-            className="gc-swatch"
-            style={{ '--c': item.color } as CSSProperties}
-            data-hidden={item.hidden || undefined}
-            onClick={() => cb.onToggleHidden(item.id)}
-            title={item.hidden ? 'Show' : 'Hide'}
-            aria-pressed={!item.hidden}
-          >
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              {result?.curve ? <path d="M3 13c2.5-9 5-9 7-3s4.5 6 7-3" /> : <circle cx="10" cy="10" r="3.2" />}
-            </svg>
-          </button>
+          <Swatch color={item.color} hidden={!!item.hidden} curve={curveLike} onClick={() => cb.onToggleHidden(item.id)} />
         ) : null}
       </div>
 
@@ -141,6 +148,7 @@ function Row({
             onBounds={(b) => cb.onSliderBounds(item.id, b)}
           />
         )}
+        {result?.regression && <Regression r={result.regression} />}
         {result?.value !== undefined && !result.slider && <ValueChip value={result.value} />}
       </div>
 
@@ -153,18 +161,172 @@ function Row({
   )
 }
 
+function Swatch({ color, hidden, curve, onClick }: { color: string; hidden: boolean; curve: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="gc-swatch"
+      style={{ '--c': color } as CSSProperties}
+      data-hidden={hidden || undefined}
+      onClick={onClick}
+      title={hidden ? 'Show' : 'Hide'}
+      aria-pressed={!hidden}
+    >
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        {curve ? <path d="M3 13c2.5-9 5-9 7-3s4.5 6 7-3" /> : <circle cx="10" cy="10" r="3.2" />}
+      </svg>
+    </button>
+  )
+}
+
+// ---- tables ----------------------------------------------------------------
+
+function TableRow({
+  index, item, result, selected, editable, focus, ...cb
+}: RowCallbacks & {
+  index: number
+  item: TableItem
+  result?: RowResult
+  selected: boolean
+  editable: boolean
+  focus: FocusRequest | null
+}) {
+  const [focused, setFocused] = useState(false)
+  const t = cb.table
+  // One blank row at the end grows the table as you type into it [DOC].
+  const nRows = Math.max(0, ...item.columns.map((c, i) => Math.max(c.values.length, result?.columns?.[i]?.computed?.length ?? 0))) + (editable ? 1 : 0)
+  const at = (c: number, r: number) => (focus?.id === cellKey(item.id, c, r) ? focus : null)
+  const move = (c: number, r: number, end: 'left' | 'right' = 'right') => cb.onFocusKey(cellKey(item.id, c, r), end)
+
+  return (
+    <div
+      className="gc-row gc-table-row"
+      role="listitem"
+      data-selected={selected || focused || undefined}
+      onFocus={() => { setFocused(true); cb.onSelect(item.id) }}
+      onBlur={() => setFocused(false)}
+    >
+      <div className="gc-gutter">
+        <span className="gc-index">{index + 1}</span>
+        <span className="gc-table-icon"><Table2 size={17} strokeWidth={2} /></span>
+      </div>
+      <div className="gc-main">
+        <div className="gc-table-wrap">
+          <table className="gc-table">
+            <thead>
+              <tr>
+                {item.columns.map((col, c) => {
+                  const cr = result?.columns?.[c]
+                  const bad = cr?.error || cr?.missing?.length
+                  return (
+                    <th key={col.id} title={cr?.error ?? (cr?.missing?.length ? `Undefined: ${cr.missing.join(', ')}` : undefined)} data-bad={bad || undefined}>
+                      <div className="gc-th">
+                        {c > 0 && <Swatch color={col.color} hidden={!!col.hidden} curve={false} onClick={() => t.onToggleColumn(item.id, c)} />}
+                        <MathInput
+                          latex={col.latex}
+                          editable={editable}
+                          focus={at(c, -1)}
+                          onEdit={(l) => t.onHeader(item.id, c, l)}
+                          onEnter={() => move(c, 0)}
+                          onDown={() => move(c, 0)}
+                          onUp={() => cb.onMove(index, -1)}
+                          onDeleteEmpty={() => {}}
+                        />
+                      </div>
+                    </th>
+                  )
+                })}
+                {editable && (
+                  <th className="gc-th-add">
+                    <button type="button" className="gc-tool" title="Add column" onClick={() => t.onAddColumn(item.id)}><Plus size={15} /></button>
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: nRows }, (_, r) => (
+                <tr key={r}>
+                  {item.columns.map((col, c) => {
+                    const computed = result?.columns?.[c]?.computed
+                    if (computed) {
+                      const v = computed[r]
+                      return <td key={col.id} className="gc-td-computed">{v !== undefined && Number.isFinite(v) ? <Tex latex={formatNumber(v)} /> : null}</td>
+                    }
+                    return (
+                      <td key={col.id}>
+                        <MathInput
+                          latex={col.values[r] ?? ''}
+                          editable={editable}
+                          focus={at(c, r)}
+                          onEdit={(l) => t.onCell(item.id, c, r, l)}
+                          onEnter={() => move(c, r + 1)}
+                          onUp={() => move(c, r - 1)}
+                          onDown={() => (r + 1 < nRows ? move(c, r + 1) : cb.onMove(index, 1))}
+                          onDeleteEmpty={() => (c > 0 ? move(c - 1, r) : r > 0 && move(item.columns.length - 1, r - 1))}
+                          small
+                        />
+                      </td>
+                    )
+                  })}
+                  {editable && <td />}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {editable && (
+        <button type="button" className="gc-del" title="Delete table" onClick={() => cb.onDelete(index)}>
+          <X size={16} strokeWidth={2} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ---- values, regressions, sliders ------------------------------------------
+
+function valueLatex(v: Value): string {
+  if (isList(v)) {
+    const shown = v.list.slice(0, 20).map((x) => (typeof x === 'number' ? formatNumber(x) : pointLatex(formatNumber(x[0]), formatNumber(x[1]))))
+    return `\\left[${shown.join(',')}${v.list.length > 20 ? ',...' : ''}\\right]`
+  }
+  if (typeof v !== 'number') return pointLatex(formatNumber(v[0]), formatNumber(v[1]))
+  return formatNumber(v)
+}
+
 function ValueChip({ value }: { value: Value }) {
   const [asFraction, setAsFraction] = useState(false)
-  if (typeof value !== 'number') return <div className="gc-value"><Tex latex={`=${pointLatex(formatNumber(value[0]), formatNumber(value[1]))}`} /></div>
-  const fr = toFraction(value)
+  const fr = typeof value === 'number' ? toFraction(value) : undefined
   return (
     <div className="gc-value">
-      <Tex latex={`=${asFraction && fr ? fractionLatex(fr) : formatNumber(value)}`} />
+      <Tex latex={`=${asFraction && fr ? fractionLatex(fr) : valueLatex(value)}`} />
       {fr && (
         <button type="button" className="gc-frac" onClick={() => setAsFraction((f) => !f)} title={asFraction ? 'Show decimal' : 'Show fraction'}>
           {asFraction ? '0.5' : 'a/b'}
         </button>
       )}
+    </div>
+  )
+}
+
+const STAT_LATEX = { r: 'r', r2: 'r^{2}', R2: 'R^{2}' } as const
+
+function Regression({ r }: { r: RegressionResult }) {
+  return (
+    <div className="gc-reg">
+      <div className="gc-reg-block">
+        <span className="gc-reg-label">Statistics{r.logMode ? ' · log mode' : ''}</span>
+        <div className="gc-reg-items">
+          {r.stats.map((s) => <Tex key={s.name} latex={`${STAT_LATEX[s.name]}=${formatNumber(Number(s.value.toPrecision(6)))}`} />)}
+        </div>
+      </div>
+      <div className="gc-reg-block">
+        <span className="gc-reg-label">Parameters</span>
+        <div className="gc-reg-items">
+          {r.params.map((p) => <Tex key={p.name} latex={`${nameLatex(p.name)}=${formatNumber(Number(p.value.toPrecision(6)))}`} />)}
+        </div>
+      </div>
     </div>
   )
 }
@@ -233,8 +395,10 @@ export function nameLatex(name: string): string {
   return sub ? `${b}_{${sub}}` : b
 }
 
+// ---- the MathQuill field -----------------------------------------------------
+
 function MathInput({
-  latex, editable, focus, onEdit, onEnter, onUp, onDown, onDeleteEmpty,
+  latex, editable, focus, onEdit, onEnter, onUp, onDown, onDeleteEmpty, small,
 }: {
   latex: string
   editable: boolean
@@ -244,6 +408,7 @@ function MathInput({
   onUp: () => void
   onDown: () => void
   onDeleteEmpty: () => void
+  small?: boolean
 }) {
   const spanRef = useRef<HTMLSpanElement>(null)
   const mfRef = useRef<MathField | null>(null)
@@ -284,6 +449,7 @@ function MathInput({
     })
     return () => {
       dead = true
+      if (activeField.current === mfRef.current) activeField.current = null
       mfRef.current?.revert()
       mfRef.current = null
     }
@@ -307,5 +473,11 @@ function MathInput({
     go()
   }, [focus])
 
-  return <span ref={spanRef} className="gc-math" />
+  return (
+    <span
+      ref={spanRef}
+      className={`gc-math${small ? ' gc-math-sm' : ''}`}
+      onFocus={() => { if (editable && mfRef.current) activeField.current = mfRef.current }}
+    />
+  )
 }

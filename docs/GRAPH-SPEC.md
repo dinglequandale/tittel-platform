@@ -358,6 +358,45 @@ Priority: **A** = G1, **B** = G2, **C** = G3, **D** = G4 (see §6).
 - **Not yet verified:** visual styling by eye (screenshots were unavailable), and a two-window
   board session. Konrad browser-check.
 
+**G2 status (2026-10-23):**
+- **Built (engine, 52 new tests in `test/g2.test.mjs`; 119 in total):**
+  - Lists: literals, `[1...10]`, `[1,3...11]`, 1-based indexing, ranges, `L[3...]`, filters
+    `L[L>0]`, and broadcasting through operators, functions and user functions.
+  - Statistics and list functions (§5), with quartiles by Moore & McCabe.
+  - Piecewise `{c: v, …, else}`.
+  - Inequalities: explicit, `a<y<b` bands and implicit regions, with dashed or solid boundaries
+    and restrictions.
+  - Implicit curves: an adaptive quadtree plus marching squares, rejecting false contours at
+    poles.
+  - Tables: data columns become list variables; header expressions compute their column.
+  - Regressions:
+    - least squares; QR when the model is linear in its parameters, otherwise multi-start
+      Levenberg–Marquardt
+    - parameter bounds from restrictions
+    - log mode for a·bˣ, a·e^(bx) and a·x^b (it matches TI ExpReg)
+    - r and r² for y ~ mx + b, R² otherwise; round-off dust snaps to 0
+    - fitted parameters are global variables, and the model is plotted
+  - Parser fix: `a(x+1)^2` is a·(x+1)² when `a` is not a function.
+- **Built (UI):**
+  - shading, dashed boundaries and implicit curves on the graph paper
+  - table rows: typing `table`, editable headers and cells, grey computed cells, a growing blank
+    row, pasting spreadsheet data
+  - regression results; list values in the `= value` chip
+  - the keypad (main page laid out as the reference, plus ABC and functions pages)
+  - a settings toggle for log-mode regressions
+- **Verified in the browser** (`/dev/graph`):
+  - `table` → x₁/y₁; filling cells
+  - `y1~mx1+b` → r = 1, m = 2, b = 0
+  - shading above `y>x^2`, and the circle `x^2+y^2=16` through (0,4) and (4,0), checked by
+    sampling pixels
+  - keypad entry `x^{2}-4` and Enter; pasting a 4×2 grid → a table with x₂/y₂
+- **Deferred:**
+  - the per-regression log-mode toggle and residual variables (e₁)
+  - "Create table" from a function (the edit-list mode)
+  - table column style menu (point style/lines)
+  - POIs for x = f(y) and implicit curves
+  - SAT mode wiring in the runner (O4)
+
 ---
 
 ## 7. Golden test cases (seed set; extend continuously)

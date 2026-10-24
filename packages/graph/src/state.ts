@@ -18,7 +18,26 @@ export interface ExpressionItem {
   slider?: SliderBounds
 }
 
-export type GraphItem = ExpressionItem
+export interface TableColumn {
+  id: string
+  /** Header: a variable (`x_1`) whose cells are data, or an expression
+   *  (`x_1^2`) whose cells are computed. */
+  latex: string
+  /** Cell LaTeX, one per row ('' = blank). Ignored for computed columns. */
+  values: string[]
+  color: string
+  hidden?: boolean
+  /** Connect the points with line segments (style menu "lines"). */
+  lines?: boolean
+}
+
+export interface TableItem {
+  id: string
+  type: 'table'
+  columns: TableColumn[]
+}
+
+export type GraphItem = ExpressionItem | TableItem
 
 export interface Viewport { xmin: number; xmax: number; ymin: number; ymax: number }
 
@@ -27,6 +46,9 @@ export interface GraphSettings {
   showGrid: boolean
   showAxes: boolean
   axisNumbers: boolean
+  /** Fit exponential/power models on log-transformed data (GRAPH-SPEC §4
+   *  item 30). Off by default; SAT mode forces it on [CB]. */
+  logModeRegressions?: boolean
 }
 
 export interface GraphState {
@@ -61,5 +83,20 @@ export function newId(): string {
 
 /** The next colour in the cycle, given the items already present. */
 export function nextColor(items: GraphItem[]): string {
-  return CURVE_COLORS[items.length % CURVE_COLORS.length]
+  const used = items.reduce((n, it) => n + (it.type === 'table' ? Math.max(1, it.columns.length - 1) : 1), 0)
+  return CURVE_COLORS[used % CURVE_COLORS.length]
+}
+
+/** A new table: columns x₁ and y₁ [DOC], `rows` blank rows. */
+export function newTable(items: GraphItem[], index = 1, rows = 2): TableItem {
+  const color = nextColor(items)
+  const blank = () => Array.from({ length: rows }, () => '')
+  return {
+    id: newId(),
+    type: 'table',
+    columns: [
+      { id: newId(), latex: `x_{${index}}`, values: blank(), color },
+      { id: newId(), latex: `y_{${index}}`, values: blank(), color },
+    ],
+  }
 }

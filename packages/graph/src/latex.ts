@@ -14,6 +14,7 @@ const SYMBOL_CMDS: Record<string, string> = {
   le: '<=', leq: '<=', ge: '>=', geq: '>=', lt: '<', gt: '>', ne: '!=',
   cdot: '*', times: '*', ast: '*', div: '/',
   to: '->', rightarrow: '->', sim: '~',
+  ldots: '...', dots: '...', cdots: '...',
   quad: ' ', qquad: ' ',
 }
 

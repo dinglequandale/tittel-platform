@@ -43,6 +43,8 @@ const OPERATOR_NAMES = [
   'sinh', 'cosh', 'tanh', 'csch', 'sech', 'coth',
   'ln|natural-log', 'log', 'exp', 'abs', 'floor', 'ceil', 'round', 'sign', 'mod',
   'min', 'max', 'gcd', 'lcm', 'nCr', 'nPr',
+  'mean', 'median', 'total', 'count', 'stdev', 'stdevp', 'stddev', 'var', 'varp', 'mad',
+  'cov', 'covp', 'corr', 'spearman', 'quartile', 'quantile', 'sort', 'unique', 'join',
 ].join(' ')
 
 // Functions after which "-" is a negative sign, so `sin -1` isn't `sin − 1`.
@@ -64,6 +66,9 @@ export const FIELD_CONFIG = {
   tripleDotsAreEllipsis: true,
   disableAutoSubstitutionInSubscripts: { except: 'log' },
 }
+
+/** The editable field that last had focus; the keypad types into it. */
+export const activeField: { current: MathField | null } = { current: null }
 
 let loading: Promise<MQInterface> | null = null
 

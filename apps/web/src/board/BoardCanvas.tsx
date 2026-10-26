@@ -22,6 +22,8 @@ import type { ControlChannel } from './controlChannel.ts'
 import { Calculator } from './Calculator.tsx'
 import { Timer, type TimerWireState } from './Timer.tsx'
 import { exportBoardToPdf } from './exportPdf.ts'
+import { useLessons } from './lesson/useLessons.ts'
+import { LessonPicker } from './lesson/LessonPicker.tsx'
 import './board.css'
 
 type ClassMode = 'small' | 'large'
@@ -32,9 +34,9 @@ function connectUrl(boardId: string, authParams: string) {
 }
 
 // Ported from the legacy whiteboard's Board.tsx (its `BoardCanvas`) — PLAN.md
-// §6.3: "port unchanged, restyled." Deferred to a follow-up pass: lesson
-// loading, the quiz answer overlay + stats panel, and games — none of those
-// change this file's shape, they slot into the same `components`/dock spots.
+// §6.3: "port unchanged, restyled." Lesson loading lives in ./lesson/. Still
+// to come (OVERHAUL O2): the quiz answer overlay + stats panel, and games —
+// they slot into the same `components`/dock spots.
 export function BoardCanvas({
   boardId,
   isHost,
@@ -85,6 +87,9 @@ export function BoardCanvas({
   const [canWrite, setCanWrite] = useState(!isLarge)
   const canWriteRef = useRef(canWrite)
   canWriteRef.current = canWrite
+  // Only a signed-in tutor's persistent board has plans (the /try board has no account).
+  const signedInHost = isHost && authParams.startsWith('boardToken=')
+  const lessons = useLessons({ editor, channel, boardId, enabled: signedInHost })
 
   useEffect(() => {
     if (!editor) return
@@ -288,7 +293,8 @@ export function BoardCanvas({
 
       {isHost && (
         <div className="tutor-dock">
-          {pdfStatus && <span className="lesson-status">{pdfStatus}</span>}
+          {(lessons.status ?? pdfStatus) && <span className="lesson-status">{lessons.status ?? pdfStatus}</span>}
+          {signedInHost && <LessonPicker onPick={lessons.loadLibraryLesson} />}
           <ShareControl boardId={boardId} collapsed={linkCopied} onCopied={() => setLinkCopied(true)} />
           <button
             className={`dock-btn ${freeReign ? 'primary' : ''}`}

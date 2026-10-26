@@ -359,7 +359,7 @@ time goes to teaching on it (from O2), recruiting partners, and the two licence 
   replaces the board's Desmos mirror, so its sync hack is never ported).
   **Plan-load contract** (agreed 2026-10-24 with the FLOW-SPEC F1 work):
   - **Entry:** `/b/:boardId?lesson=<sessionId>`. The host's board fetches
-    `GET /api/tutor/lessons-sched/:id/plan` → `{ planId, version, title, scheduledAt, doc }`,
+    `GET /api/tutor/sessions/:id/plan` (routes/sessions.ts; 404 when the lesson has no plan) → `{ planId, version, title, scheduledAt, doc }`,
     injects it, then strips the param.
   - **Page IDs are per lesson:** `page:lesson-<sessionId>-<n>`. A reload is idempotent, a plan
     reused or edited for a later lesson gets fresh pages, and history stays per lesson.

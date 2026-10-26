@@ -667,3 +667,61 @@
   font-size: 0.9rem;
   box-shadow: var(--shadow-2);
 }
+
+/* Library plan picker: a panel that opens upward out of the tutor dock. */
+.lesson-picker {
+  position: relative;
+}
+
+.lesson-picker__panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: 280px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-2);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+.lesson-picker__title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: 6px 8px 4px;
+}
+
+.lesson-picker__item {
+  appearance: none;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--ink);
+  padding: 8px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lesson-picker__item:hover,
+.lesson-picker__item:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+
+.lesson-picker__empty {
+  font-size: 0.85rem;
+  color: var(--ink-3);
+  padding: 8px;
+}

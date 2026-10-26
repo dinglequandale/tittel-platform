@@ -9,7 +9,7 @@ export function ContentPage() {
     <div className="screen">
       <Tabs defaultValue="lessons">
         <TabsList>
-          <TabsTrigger value="lessons">Lessons</TabsTrigger>
+          <TabsTrigger value="lessons">Plans</TabsTrigger>
           <TabsTrigger value="sets">Problem sets</TabsTrigger>
           <TabsTrigger value="problems">Problem bank</TabsTrigger>
           <TabsTrigger value="tags">Tags</TabsTrigger>

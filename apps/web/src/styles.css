@@ -51,24 +51,6 @@ html, body, #root {
 .quick-action-icon { color: var(--accent); }
 .quick-action-title { font-weight: 600; font-size: 0.875rem; }
 
-/* Home dashboard quick-action buttons — equal-width row. */
-.home-cards { margin-bottom: 24px; }
-.home-quick-row { display: flex; gap: 12px; flex-wrap: wrap; }
-.home-quick {
-  flex: 1; min-width: 180px;
-  display: flex; align-items: center; gap: 9px;
-  padding: 14px 16px;
-  background: var(--surface); border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  font-size: 13.5px; font-weight: 600; color: var(--ink);
-  text-decoration: none; cursor: pointer;
-}
-.home-quick { transition: transform var(--duration-pop) var(--ease-pop), border-color var(--duration-micro) var(--ease); }
-.home-quick:hover { border-color: var(--accent); transform: translateY(-2px); }
-.home-quick:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.home-quick-accent { background: var(--accent); border-color: var(--accent); color: #fff; }
-.home-quick-accent:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-
 /* Students table — grid columns matched to the Slate design comp. */
 .stu-row {
   display: grid;
@@ -149,3 +131,63 @@ html, body, #root {
 .not-found-art:hover { transform: rotate(150deg); }
 .not-found-title { font-size: clamp(36px, 6vw, 64px); letter-spacing: var(--tracking-display); line-height: 1; display: inline-flex; align-items: baseline; }
 .not-found-lede { color: var(--ink-2); margin-bottom: 8px; }
+
+/* --- This week + lesson hub (FLOW-SPEC F1) --------------------------------------- */
+.screen-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.check-row { display: flex; gap: 0.5rem; align-items: center; font-size: 14px; }
+.link-button { align-self: flex-start; padding: 0; background: none; border: none; cursor: pointer; font-family: var(--font-body); font-size: 13px; color: var(--ink-2); text-decoration: underline; }
+.link-button:hover { color: var(--coral-strong); }
+
+.week { display: flex; flex-direction: column; gap: 32px; }
+.week-day { margin-top: 32px; }
+.week .week-day { margin-top: 0; }
+.card-pad-x { padding: 4px 20px; }
+.week-day-title { font-family: var(--font-display); font-size: 17px; font-weight: 600; letter-spacing: var(--tracking-tight); margin: 0 0 12px; }
+
+.lesson-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 14px; }
+.lesson-card { display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; }
+.lesson-card[data-over='true'] { opacity: 0.6; }
+.lesson-card-main { display: flex; flex-direction: column; gap: 10px; color: var(--ink); text-decoration: none; }
+.lesson-card-main:hover .list-row-title { color: var(--coral-strong); }
+.lesson-card-time { font-family: var(--font-display); font-size: 22px; font-weight: 600; letter-spacing: var(--tracking-tight); }
+.lesson-card-time span { font-size: 15px; color: var(--ink-3); font-weight: 500; }
+.lesson-card .btn { align-self: flex-start; }
+
+.lesson-row { text-decoration: none; color: var(--ink); gap: 12px; flex-wrap: wrap; }
+.lesson-row:hover .list-row-title { color: var(--coral-strong); }
+.lesson-row-time { width: 72px; flex-shrink: 0; font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
+
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 220px;
+  padding: 3px 10px; border-radius: var(--radius-pill);
+  font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  border: 1px dashed var(--ink-4); color: var(--ink-3);
+}
+.chip[data-done='true'] { border: 1px solid transparent; background: var(--paper-2); color: var(--ink-2); }
+.chip-score { border: 1px solid transparent; }
+.chip-score[data-tone='correct'] { background: color-mix(in srgb, var(--correct) 14%, transparent); color: var(--correct-ink); }
+.chip-score[data-tone='warning'] { background: color-mix(in srgb, var(--warning) 14%, transparent); color: var(--warning); }
+.chip-score[data-tone='incorrect'] { background: color-mix(in srgb, var(--incorrect) 14%, transparent); color: var(--incorrect-ink); }
+
+.screen-narrow-wide { max-width: 1000px; }
+.lesson-series { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px !important; color: var(--ink-3) !important; }
+.lesson-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+@media (max-width: 860px) { .lesson-grid { grid-template-columns: minmax(0, 1fr); } }
+.lesson-col { display: flex; flex-direction: column; gap: 16px; }
+.slot { display: flex; flex-direction: column; gap: 12px; padding: 20px 22px; min-width: 0; }
+.slot-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
+.slot-value { font-size: 15px; font-weight: 600; }
+.slot-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.slot-note { font-size: 12.5px; }
+.slot .list-row { padding-left: 0; padding-right: 0; }
+.meeting-link { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.meeting-link a { font-size: 14px; color: var(--blue); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.settings-card { display: flex; flex-direction: column; gap: 12px; padding: 22px; }
+
+/* Student portal (O4 restyles it; this keeps F1's lessons legible). */
+.portal-section { margin-top: 1.75rem; }
+.portal-section-title { font-family: var(--font-display); font-size: 1.125rem; font-weight: 600; margin: 0 0 0.75rem; }
+.portal-lesson { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.portal-lesson[data-open='true'] { border-color: var(--ink); }

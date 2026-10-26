@@ -246,7 +246,7 @@ export function SetsTab() {
   )
 }
 
-function AiImportDialog({ enabled, onImported }: { enabled: boolean; onImported: (draft: AiImportDraft, filename: string) => void }) {
+export function AiImportDialog({ enabled, onImported }: { enabled: boolean; onImported: (draft: AiImportDraft, filename: string) => void }) {
   const [open, setOpen] = useState(false)
   const [hint, setHint] = useState('')
   const [importing, setImporting] = useState(false)

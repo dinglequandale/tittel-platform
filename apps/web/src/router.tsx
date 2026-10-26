@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { Landing } from './marketing/Landing.tsx'
 import { Login } from './auth/Login.tsx'
 import { Signup } from './auth/Signup.tsx'
@@ -7,14 +7,13 @@ import { AppShell } from './shell/AppShell.tsx'
 import { Home } from './shell/Home.tsx'
 import { StudentsPage } from './students/StudentsPage.tsx'
 import { ContentPage } from './content/ContentPage.tsx'
-import { AssignmentsPage } from './assignments/AssignmentsPage.tsx'
 import { PortalPage } from './portal/PortalPage.tsx'
 import { RunnerPage } from './runner/RunnerPage.tsx'
 import { ReviewPage } from './review/ReviewPage.tsx'
 import { BoardPage } from './board/BoardPage.tsx'
 import { TryLanding } from './board/TryLanding.tsx'
-import { LivePage } from './live/LivePage.tsx'
-import { AnalyticsPage } from './analytics/AnalyticsPage.tsx'
+import { InsightsPage } from './insights/InsightsPage.tsx'
+import { LessonPage } from './lessons/LessonPage.tsx'
 import { SettingsPage } from './settings/SettingsPage.tsx'
 import { NotFound } from './NotFound.tsx'
 import { GraphPlayground } from './graph/GraphPlayground.tsx'
@@ -33,12 +32,16 @@ export function Router() {
       <Route element={<RequireAuth />}>
         <Route path="/app" element={<AppShell />}>
           <Route index element={<Home />} />
+          <Route path="lessons/:lessonId" element={<LessonPage />} />
           <Route path="students" element={<StudentsPage />} />
-          <Route path="content" element={<ContentPage />} />
-          <Route path="live" element={<LivePage />} />
-          <Route path="assignments" element={<AssignmentsPage />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="library" element={<ContentPage />} />
+          <Route path="insights" element={<InsightsPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          {/* Pre-FLOW-SPEC paths, kept so old bookmarks land somewhere sensible. */}
+          <Route path="content" element={<Navigate to="/app/library" replace />} />
+          <Route path="assignments" element={<Navigate to="/app/insights?tab=homework" replace />} />
+          <Route path="analytics" element={<Navigate to="/app/insights" replace />} />
+          <Route path="live" element={<Navigate to="/app" replace />} />
         </Route>
       </Route>
 

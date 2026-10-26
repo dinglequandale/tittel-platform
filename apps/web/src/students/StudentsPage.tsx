@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   Button, Field, Input, EmptyState, CopyButton, PageLoading, ConfirmDialog,
   Dialog, DialogTrigger, DialogContent, DialogTitle, DialogClose,
@@ -7,6 +7,8 @@ import {
 } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
+import { ScheduleLessonDialog } from '../lessons/ScheduleLessonDialog.tsx'
+import { shortDate, timeLabel } from '../lessons/lessons.ts'
 
 interface Student {
   id: string
@@ -14,8 +16,11 @@ interface Student {
   email: string | null
   portal_token: string
   notes: string | null
+  meeting_url: string | null
   created_at: string
   board_id: string | null
+  next_lesson_id: string | null
+  next_lesson_at: string | null
 }
 
 interface Group {
@@ -41,7 +46,9 @@ export function StudentsPage() {
   const [editing, setEditing] = useState<Student | null>(null)
   const [archiveTarget, setArchiveTarget] = useState<Student | null>(null)
   const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null)
-  const [filter, setFilter] = useState<'all' | 'board' | 'noboard'>('all')
+  const [filter, setFilter] = useState<'all' | 'unscheduled'>('all')
+  const [scheduleFor, setScheduleFor] = useState<string | null>(null)
+  const [params, setParams] = useSearchParams()
 
   // Which group(s) each student belongs to — the students endpoint doesn't
   // carry this, so join it in from the groups list for the table's Group column.
@@ -50,9 +57,8 @@ export function StudentsPage() {
     for (const m of g.members) if (!groupOf.has(m.id)) groupOf.set(m.id, g.name)
   }
 
-  const withBoard = (students ?? []).filter((s) => s.board_id)
-  const noBoard = (students ?? []).filter((s) => !s.board_id)
-  const shown = filter === 'board' ? withBoard : filter === 'noboard' ? noBoard : (students ?? [])
+  const unscheduled = (students ?? []).filter((s) => !s.next_lesson_id)
+  const shown = filter === 'unscheduled' ? unscheduled : (students ?? [])
 
   async function reload() {
     try {
@@ -71,15 +77,16 @@ export function StudentsPage() {
     reload()
   }, [])
 
-  async function createStudent(name: string, email: string, notes: string, withBoard: boolean) {
+  // Boards now appear by themselves the first time a lesson starts or the
+  // student joins, so the natural next step after adding a student is their
+  // first lesson.
+  async function createStudent(name: string, email: string, notes: string, scheduleNext: boolean) {
     const { student } = await apiFetch('/api/tutor/students', {
       method: 'POST',
       body: JSON.stringify({ name, email: email || undefined, notes: notes || undefined }),
     })
-    if (withBoard) {
-      await apiFetch(`/api/tutor/students/${student.id}/board`, { method: 'POST' })
-    }
     await reload()
+    if (scheduleNext) setScheduleFor(`s:${student.id}`)
   }
 
   async function createStudentBoard(id: string) {
@@ -100,10 +107,12 @@ export function StudentsPage() {
     }
   }
 
-  async function updateStudent(id: string, name: string, email: string, notes: string) {
+  async function updateStudent(id: string, name: string, email: string, notes: string, meetingUrl: string) {
     await apiFetch(`/api/tutor/students/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ name: name.trim(), email: email.trim() || null, notes: notes.trim() || null }),
+      body: JSON.stringify({
+        name: name.trim(), email: email.trim() || null, notes: notes.trim() || null, meetingUrl: meetingUrl.trim() || null,
+      }),
     })
     await reload()
   }
@@ -159,16 +168,14 @@ export function StudentsPage() {
           <button className="filter-pill" data-active={filter === 'all'} onClick={() => setFilter('all')}>
             All ({students?.length ?? 0})
           </button>
-          <button className="filter-pill" data-active={filter === 'board'} onClick={() => setFilter('board')}>
-            With board ({withBoard.length})
-          </button>
-          <button className="filter-pill" data-active={filter === 'noboard'} onClick={() => setFilter('noboard')}>
-            Needs board ({noBoard.length})
+          <button className="filter-pill" data-active={filter === 'unscheduled'} onClick={() => setFilter('unscheduled')}>
+            No lesson scheduled ({unscheduled.length})
           </button>
         </div>
         <div className="toolbar-actions">
           <NewGroupDialog onCreate={createGroup} />
-          <NewStudentDialog onCreate={createStudent} />
+          <NewStudentDialog onCreate={createStudent} defaultOpen={params.get('new') === '1'}
+            onClosed={() => params.has('new') && setParams({}, { replace: true })} />
         </div>
       </div>
 
@@ -181,7 +188,7 @@ export function StudentsPage() {
       ) : (
         <div className="surface-card" style={{ overflow: 'hidden' }}>
           <div className="stu-row stu-head">
-            <span>Name</span><span>Group</span><span>Portal</span><span>Board</span><span>Status</span><span />
+            <span>Name</span><span>Group</span><span>Portal</span><span>Board</span><span>Next lesson</span><span />
           </div>
           {shown.map((s) => (
             <div key={s.id} className="stu-row">
@@ -198,8 +205,14 @@ export function StudentsPage() {
                   <Button variant="ghost" onClick={() => createStudentBoard(s.id)}>Create board</Button>
                 )}
               </span>
-              <span className={s.board_id ? 'badge badge-correct' : 'badge badge-warning'}>
-                {s.board_id ? 'Ready' : 'Needs board'}
+              <span>
+                {s.next_lesson_id && s.next_lesson_at ? (
+                  <Link to={`/app/lessons/${s.next_lesson_id}`} className="card-link num">
+                    {shortDate(s.next_lesson_at)}, {timeLabel(s.next_lesson_at)}
+                  </Link>
+                ) : (
+                  <Button variant="ghost" onClick={() => setScheduleFor(`s:${s.id}`)}>Schedule</Button>
+                )}
               </span>
               <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }}>
                 <Button variant="ghost" onClick={() => setEditing(s)}>Edit</Button>
@@ -269,6 +282,9 @@ export function StudentsPage() {
         />
       )}
 
+      <ScheduleLessonDialog open={!!scheduleFor} onOpenChange={(open) => !open && setScheduleFor(null)}
+        defaultWho={scheduleFor ?? undefined} />
+
       <ConfirmDialog
         open={!!archiveTarget}
         onOpenChange={(open) => !open && setArchiveTarget(null)}
@@ -290,20 +306,30 @@ export function StudentsPage() {
   )
 }
 
-function NewStudentDialog({ onCreate }: { onCreate: (name: string, email: string, notes: string, withBoard: boolean) => Promise<void> }) {
+function NewStudentDialog({
+  onCreate, defaultOpen = false, onClosed,
+}: {
+  onCreate: (name: string, email: string, notes: string, scheduleNext: boolean) => Promise<void>
+  defaultOpen?: boolean
+  onClosed?: () => void
+}) {
   const toast = useToast()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [notes, setNotes] = useState('')
-  const [withBoard, setWithBoard] = useState(true)
-  const [open, setOpen] = useState(false)
+  const [scheduleNext, setScheduleNext] = useState(true)
+  const [open, setOpenState] = useState(defaultOpen)
+  function setOpen(next: boolean) {
+    setOpenState(next)
+    if (!next) onClosed?.()
+  }
   const [saving, setSaving] = useState(false)
 
   async function submit() {
     if (!name.trim() || saving) return
     setSaving(true)
     try {
-      await onCreate(name.trim(), email.trim(), notes.trim(), withBoard)
+      await onCreate(name.trim(), email.trim(), notes.trim(), scheduleNext)
       setName(''); setEmail(''); setNotes(''); setOpen(false)
       toast('Student added')
     } catch (err) {
@@ -321,9 +347,9 @@ function NewStudentDialog({ onCreate }: { onCreate: (name: string, email: string
         <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Email (optional)"><Input value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
         <Field label="Notes (optional)"><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
-        <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <input type="checkbox" checked={withBoard} onChange={(e) => setWithBoard(e.target.checked)} />
-          Also create their whiteboard
+        <label className="check-row">
+          <input type="checkbox" checked={scheduleNext} onChange={(e) => setScheduleNext(e.target.checked)} />
+          Schedule their first lesson next
         </label>
         <div className="row-end">
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
@@ -339,19 +365,20 @@ function EditStudentDialog({
 }: {
   student: Student
   onOpenChange: (open: boolean) => void
-  onSave: (id: string, name: string, email: string, notes: string) => Promise<void>
+  onSave: (id: string, name: string, email: string, notes: string, meetingUrl: string) => Promise<void>
 }) {
   const toast = useToast()
   const [name, setName] = useState(student.name)
   const [email, setEmail] = useState(student.email ?? '')
   const [notes, setNotes] = useState(student.notes ?? '')
+  const [meetingUrl, setMeetingUrl] = useState(student.meeting_url ?? '')
   const [saving, setSaving] = useState(false)
 
   async function submit() {
     if (!name.trim() || saving) return
     setSaving(true)
     try {
-      await onSave(student.id, name, email, notes)
+      await onSave(student.id, name, email, notes, meetingUrl)
       onOpenChange(false)
       toast('Student updated')
     } catch (err) {
@@ -368,6 +395,10 @@ function EditStudentDialog({
         <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Email (optional)"><Input value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
         <Field label="Notes (optional)"><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+        <Field label="Meeting link (optional)">
+          <Input value={meetingUrl} onChange={(e) => setMeetingUrl(e.target.value)}
+            placeholder="Their usual Meet or Zoom link; blank uses your default" />
+        </Field>
         <div className="row-end">
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
           <Button onClick={submit} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Button>

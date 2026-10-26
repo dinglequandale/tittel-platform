@@ -1,30 +1,35 @@
-import { NavLink, Outlet, Link, useLocation } from 'react-router-dom'
-import { Home, Users, BookOpen, PenTool, ClipboardList, BarChart3, Settings, Search, Plus } from 'lucide-react'
-import { Shell, Wordmark, Qed } from '@tittel/ui'
+import { useState } from 'react'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { CalendarDays, Users, BookOpen, BarChart3, Settings, Search, Plus } from 'lucide-react'
+import { Shell, Wordmark, Qed, Menu, MenuTrigger, MenuContent, MenuItem } from '@tittel/ui'
 import { BRAND_NAME } from '@tittel/shared'
 import { supabase } from '../lib/supabase.ts'
 import { useSession } from '../lib/useSession.ts'
 import { AppToastProvider } from '../lib/toast.tsx'
+import { ScheduleLessonDialog } from '../lessons/ScheduleLessonDialog.tsx'
 
+// Five places, organised around the tutor's week rather than the database
+// (FLOW-SPEC §2.6): lessons are the hub; Library and Insights are where you
+// browse and look back.
 const NAV = [
-  { to: '/app', label: 'Home', icon: Home, end: true },
+  { to: '/app', label: 'This week', icon: CalendarDays, end: true },
   { to: '/app/students', label: 'Students', icon: Users },
-  { to: '/app/content', label: 'Content', icon: BookOpen },
-  { to: '/app/live', label: 'Live', icon: PenTool },
-  { to: '/app/assignments', label: 'Assignments', icon: ClipboardList },
-  { to: '/app/analytics', label: 'Analytics', icon: BarChart3 },
+  { to: '/app/library', label: 'Library', icon: BookOpen },
+  { to: '/app/insights', label: 'Insights', icon: BarChart3 },
   { to: '/app/settings', label: 'Settings', icon: Settings },
 ]
 
 export function AppShell() {
   const { session } = useSession()
   const { pathname } = useLocation()
+  const navigate = useNavigate()
+  const [scheduling, setScheduling] = useState(false)
 
   // Most-specific match wins the topbar title (reverse so nested paths beat '/app').
   const current = [...NAV]
     .reverse()
     .find((n) => (n.end ? pathname === n.to : pathname === n.to || pathname.startsWith(n.to + '/')))
-  const title = current?.label ?? 'Home'
+  const title = pathname.startsWith('/app/lessons/') ? 'Lesson' : current?.label ?? 'This week'
 
   const email = session?.user.email ?? ''
   const local = email.split('@')[0]
@@ -69,16 +74,27 @@ export function AppShell() {
                 <Search size={15} strokeWidth={1.9} />
                 <span>Search students, lessons…</span>
               </div>
-              <Link to="/app/content" className="shell-new-btn">
-                <Plus size={15} strokeWidth={2.1} />
-                <span>New</span>
-              </Link>
+              <Menu>
+                <MenuTrigger asChild>
+                  <button className="shell-new-btn">
+                    <Plus size={15} strokeWidth={2.1} />
+                    <span>New</span>
+                  </button>
+                </MenuTrigger>
+                <MenuContent>
+                  <MenuItem onSelect={() => setScheduling(true)}>Lesson</MenuItem>
+                  <MenuItem onSelect={() => navigate('/app/students?new=1')}>Student</MenuItem>
+                  <MenuItem onSelect={() => navigate('/app/insights?tab=homework')}>Homework</MenuItem>
+                  <MenuItem onSelect={() => window.open('/try', '_blank', 'noopener')}>Quick board</MenuItem>
+                </MenuContent>
+              </Menu>
             </div>
           </>
         }
       >
         <Outlet />
       </Shell>
+      <ScheduleLessonDialog open={scheduling} onOpenChange={setScheduling} />
     </AppToastProvider>
   )
 }

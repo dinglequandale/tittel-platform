@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { BRAND_NAME } from '@tittel/shared'
+import { Button } from '@tittel/ui'
 import { apiFetch, linkErrorMessage } from '../lib/api.ts'
+import { dayLabel, timeLabel, isJoinable, lessonEnd } from '../lessons/lessons.ts'
 
 interface Assignment {
   assignment_id: string
@@ -15,18 +17,44 @@ interface Assignment {
   score: number
 }
 
+interface PortalLesson {
+  id: string
+  scheduled_at: string
+  duration_min: number | null
+  group_name: string | null
+  meeting_url: string | null
+}
+
 export function PortalPage() {
   const { studentToken } = useParams()
+  const navigate = useNavigate()
   const [studentName, setStudentName] = useState('')
+  const [lessons, setLessons] = useState<PortalLesson[]>([])
   const [assignments, setAssignments] = useState<Assignment[] | null>(null)
   const [error, setError] = useState('')
+  const [, setTick] = useState(0)
 
   useEffect(() => {
     if (!studentToken) return
     apiFetch(`/api/portal/${studentToken}`)
-      .then((d) => { setStudentName(d.studentName); setAssignments(d.assignments) })
+      .then((d) => { setStudentName(d.studentName); setLessons(d.lessons ?? []); setAssignments(d.assignments) })
       .catch((e) => setError(linkErrorMessage(e)))
+    // Join lights up 15 minutes before; re-check each minute.
+    const t = window.setInterval(() => setTick((n) => n + 1), 60_000)
+    return () => window.clearInterval(t)
   }, [studentToken])
+
+  // One click: the meeting opens in a new tab (synchronously, or the browser
+  // blocks it as a popup) and this tab goes to the board.
+  async function join(l: PortalLesson) {
+    if (l.meeting_url) window.open(l.meeting_url, '_blank', 'noopener')
+    try {
+      const { boardId } = await apiFetch(`/api/portal/${studentToken}/lessons/${l.id}/join`, { method: 'POST', body: '{}' })
+      navigate(`/b/${boardId}`)
+    } catch (e) {
+      setError(linkErrorMessage(e))
+    }
+  }
 
   if (error) {
     return (
@@ -52,29 +80,53 @@ export function PortalPage() {
     <main className="page">
       <div className="page-brand">{BRAND_NAME}</div>
       <h1 style={{ fontFamily: 'var(--font-display)' }}>Hi, {studentName}</h1>
-      {assignments.length === 0 ? (
-        <p className="muted">Nothing assigned yet.</p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1.5rem' }}>
-          {assignments.map((a) => (
-            <div key={a.assignment_id} className="editor-card">
-              <strong>{a.title || a.set_title}</strong>
-              <div className="muted">
-                {a.status === 'pending' && 'Not started'}
-                {a.status === 'active' && 'In progress'}
-                {(a.status === 'submitted' || a.status === 'expired') && `Score: ${a.score} / ${a.total}`}
-                {a.status === 'expired' && ' · time expired'}
-                {a.due_at && ` · due ${new Date(a.due_at).toLocaleDateString()}`}
+
+      {lessons.length > 0 && (
+        <section className="portal-section">
+          <h2 className="portal-section-title">Lessons</h2>
+          {lessons.map((l) => {
+            const open = isJoinable(l)
+            return (
+              <div key={l.id} className="editor-card portal-lesson" data-open={open}>
+                <div>
+                  <strong>{dayLabel(l.scheduled_at)}, {timeLabel(l.scheduled_at)}–{timeLabel(lessonEnd(l).toISOString())}</strong>
+                  {l.group_name && <div className="muted">{l.group_name}</div>}
+                </div>
+                {open
+                  ? <Button onClick={() => join(l)}>Join lesson</Button>
+                  : <span className="muted">Join opens 15 minutes before</span>}
               </div>
-              {a.attempt_token && (
-                <Link to={a.status === 'submitted' || a.status === 'expired' ? `/review/${a.attempt_token}` : `/hw/${a.attempt_token}`}>
-                  {a.status === 'submitted' || a.status === 'expired' ? 'Review your answers →' : a.status === 'active' ? 'Continue →' : 'Start →'}
-                </Link>
-              )}
-            </div>
-          ))}
-        </div>
+            )
+          })}
+        </section>
       )}
+
+      <section className="portal-section">
+        <h2 className="portal-section-title">Homework</h2>
+        {assignments.length === 0 ? (
+          <p className="muted">Nothing assigned yet.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {assignments.map((a) => (
+              <div key={a.assignment_id} className="editor-card">
+                <strong>{a.title || a.set_title}</strong>
+                <div className="muted">
+                  {a.status === 'pending' && 'Not started'}
+                  {a.status === 'active' && 'In progress'}
+                  {(a.status === 'submitted' || a.status === 'expired') && `Score: ${a.score} / ${a.total}`}
+                  {a.status === 'expired' && ' · time expired'}
+                  {a.due_at && ` · due ${new Date(a.due_at).toLocaleDateString()}`}
+                </div>
+                {a.attempt_token && (
+                  <Link to={a.status === 'submitted' || a.status === 'expired' ? `/review/${a.attempt_token}` : `/hw/${a.attempt_token}`}>
+                    {a.status === 'submitted' || a.status === 'expired' ? 'Review your answers →' : a.status === 'active' ? 'Continue →' : 'Start →'}
+                  </Link>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </main>
   )
 }

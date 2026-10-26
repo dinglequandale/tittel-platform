@@ -215,6 +215,25 @@ create table if not exists classes (
 );
 create index if not exists classes_org_idx on classes(org_id);
 
+-- A weekly lesson slot (FLOW-SPEC §4). Its occurrences are materialised as
+-- `sessions` rows a few weeks ahead, lazily, whenever the schedule is read.
+-- weekday/start_time are local to `tz`, so 4pm stays 4pm across DST.
+create table if not exists lesson_series (
+  id           text primary key,
+  org_id       text not null references orgs(id) on delete cascade,
+  student_id   text references students(id) on delete cascade,
+  group_id     text references groups(id) on delete cascade,
+  weekday      int not null check (weekday between 0 and 6),   -- 0 = Sunday
+  start_time   time not null,
+  duration_min int not null,
+  tz           text not null,
+  starts_on    date not null,
+  meeting_url  text,
+  archived_at  timestamptz,
+  created_at   timestamptz not null default now()
+);
+create index if not exists lesson_series_org_idx on lesson_series(org_id);
+
 create table if not exists boards (
   id                  text primary key,
   org_id              text not null references orgs(id) on delete cascade,
@@ -284,3 +303,25 @@ select a.id, sp.problem_id, sp.ordinal
   join set_problems sp on sp.set_id = a.set_id
  where not exists (select 1 from assignment_problems ap where ap.assignment_id = a.id)
 on conflict do nothing;
+
+-- FLOW-SPEC §4: a `sessions` row is now a Lesson — scheduled first, live
+-- while taught, past after. A scheduled lesson has no board or start yet.
+-- (UI word "Lesson" = this table; UI word "Plan" = the `lessons` table.)
+alter table sessions alter column board_id drop not null;
+alter table sessions alter column started_at drop not null;
+alter table sessions add column if not exists student_id   text references students(id) on delete cascade;
+alter table sessions add column if not exists group_id     text references groups(id) on delete cascade;
+alter table sessions add column if not exists series_id    text references lesson_series(id) on delete set null;
+alter table sessions add column if not exists scheduled_at timestamptz;
+alter table sessions add column if not exists duration_min int;
+alter table sessions add column if not exists status       text not null default 'scheduled';  -- scheduled | live | cancelled
+alter table sessions add column if not exists meeting_url  text;
+alter table sessions add column if not exists plan_id      text references lessons(id) on delete set null;
+alter table sessions add column if not exists notes        text;
+create index if not exists sessions_org_sched_idx on sessions(org_id, scheduled_at);
+
+-- Homework given at a lesson; its default due date is the next lesson.
+alter table assignments add column if not exists session_id text references sessions(id) on delete set null;
+
+-- Per-student meeting link; falls back to the tutor's default in orgs.settings.
+alter table students add column if not exists meeting_url text;

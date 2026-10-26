@@ -22,22 +22,33 @@ assignmentsRouter.get('/assignments', async (req, res) => {
 
 // Creates the assignment, rosters every listed student, and mints one attempt
 // (its own magic-link token) per student — so "student link" is available
-// immediately at creation time (PLAN.md §10 Phase 2).
-assignmentsRouter.post('/assignments', async (req, res) => {
-  const { setId, title, timeLimitSec, dueAt, studentIds } = req.body ?? {}
-  if (typeof setId !== 'string' || !Array.isArray(studentIds) || studentIds.length === 0) {
-    return res.status(400).json({ error: 'setId and non-empty studentIds are required' })
-  }
-  const orgId = req.auth!.orgId
+// immediately at creation time (PLAN.md §10 Phase 2). Shared by POST
+// /assignments and homework given from a lesson (routes/sessions.ts).
+export interface NewAssignment {
+  setId: string
+  title?: string
+  timeLimitSec?: number
+  dueAt?: string | null
+  studentIds: string[]
+  sessionId?: string
+}
+export type CreateAssignmentResult =
+  | { assignmentId: string; links: { studentId: string; studentName: string; attemptToken: string }[] }
+  | { status: number; error: string }
 
+export async function createAssignment(
+  orgId: string,
+  userId: string,
+  { setId, title, timeLimitSec, dueAt, studentIds, sessionId }: NewAssignment,
+): Promise<CreateAssignmentResult> {
   const [set] = await orgQuery<{ id: string; problem_count: number }>(
     orgId,
     `select s.id, (select count(*)::int from set_problems sp where sp.set_id = s.id) as problem_count
        from problem_sets s where s.org_id = $1 and s.id = $2`,
     [setId],
   )
-  if (!set) return res.status(404).json({ error: 'problem set not found' })
-  if (set.problem_count === 0) return res.status(400).json({ error: 'this problem set has no problems yet' })
+  if (!set) return { status: 404, error: 'problem set not found' }
+  if (set.problem_count === 0) return { status: 400, error: 'this problem set has no problems yet' }
 
   const client = await pool.connect()
   try {
@@ -45,13 +56,14 @@ assignmentsRouter.post('/assignments', async (req, res) => {
 
     const assignmentId = newId()
     await client.query(
-      `insert into assignments (id, org_id, set_id, title, time_limit_sec, due_at, created_by)
-       values ($1, $2, $3, $4, $5, $6, $7)`,
+      `insert into assignments (id, org_id, set_id, title, time_limit_sec, due_at, created_by, session_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
         assignmentId, orgId, setId, title || null,
         timeLimitSec ? Math.max(1, Math.floor(Number(timeLimitSec))) : null,
         dueAt || null,
-        req.auth!.userId,
+        userId,
+        sessionId ?? null,
       ],
     )
 
@@ -91,13 +103,23 @@ assignmentsRouter.post('/assignments', async (req, res) => {
     }
 
     await client.query('commit')
-    res.status(201).json({ assignmentId, links })
+    return { assignmentId, links }
   } catch (e) {
     await client.query('rollback')
     throw e
   } finally {
     client.release()
   }
+}
+
+assignmentsRouter.post('/assignments', async (req, res) => {
+  const { setId, title, timeLimitSec, dueAt, studentIds } = req.body ?? {}
+  if (typeof setId !== 'string' || !Array.isArray(studentIds) || studentIds.length === 0) {
+    return res.status(400).json({ error: 'setId and non-empty studentIds are required' })
+  }
+  const result = await createAssignment(req.auth!.orgId, req.auth!.userId, { setId, title, timeLimitSec, dueAt, studentIds })
+  if ('error' in result) return res.status(result.status).json({ error: result.error })
+  res.status(201).json(result)
 })
 
 // Recovers every attempt link for an assignment — the same shape POST

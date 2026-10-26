@@ -238,12 +238,34 @@ Under four clicks between any two steps, PLAN §3's original bar, now actually m
 the Lesson hub), mark PLAN §13.8 reversed, retitle O3 to start from F1, and fold the nav change
 into O6's shell items.
 
-## 7. Questions only Konrad can answer (shape F2, don't block F1)
+## 7. Konrad's answers (2026-10-25)
 
-1. Is every lesson in one Google Calendar, and are students or parents invited to the events
-   (that's the best match key), or is the student's name in the event title?
-2. Meet from a personal Gmail or from Workspace? Do some families use Zoom?
-3. Are most students on a fixed weekly slot? (That decides whether stage A's repeat is enough on
-   its own.)
-4. Homework visible immediately (the default here, per your note) — any students for whom you'd
-   rather hold it until class ends?
+1. **Calendar invitees:** usually the student, sometimes the parent when the student is younger.
+   F2 matches attendee email against the student's email first, then `parent_email`, and only
+   then the name in the title.
+2. **Meet:** personal Gmail. Stage B (iCal) works as-is; stage C's OAuth path is open to him too.
+3. **Schedule:** mostly fixed weekly slots, with exceptions. Stage A's weekly series plus
+   per-week Move/Cancel covers it; F2's calendar import handles the rest.
+4. **Homework visibility:** Konrad left it to judgement. **Decided:** visible on the portal
+   immediately, with no "hold until class ends" toggle in F1. `release_at` is not built; add it
+   only if a partner asks.
+
+## 8. As built: F1 (2026-10-25)
+
+- **Schema:** `lesson_series`; `sessions` gained `student_id`, `group_id`, `series_id`,
+  `scheduled_at`, `duration_min`, `status`, `meeting_url`, `plan_id` and `notes`
+  (`board_id`/`started_at` are now nullable); `assignments.session_id`; `students.meeting_url`.
+  `calendar_uid` and `students.parent_email` wait for F2, where they're first used.
+- **Series** materialise ~4 weeks ahead, lazily, on every schedule read (Home, portal). An
+  occurrence's id is derived from (series, local date), so moving or cancelling a week sticks.
+  Stopping a series removes future weeks nobody prepared and keeps the ones with a plan or homework.
+- **Meeting link** resolves lesson → series → student → tutor default (Settings).
+- **API:** `GET/POST /api/tutor/sessions`, `GET/PATCH /sessions/:id`, `POST /sessions/:id/start`,
+  `GET /sessions/:id/plan` (the O2 contract), `POST /sessions/:id/homework` (due = next lesson),
+  `DELETE /series/:id`, `GET /attention`, `GET/PATCH /org`; portal `lessons` + `POST
+  /api/portal/:token/lessons/:id/join`.
+- **Web:** This week Home, the lesson page (`/app/lessons/:id`), the Schedule dialog (also from
+  New → Lesson and from a new student), portal Join, Settings meeting link, nav 7 → 5 with
+  redirects from the old paths. Live is gone; Assignments and Analytics live under Insights.
+- **Not in F1:** plans from a PDF (O2's next step), a drawer over Home (the lesson is a page for
+  now), the student record page (O6).

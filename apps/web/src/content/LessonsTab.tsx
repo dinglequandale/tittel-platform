@@ -5,9 +5,9 @@ import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
 import type { LessonSummary } from './types.ts'
 
-// Full visual lesson builder is Phase 4 (PLAN.md §6.4/§10) — for now, Phase 1
-// only needs the lessons table wired up with JSON import/export so existing
-// lesson files round-trip through the new schema.
+// Plans (the `lessons` table; the UI says "Plan" because a Lesson is now a
+// scheduled meeting, FLOW-SPEC §1.1). The composer is O3; for now plans
+// round-trip as JSON and are attached to lessons from the lesson page.
 export function LessonsTab() {
   const toast = useToast()
   const [lessons, setLessons] = useState<LessonSummary[] | null>(null)
@@ -37,7 +37,7 @@ export function LessonsTab() {
       const json = JSON.parse(text)
       await apiFetch('/api/tutor/lessons/import', { method: 'POST', body: JSON.stringify(json) })
       await reload()
-      toast('Lesson imported')
+      toast('Plan imported')
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -74,7 +74,7 @@ export function LessonsTab() {
     return (
       <div>
         <button className="content-back" onClick={() => setDetail(null)}>
-          <ChevronLeft size={14} strokeWidth={2} /> Back to lessons
+          <ChevronLeft size={14} strokeWidth={2} /> Back to plans
         </button>
         <div className="editor-card">
           <div className="page-toolbar" style={{ marginBottom: 0 }}>
@@ -92,8 +92,8 @@ export function LessonsTab() {
         <ConfirmDialog
           open={archiveConfirm}
           onOpenChange={setArchiveConfirm}
-          title="Archive this lesson?"
-          description="It's removed from the lesson bank."
+          title="Archive this plan?"
+          description="It's removed from your library. Lessons that already use it keep it."
           confirmLabel="Archive"
           onConfirm={() => archive(detail.id)}
         />
@@ -114,14 +114,14 @@ export function LessonsTab() {
       {lessons === null ? (
         <PageLoading />
       ) : lessons.length === 0 ? (
-        <EmptyState title="No lessons yet" description="Import a lesson-plan JSON file to get started." />
+        <EmptyState title="No plans yet" description="Import a plan file, or add one straight from a lesson." />
       ) : (
         <div className="card-grid-3">
           {lessons.map((l) => (
             <button key={l.id} className="surface-card entity-card" onClick={() => openLesson(l.id)}>
               <div className="entity-card-icon"><BookOpen size={17} strokeWidth={1.8} /></div>
               <div className="entity-card-title">{l.title}</div>
-              <div className="entity-card-meta"><span>Lesson</span><span>v{l.version}</span></div>
+              <div className="entity-card-meta"><span>Plan</span><span>v{l.version}</span></div>
             </button>
           ))}
         </div>

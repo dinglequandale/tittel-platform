@@ -16,6 +16,8 @@ import { portalRouter } from './routes/portal.ts'
 import { boardsRouter, boardJoinRouter } from './routes/board.ts'
 import { boardAssetsRouter } from './board/assets.ts'
 import { aiImportRouter } from './routes/aiImport.ts'
+import { sessionsRouter } from './routes/sessions.ts'
+import { orgRouter } from './routes/org.ts'
 
 // The configured Express app — defined separately from the listen() bootstrap
 // (src/index.ts) so it can also be imported elsewhere (e.g. tests) without
@@ -60,6 +62,9 @@ app.use('/api/tutor', requireTutor, lessonsRouter)
 app.use('/api/tutor', requireTutor, assignmentsRouter)
 app.use('/api/tutor', requireTutor, boardsRouter)
 app.use('/api/tutor', requireTutor, aiImportRouter)
+// FLOW-SPEC F1 — lessons (the weekly hub) and the tutor's workspace settings.
+app.use('/api/tutor', requireTutor, sessionsRouter)
+app.use('/api/tutor', requireTutor, orgRouter)
 
 // Phase 2 — student-facing magic-link surfaces (no Supabase auth; the token
 // itself is the access control — see attemptQuery/studentQuery in db.ts).

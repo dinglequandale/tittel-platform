@@ -1,4 +1,4 @@
-import { toBlob } from 'html-to-image'
+import { toSvg } from 'html-to-image'
 import renderMathInElement from 'katex/contrib/auto-render'
 import 'katex/dist/katex.min.css'
 import type { LessonBlock } from '@tittel/shared'
@@ -11,10 +11,40 @@ import type { LessonBlock } from '@tittel/shared'
 //  - 'image' blocks: the source is used directly; we only measure it.
 
 const PIXEL_RATIO = 3
+/** A block that hasn't rendered by now isn't going to; fail so the host can retry. */
+const RENDER_TIMEOUT_MS = 20_000
 
 // html-to-image's first capture is often blank until web fonts are decoded and
 // embedded; we warm that cache exactly once.
 let fontsWarmed = false
+
+// html-to-image's own toBlob waits on `img.decode()` and then a
+// requestAnimationFrame, and a background tab runs neither — so a board opened
+// behind the meeting tab would hang. Rasterize the SVG ourselves with `onload`.
+function rasterize(svgUrl: string, w: number, h: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.ceil(w * PIXEL_RATIO)
+      canvas.height = Math.ceil(h * PIXEL_RATIO)
+      const ctx = canvas.getContext('2d')!
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Couldn’t render a lesson block'))), 'image/png')
+    }
+    img.onerror = () => reject(new Error('Couldn’t render a lesson block'))
+    img.src = svgUrl
+  })
+}
+
+function withTimeout<T>(p: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('Rendering the lesson timed out. Try loading it again.')), RENDER_TIMEOUT_MS)
+    p.then(resolve, reject).finally(() => clearTimeout(t))
+  })
+}
 
 export interface RenderedBlock {
   /** PNG to upload as an asset; null for 'image' blocks (use `src`). */
@@ -83,13 +113,12 @@ async function renderTextual(block: LessonBlock): Promise<RenderedBlock> {
     if (document.fonts?.ready) await document.fonts.ready
     const w = card.offsetWidth
     const h = card.offsetHeight
-    const opts = { pixelRatio: PIXEL_RATIO, backgroundColor: '#ffffff', cacheBust: true }
+    const opts = { backgroundColor: '#ffffff', cacheBust: true }
     if (!fontsWarmed) {
-      await toBlob(card, opts)
+      await rasterize(await toSvg(card, opts), w, h)
       fontsWarmed = true
     }
-    const blob = await toBlob(card, opts)
-    if (!blob) throw new Error('Couldn’t render a lesson block')
+    const blob = await rasterize(await toSvg(card, opts), w, h)
     return { blob, src: null, w, h, mimeType: 'image/png' }
   } finally {
     wrapper.remove()
@@ -112,5 +141,5 @@ function measureImage(block: LessonBlock): Promise<RenderedBlock> {
 }
 
 export function renderBlock(block: LessonBlock): Promise<RenderedBlock> {
-  return block.type === 'image' ? measureImage(block) : renderTextual(block)
+  return withTimeout(block.type === 'image' ? measureImage(block) : renderTextual(block))
 }

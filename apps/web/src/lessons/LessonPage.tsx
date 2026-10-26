@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, Play, Repeat } from 'lucide-react'
+import { CalendarDays, ChevronLeft, Play, Repeat } from 'lucide-react'
 import {
   Button, Field, Input, PageLoading, ConfirmDialog, CopyButton,
   Dialog, DialogContent, DialogTitle, DialogClose,
@@ -74,6 +74,9 @@ export function LessonPage() {
           {lesson.series && (
             <p className="lesson-series"><Repeat size={13} strokeWidth={2} /> {seriesLabel(lesson.series, lesson.scheduled_at)}</p>
           )}
+          {lesson.from_calendar && (
+            <p className="lesson-series"><CalendarDays size={13} strokeWidth={2} /> From your Google Calendar. Move or cancel it there.</p>
+          )}
         </div>
         <div className="toolbar-actions">
           {lesson.status !== 'cancelled' && !over && (
@@ -81,10 +84,10 @@ export function LessonPage() {
               <Play size={14} strokeWidth={2.2} /> Start lesson
             </Button>
           )}
-          <Button variant="secondary" onClick={() => setRescheduling(true)}>Move</Button>
-          {lesson.status === 'cancelled'
+          {!lesson.from_calendar && <Button variant="secondary" onClick={() => setRescheduling(true)}>Move</Button>}
+          {!lesson.from_calendar && (lesson.status === 'cancelled'
             ? <Button variant="ghost" onClick={() => patch({ status: 'scheduled' })}>Restore</Button>
-            : <Button variant="ghost" onClick={() => setConfirmCancel(true)}>Cancel lesson</Button>}
+            : <Button variant="ghost" onClick={() => setConfirmCancel(true)}>Cancel lesson</Button>)}
         </div>
       </div>
 

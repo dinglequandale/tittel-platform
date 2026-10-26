@@ -3,6 +3,7 @@ import { newId } from '@tittel/shared'
 import { orgQuery } from '../db.ts'
 import { createAssignment } from './assignments.ts'
 import { getOrCreateStudentBoard, getOrCreateGroupBoard } from './students.ts'
+import { syncCalendarBriefly } from './calendar.ts'
 
 // Lessons (FLOW-SPEC §1–§4). Vocabulary: a UI "Lesson" is a `sessions` row —
 // one scheduled meeting with a student or a group. A UI "Plan" is a `lessons`
@@ -36,14 +37,17 @@ export async function materializeSeries(orgId: string): Promise<void> {
 }
 
 // One lesson as Home and the lesson page see it. Meeting link resolves most
-// specific first: this lesson, its weekly series, the student, the tutor's default.
+// specific first: the tutor's override on this lesson, the calendar event's
+// own link, its weekly series, the student, the tutor's default.
 const LESSON_SELECT = `
   select se.id, se.scheduled_at, se.duration_min, se.status, se.notes, se.series_id, se.board_id,
          se.student_id, st.name as student_name,
          se.group_id, g.name as group_name,
          se.plan_id, pl.title as plan_title,
          se.meeting_url as own_meeting_url,
-         coalesce(se.meeting_url, ls.meeting_url, st.meeting_url, o.settings->>'defaultMeetingUrl') as meeting_url,
+         coalesce(se.meeting_url, se.calendar_meeting_url, ls.meeting_url, st.meeting_url,
+                  o.settings->>'defaultMeetingUrl') as meeting_url,
+         se.calendar_uid is not null as from_calendar,
          case when ls.id is not null and ls.archived_at is null
               then json_build_object('weekday', ls.weekday, 'startTime', to_char(ls.start_time, 'HH24:MI'), 'tz', ls.tz)
          end as series,
@@ -104,6 +108,7 @@ sessionsRouter.get('/sessions', async (req, res) => {
   const from = parseDate(req.query.from) ?? new Date()
   const to = parseDate(req.query.to) ?? new Date(from.getTime() + 7 * DAY_MS)
   if (to.getTime() - from.getTime() > 62 * DAY_MS) return res.status(400).json({ error: 'range is too long' })
+  await syncCalendarBriefly(orgId, req.auth!.email)
   await materializeSeries(orgId)
   const lessons = await orgQuery(
     orgId,
@@ -205,6 +210,12 @@ sessionsRouter.patch('/sessions/:id', async (req, res) => {
   }
   if (status !== undefined && status !== 'scheduled' && status !== 'cancelled') {
     return res.status(400).json({ error: "status must be 'scheduled' or 'cancelled'" })
+  }
+  if (scheduledAt !== undefined || durationMin !== undefined || status !== undefined) {
+    // The calendar owns an imported lesson's time and status; an edit here
+    // would be undone by the next sync.
+    const [cal] = await orgQuery(orgId, `select 1 from sessions where org_id = $1 and id = $2 and calendar_uid is not null`, [req.params.id])
+    if (cal) return res.status(409).json({ error: 'This lesson comes from your Google Calendar. Move or cancel it there.' })
   }
   if (typeof planId === 'string') {
     const [plan] = await orgQuery(orgId, `select id from lessons where org_id = $1 and id = $2 and archived_at is null`, [planId])

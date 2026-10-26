@@ -269,3 +269,35 @@ into O6's shell items.
   redirects from the old paths. Live is gone; Assignments and Analytics live under Insights.
 - **Not in F1:** plans from a PDF (O2's next step), a drawer over Home (the lesson is a page for
   now), the student record page (O6).
+
+## 9. As built: F2, Google Calendar import (2026-10-26)
+
+- **Connect:** Settings → Google Calendar → paste the "Secret address in iCal format". The
+  server only fetches allowlisted hosts (`calendar.google.com`; `ICS_ALLOW_HOSTS` widens it for
+  tests), with no redirects, a 10 s timeout and a 5 MB cap. The address is stored in
+  `orgs.settings.icsUrl` and never sent back (the UI shows host + tail only).
+- **Sync:** reading the schedule (This week) syncs when the last sync is over 5 minutes old,
+  waiting at most 3 s; "Sync now" forces it. `ical.js` expands recurrences with their moved and
+  cancelled weeks and EXDATEs, across DST. All-day events are skipped. The window is −1 day to
+  +28 days.
+- **Matching** (`lib/calendar.ts`, tested in `test/calendar.test.mjs`): remembered series link →
+  attendee = student email → attendee = parent email → several matched students who form one
+  group become a group lesson. A student's name in the title is only a *suggestion* in the inbox.
+  The tutor's own email never matches.
+- **Into lessons:** one `sessions` row per occurrence (`calendar_uid` = UID + original start, so a
+  moved week stays the same lesson). The calendar owns time, length, who and cancelled; the tutor
+  owns plan, homework, notes and the meeting override (the event's own link is kept separately
+  in `calendar_meeting_url`). A lesson already scheduled in the app within 10 minutes for the
+  same person is adopted, not duplicated. Calendar lessons can't be moved or cancelled in the
+  app (409; the page says to do it in Google Calendar).
+- **Deleted events:** an unprepared future lesson is removed; one with a plan or homework is
+  cancelled instead. A failed fetch never removes anything.
+- **Inbox** (This week, "From your calendar"): unmatched upcoming series with their next time and
+  attendees, and three answers: the suggestion ("It's Maya"), "Who is this?" (any student or
+  group), "Not a lesson". Linking can also save the attendee's address as the student's or
+  parent's email, so new events with them match by themselves. `calendar_links` stores the
+  answers per series UID.
+- **Disconnect** removes the address and unprepared future imports. Prepared lessons stay as
+  ordinary lessons.
+- **Not done:** writing to Google (stage C, OAuth after O5); calendars other than Google's
+  (widen the allowlist when a partner needs Outlook or iCloud).

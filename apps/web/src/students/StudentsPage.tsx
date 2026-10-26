@@ -14,6 +14,7 @@ interface Student {
   id: string
   name: string
   email: string | null
+  parent_email: string | null
   portal_token: string
   notes: string | null
   meeting_url: string | null
@@ -107,11 +108,12 @@ export function StudentsPage() {
     }
   }
 
-  async function updateStudent(id: string, name: string, email: string, notes: string, meetingUrl: string) {
+  async function updateStudent(id: string, name: string, email: string, notes: string, meetingUrl: string, parentEmail: string) {
     await apiFetch(`/api/tutor/students/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({
         name: name.trim(), email: email.trim() || null, notes: notes.trim() || null, meetingUrl: meetingUrl.trim() || null,
+        parentEmail: parentEmail.trim() || null,
       }),
     })
     await reload()
@@ -365,20 +367,21 @@ function EditStudentDialog({
 }: {
   student: Student
   onOpenChange: (open: boolean) => void
-  onSave: (id: string, name: string, email: string, notes: string, meetingUrl: string) => Promise<void>
+  onSave: (id: string, name: string, email: string, notes: string, meetingUrl: string, parentEmail: string) => Promise<void>
 }) {
   const toast = useToast()
   const [name, setName] = useState(student.name)
   const [email, setEmail] = useState(student.email ?? '')
   const [notes, setNotes] = useState(student.notes ?? '')
   const [meetingUrl, setMeetingUrl] = useState(student.meeting_url ?? '')
+  const [parentEmail, setParentEmail] = useState(student.parent_email ?? '')
   const [saving, setSaving] = useState(false)
 
   async function submit() {
     if (!name.trim() || saving) return
     setSaving(true)
     try {
-      await onSave(student.id, name, email, notes, meetingUrl)
+      await onSave(student.id, name, email, notes, meetingUrl, parentEmail)
       onOpenChange(false)
       toast('Student updated')
     } catch (err) {
@@ -394,6 +397,10 @@ function EditStudentDialog({
         <DialogTitle>Edit student</DialogTitle>
         <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Email (optional)"><Input value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+        <Field label="Parent's email (optional)">
+          <Input value={parentEmail} onChange={(e) => setParentEmail(e.target.value)}
+            placeholder="Calendar invites to this address count as this student's lessons" />
+        </Field>
         <Field label="Notes (optional)"><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
         <Field label="Meeting link (optional)">
           <Input value={meetingUrl} onChange={(e) => setMeetingUrl(e.target.value)}

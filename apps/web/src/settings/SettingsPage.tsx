@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase.ts'
 import { useSession } from '../lib/useSession.ts'
 import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
+import { CalendarCard } from './CalendarCard.tsx'
 
 // Account/settings surface (PLAN.md §6.7). Billing/seat management arrives with
 // the plans work; for now: the account, the lesson defaults, and sign-out.
@@ -61,6 +62,8 @@ export function SettingsPage() {
           <Button onClick={saveMeetingUrl} disabled={saving || meetingUrl.trim() === saved}>{saving ? 'Saving…' : 'Save'}</Button>
         </div>
       </div>
+
+      <CalendarCard />
 
       <div className="surface-card" style={{ padding: 22, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>

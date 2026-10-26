@@ -35,6 +35,8 @@ export interface Lesson {
   plan_title: string | null
   own_meeting_url: string | null
   meeting_url: string | null
+  /** Imported from Google Calendar: its time and status are edited there. */
+  from_calendar: boolean
   series: { weekday: number; startTime: string; tz: string } | null
   homework: LessonHomework[]
   last_homework: LastHomework | null

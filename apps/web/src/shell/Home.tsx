@@ -6,6 +6,7 @@ import { apiFetch } from '../lib/api.ts'
 import { useSession } from '../lib/useSession.ts'
 import { useToast } from '../lib/toast.tsx'
 import { ScheduleLessonDialog } from '../lessons/ScheduleLessonDialog.tsx'
+import { CalendarInbox, type CalendarStatus } from '../lessons/CalendarInbox.tsx'
 import {
   type Lesson, lessonWho, lessonEnd, timeLabel, dayLabel, isJoinable, startLesson, scoreTone,
 } from '../lessons/lessons.ts'
@@ -50,15 +51,23 @@ export function Home() {
   const [studentCount, setStudentCount] = useState<number | null>(null)
   const [homeworkCount, setHomeworkCount] = useState<number | null>(null)
   const [scheduling, setScheduling] = useState(false)
+  const [calendar, setCalendar] = useState<CalendarStatus | null>(null)
   const [, setTick] = useState(0)
 
-  useEffect(() => {
+  // The lessons read syncs Google Calendar first (when connected), so the
+  // calendar status is fetched after it and reflects that sync.
+  function load() {
     const from = startOfToday()
     const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 8)
     apiFetch(`/api/tutor/sessions?from=${from.toISOString()}&to=${to.toISOString()}`)
       .then((r) => setLessons(r.lessons))
       .catch(() => setLessons([]))
+      .finally(() => apiFetch('/api/tutor/calendar').then(setCalendar).catch(() => {}))
     apiFetch('/api/tutor/attention').then((r) => { setReturned(r.returned); setOverdue(r.overdue) }).catch(() => {})
+  }
+
+  useEffect(() => {
+    load()
     apiFetch('/api/tutor/students').then((r) => setStudentCount(r.students.length)).catch(() => setStudentCount(0))
     apiFetch('/api/tutor/assignments').then((r) => setHomeworkCount(r.assignments.length)).catch(() => setHomeworkCount(0))
     // Start buttons light up 15 minutes before a lesson; re-check each minute.
@@ -143,6 +152,8 @@ export function Home() {
           </div>
         </div>
       )}
+
+      <CalendarInbox status={calendar} onChanged={load} />
 
       {lessons.length === 0 ? (
         <EmptyState

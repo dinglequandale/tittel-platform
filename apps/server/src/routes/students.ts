@@ -9,7 +9,7 @@ export const studentsRouter = Router()
 studentsRouter.get('/students', async (req, res) => {
   const rows = await orgQuery(
     req.auth!.orgId,
-    `select s.id, s.name, s.email, s.portal_token, s.report_token, s.notes, s.meeting_url, s.created_at,
+    `select s.id, s.name, s.email, s.parent_email, s.portal_token, s.report_token, s.notes, s.meeting_url, s.created_at,
             b.id as board_id, nl.id as next_lesson_id, nl.scheduled_at as next_lesson_at
        from students s
        left join lateral (
@@ -46,7 +46,7 @@ studentsRouter.post('/students', async (req, res) => {
 })
 
 studentsRouter.patch('/students/:id', async (req, res) => {
-  const { name, email, notes, meetingUrl } = req.body ?? {}
+  const { name, email, notes, meetingUrl, parentEmail } = req.body ?? {}
   // email/notes are nullable — an explicit null clears them, distinct from
   // the field being absent (undefined), which coalesce alone can't tell apart.
   const rows = await orgQuery(
@@ -55,11 +55,12 @@ studentsRouter.patch('/students/:id', async (req, res) => {
        name = coalesce($3, name),
        email = case when $4 then $5 else email end,
        notes = case when $6 then $7 else notes end,
-       meeting_url = case when $8 then $9 else meeting_url end
+       meeting_url = case when $8 then $9 else meeting_url end,
+       parent_email = case when $10 then $11 else parent_email end
      where org_id = $1 and id = $2 and archived_at is null
-     returning id, name, email, portal_token, report_token, notes, meeting_url, created_at`,
+     returning id, name, email, parent_email, portal_token, report_token, notes, meeting_url, created_at`,
     [req.params.id, name, email !== undefined, email ?? null, notes !== undefined, notes ?? null,
-     meetingUrl !== undefined, meetingUrl ?? null],
+     meetingUrl !== undefined, meetingUrl ?? null, parentEmail !== undefined, parentEmail ?? null],
   )
   if (!rows[0]) return res.status(404).json({ error: 'not found' })
   res.json({ student: rows[0] })

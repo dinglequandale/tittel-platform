@@ -234,6 +234,20 @@ create table if not exists lesson_series (
 );
 create index if not exists lesson_series_org_idx on lesson_series(org_id);
 
+-- Google Calendar import (FLOW-SPEC §3 B): what the tutor told us about an
+-- event series the importer couldn't match by email ("this is Maya", or
+-- "not a lesson"). Keyed by the series' iCal UID, so it holds for every
+-- week of a recurring event.
+create table if not exists calendar_links (
+  org_id     text not null references orgs(id) on delete cascade,
+  uid        text not null,
+  student_id text references students(id) on delete cascade,
+  group_id   text references groups(id) on delete cascade,
+  ignored    boolean not null default false,
+  created_at timestamptz not null default now(),
+  primary key (org_id, uid)
+);
+
 create table if not exists boards (
   id                  text primary key,
   org_id              text not null references orgs(id) on delete cascade,
@@ -325,3 +339,16 @@ alter table assignments add column if not exists session_id text references sess
 
 -- Per-student meeting link; falls back to the tutor's default in orgs.settings.
 alter table students add column if not exists meeting_url text;
+
+-- FLOW-SPEC F2: lessons imported from Google Calendar. calendar_uid is one
+-- occurrence (series UID + original start); the calendar owns its time and
+-- status, the tutor still owns its plan, homework, notes and meeting
+-- override. calendar_meeting_url is the event's own link, kept apart from
+-- meeting_url so a sync never overwrites the tutor's override.
+alter table sessions add column if not exists calendar_uid text;
+alter table sessions add column if not exists calendar_meeting_url text;
+create unique index if not exists sessions_org_calendar_uid on sessions(org_id, calendar_uid) where calendar_uid is not null;
+
+-- Tutor-owned parent contact (OVERHAUL R7); also how a parent-invited
+-- calendar event is matched to a younger student.
+alter table students add column if not exists parent_email text;

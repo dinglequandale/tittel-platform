@@ -8,7 +8,7 @@
     "start": "tsx src/index.ts",
     "migrate": "tsx src/migrate.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node test/smoke.mjs"
+    "test": "node test/smoke.mjs && node --import tsx test/calendar.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.1",
@@ -16,6 +16,7 @@
     "@tldraw/sync-core": "3.15.5",
     "express": "^4.19.2",
     "express-async-errors": "^3.1.1",
+    "ical.js": "^2.2.1",
     "jose": "^5.9.6",
     "mammoth": "^1.12.0",
     "node-tikzjax": "^1.0.5",

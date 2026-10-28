@@ -38,6 +38,20 @@ async function fetchLibraryPlan(lessonId: string): Promise<FetchedPlan> {
   return { ref: { kind: 'plan', id: lesson.id, version: lesson.version }, title: lesson.title, doc: lesson.doc }
 }
 
+// tldraw sync pushes on animation frames, which a background tab doesn't run:
+// a lesson loaded behind the meeting tab reaches students only once the tutor
+// looks at the board. Say so in the tab strip until they do.
+function cueUntilVisible() {
+  const title = document.title
+  document.title = '● Lesson ready: open the board'
+  const restore = () => {
+    if (document.hidden) return
+    document.title = title
+    document.removeEventListener('visibilitychange', restore)
+  }
+  document.addEventListener('visibilitychange', restore)
+}
+
 function fetchPlan(ref: LessonRef): Promise<FetchedPlan> {
   return ref.kind === 'session' ? fetchSessionPlan(ref.id) : fetchLibraryPlan(ref.id)
 }
@@ -55,6 +69,8 @@ export function useLessons({
   enabled: boolean
 }) {
   const [status, setStatus] = useState<string | null>(null)
+  // qid -> answer, for the tutor's own on-canvas annotation. Host only.
+  const [answerKeys, setAnswerKeys] = useState<Record<string, string>>({})
   const keysByPrefix = useRef(new Map<string, QuestionKey[]>())
   const hydrated = useRef(false)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -67,7 +83,11 @@ export function useLessons({
 
   const sendKeys = useCallback(() => {
     if (!hydrated.current) return
-    channel.send({ type: 'quiz-key', questions: [...keysByPrefix.current.values()].flat() })
+    const questions = [...keysByPrefix.current.values()].flat()
+    channel.send({ type: 'quiz-key', questions })
+    // Keep the identity on a mere reconnect: the overlay is rebuilt when it changes.
+    const next = Object.fromEntries(questions.map((q) => [q.id, q.key]))
+    setAnswerKeys((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
   }, [channel])
 
   useEffect(() => (enabled ? channel.on('open', sendKeys) : undefined), [channel, enabled, sendKeys])
@@ -87,6 +107,7 @@ export function useLessons({
       sendKeys()
       if (result.stale) flash('This plan changed after it went on the board. Answers are off for it.', 6000)
       else flash(result.added ? `Loaded ${result.pages} page${result.pages === 1 ? '' : 's'}` : 'Opened lesson')
+      if (result.added && document.hidden) cueUntilVisible()
     },
     [editor, boardId, sendKeys, flash],
   )
@@ -149,5 +170,5 @@ export function useLessons({
     [load, fail],
   )
 
-  return { status, loadLibraryLesson }
+  return { status, answerKeys, loadLibraryLesson }
 }

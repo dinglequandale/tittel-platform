@@ -1,0 +1,523 @@
+/* Quiz UI on the board (ported from the legacy whiteboard's answers.css +
+   stats.css, restyled to the OVERHAUL §2 tokens). `qa-` = the answer boxes
+   anchored under problems on the canvas; `qs-` = the tutor's answers panel.
+   Correct/incorrect use the semantic tokens — coral never means wrong. */
+
+/* --- Answer boxes (on the canvas) ------------------------------------------ */
+
+.qa-layer {
+  z-index: 300;
+}
+
+.qa-box {
+  pointer-events: auto;
+  position: absolute;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-1);
+  padding: 0.4rem 0.55rem;
+  font-family: var(--font-body);
+  color: var(--ink);
+}
+
+.qa-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Tutor-only open/close control: quieter than a student box — scaffolding, not content. */
+.qa-gate {
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.qa-gate-btn {
+  flex: 1 1 auto;
+  cursor: pointer;
+  border: 1px dashed var(--ink-4);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.35rem 0.5rem;
+  transition: border-color var(--duration-micro) var(--ease), color var(--duration-micro) var(--ease);
+}
+
+.qa-gate-btn:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.qa-gate-btn.qa-gate-open {
+  border-style: solid;
+  border-color: var(--correct);
+  background: var(--mint-wash);
+  color: var(--correct-ink);
+}
+
+/* Host-only: the answer, small and muted beside the gate. Never rendered for guests. */
+.qa-key {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-3);
+  padding: 0 0.2rem;
+  white-space: nowrap;
+}
+
+.qa-choices {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.qa-choice {
+  appearance: none;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-control);
+  line-height: 1;
+  transition: background var(--duration-micro) var(--ease), border-color var(--duration-micro) var(--ease);
+}
+
+.qa-choice:hover {
+  background: var(--surface-2);
+}
+
+.qa-choice:focus-visible,
+.qa-input:focus-visible,
+.qa-submit-btn:focus-visible,
+.qa-gate-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.qa-choice.qa-selected {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.qa-choice.qa-selected.qa-correct {
+  border-color: var(--correct);
+  background: var(--mint-wash);
+  color: var(--correct-ink);
+}
+
+.qa-choice.qa-selected.qa-incorrect {
+  border-color: var(--incorrect);
+  background: var(--pink-wash);
+  color: var(--incorrect-ink);
+}
+
+.qa-grid-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.qa-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.qa-input:focus {
+  border-color: var(--ink);
+}
+
+.qa-submit-btn {
+  appearance: none;
+  cursor: pointer;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--paper);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.32rem 0.7rem;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  flex: 0 0 auto;
+  transition: background var(--duration-micro) var(--ease), border-color var(--duration-micro) var(--ease);
+}
+
+.qa-submit-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.qa-status {
+  flex: 0 0 auto;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.qa-status.qa-neutral {
+  color: var(--ink-2);
+  background: var(--surface-2);
+}
+
+.qa-status.qa-correct {
+  color: var(--correct-ink);
+  background: var(--mint-wash);
+}
+
+.qa-status.qa-incorrect {
+  color: var(--incorrect-ink);
+  background: var(--pink-wash);
+}
+
+.qa-revealed-row {
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--ink-3);
+}
+
+.qa-revealed-row strong {
+  color: var(--ink);
+}
+
+/* --- Answers panel (tutor only) -------------------------------------------- */
+
+.qs-panel {
+  position: fixed;
+  z-index: 1450;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: min(400px, 92vw);
+  max-height: min(72vh, 640px);
+  color: var(--ink);
+}
+
+.qs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.65rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+  flex: 0 0 auto;
+}
+
+.qs-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.qs-close-btn {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--ink-3);
+  padding: 0.1rem;
+  line-height: 0;
+  border-radius: var(--radius-control);
+}
+
+.qs-close-btn:hover {
+  color: var(--ink);
+}
+
+.qs-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.qs-empty {
+  padding: 1.6rem 1rem;
+  text-align: center;
+  color: var(--ink-3);
+  font-size: 0.85rem;
+}
+
+.qs-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.qs-row {
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid transparent;
+}
+
+.qs-row:last-child {
+  border-bottom: none;
+}
+
+.qs-row-header {
+  appearance: none;
+  width: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1.4fr) auto minmax(40px, 1fr) auto auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.65rem;
+}
+
+.qs-row-header:hover {
+  background: var(--surface-2);
+}
+
+.qs-row-header:focus-visible,
+.qs-btn:focus-visible,
+.qs-close-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.qs-chevron {
+  display: inline-flex;
+  color: var(--ink-3);
+  transition: transform var(--duration-micro) var(--ease);
+}
+
+.qs-chevron.open {
+  transform: rotate(90deg);
+}
+
+.qs-qid {
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qs-answered,
+.qs-median {
+  font-size: 0.76rem;
+  color: var(--ink-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.qs-median {
+  text-align: right;
+}
+
+.qs-bar-track {
+  position: relative;
+  height: 6px;
+  min-width: 40px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.qs-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  background: var(--correct);
+  border-radius: var(--radius-pill);
+  transition: width var(--duration-panel) var(--ease-out);
+}
+
+.qs-first-pct {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.qs-row-detail {
+  padding: 0 0.65rem 0.6rem 2.2rem;
+  background: var(--surface-2);
+}
+
+.qs-detail-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1rem;
+  padding: 0.35rem 0;
+  font-size: 0.76rem;
+}
+
+.qs-detail-label {
+  font-weight: 600;
+}
+
+.qs-latest-pct {
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+.qs-detail-empty {
+  font-size: 0.78rem;
+  color: var(--ink-3);
+  padding: 0.3rem 0 0.5rem;
+}
+
+.qs-student-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.qs-student-table th {
+  text-align: left;
+  color: var(--ink-3);
+  font-weight: 600;
+  padding: 0.2rem 0.4rem;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.qs-student-table td {
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.qs-student-name {
+  font-weight: 600;
+}
+
+.qs-correct {
+  color: var(--correct-ink);
+  font-weight: 700;
+  text-align: center;
+}
+
+.qs-incorrect {
+  color: var(--incorrect-ink);
+  font-weight: 700;
+  text-align: center;
+}
+
+.qs-footer {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.5rem 0.65rem;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  flex: 0 0 auto;
+}
+
+.qs-btn {
+  appearance: none;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 0.4rem;
+  border-radius: var(--radius-pill);
+  flex: 1;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.qs-btn:hover {
+  background: var(--paper-3);
+}
+
+.qs-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--paper);
+}
+
+.qs-btn.primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.qs-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* "Everyone's answered": a deliberately loud "you can move on" signal — a dock
+   pill (glanceable with the panel closed) and a banner inside the panel. */
+.qs-all-answered-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--paper);
+  background: var(--correct);
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-1);
+  white-space: nowrap;
+}
+
+.qs-all-answered-banner {
+  flex: 0 0 auto;
+  padding: 0.45rem 0.65rem;
+  background: var(--correct);
+  color: var(--paper);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* A live (open, accepting answers) question: accent bar + dot by its label. */
+.qs-row-open {
+  border-left-color: var(--correct);
+}
+
+.qs-row-open .qs-qid::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 0.4rem;
+  border-radius: 50%;
+  background: var(--correct);
+  vertical-align: middle;
+}
+
+.qs-answered-complete {
+  color: var(--correct-ink);
+  font-weight: 700;
+}

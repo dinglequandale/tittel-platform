@@ -308,8 +308,11 @@
   bottom: 12px;
   z-index: 1000;
   display: flex;
+  flex-wrap: wrap-reverse;
+  justify-content: flex-end;
   align-items: center;
   gap: 8px;
+  max-width: calc(100vw - 24px);
 }
 
 .dock-btn {

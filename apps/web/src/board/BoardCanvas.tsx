@@ -12,7 +12,19 @@ import {
   type TLComponents,
 } from 'tldraw'
 import 'tldraw/tldraw.css'
-import { Lock, Unlock, Timer as TimerIcon, Calculator as CalculatorIcon, FileDown, Link as LinkIcon } from 'lucide-react'
+import {
+  Lock,
+  Unlock,
+  Timer as TimerIcon,
+  Calculator as CalculatorIcon,
+  FileDown,
+  Link as LinkIcon,
+  Play,
+  Square,
+  ListChecks,
+  Check,
+} from 'lucide-react'
+import type { QuestionMeta, QuizStats } from '@tittel/shared'
 import { useSync } from '@tldraw/sync'
 import { makeAssetStore } from './assetStore.ts'
 import { setupCameraSync, type FollowController } from './cameraSync.ts'
@@ -24,6 +36,8 @@ import { Timer, type TimerWireState } from './Timer.tsx'
 import { exportBoardToPdf } from './exportPdf.ts'
 import { useLessons } from './lesson/useLessons.ts'
 import { LessonPicker } from './lesson/LessonPicker.tsx'
+import { makeAnswerOverlay } from './quiz/AnswerOverlay.tsx'
+import { StatsPanel } from './quiz/StatsPanel.tsx'
 import './board.css'
 
 type ClassMode = 'small' | 'large'
@@ -34,9 +48,9 @@ function connectUrl(boardId: string, authParams: string) {
 }
 
 // Ported from the legacy whiteboard's Board.tsx (its `BoardCanvas`) — PLAN.md
-// §6.3: "port unchanged, restyled." Lesson loading lives in ./lesson/. Still
-// to come (OVERHAUL O2): the quiz answer overlay + stats panel, and games —
-// they slot into the same `components`/dock spots.
+// §6.3: "port unchanged, restyled." Lesson loading lives in ./lesson/, the
+// answer overlay + stats panel in ./quiz/. Still to come (OVERHAUL O2): games,
+// which slot into the same `components`/dock spots.
 export function BoardCanvas({
   boardId,
   isHost,
@@ -90,6 +104,15 @@ export function BoardCanvas({
   // Only a signed-in tutor's persistent board has plans (the /try board has no account).
   const signedInHost = isHost && authParams.startsWith('boardToken=')
   const lessons = useLessons({ editor, channel, boardId, enabled: signedInHost })
+  // Answers (host only): the panel toggle and the latest stats on the wire, so a
+  // freshly opened panel starts populated.
+  const [statsOpen, setStatsOpen] = useState(false)
+  const [lastStats, setLastStats] = useState<QuizStats | null>(null)
+  // Questions accepting answers (server-authoritative, echoed to everyone). Any
+  // open question is "practice mode": students stay on the tutor's page and
+  // camera but get their own calculator.
+  const [openQids, setOpenQids] = useState<Set<string>>(() => new Set())
+  const practiceOpen = openQids.size > 0
 
   useEffect(() => {
     if (!editor) return
@@ -119,9 +142,18 @@ export function BoardCanvas({
   }, [channel, isHost])
 
   useEffect(() => {
+    if (!isHost) return
+    return channel.on('quiz-stats', (m) => setLastStats(m.stats as QuizStats))
+  }, [channel, isHost])
+
+  useEffect(() => channel.on('quiz-open', (m) => setOpenQids(new Set(m.qids as string[]))), [channel])
+
+  const studentSoloCalc = freeReign || practiceOpen
+
+  useEffect(() => {
     if (isHost) return
-    setPersonalCalcOpen(freeReign)
-  }, [freeReign, isHost])
+    setPersonalCalcOpen(studentSoloCalc)
+  }, [studentSoloCalc, isHost])
 
   function toggleFreeReign(on: boolean) {
     setFreeReign(on)
@@ -254,19 +286,82 @@ export function BoardCanvas({
     [grantedAtom, toggleGrant, userId],
   )
 
-  const studentSoloCalc = freeReign
+  // Anchored under each answerable problem: an input for students, an open/close
+  // gate for the tutor. Built once per identity (tldraw remounts the slot when it
+  // changes, dropping a half-typed answer); `answerKeys` only changes on the host
+  // when a plan loads, and the gate state is re-echoed by the server anyway.
+  const AnswerOverlay = useMemo(
+    () => makeAnswerOverlay({ channel, roomId: boardId, userId, displayName, isHost, answerKeys: lessons.answerKeys }),
+    [channel, boardId, userId, displayName, isHost, lessons.answerKeys],
+  )
+
+  // Connected students, from tldraw presence (collaborators excludes self): the
+  // stats panel's "3/5 answered" denominator.
+  const rosterSize = useValue('roster size', () => editor?.getCollaborators().length ?? 0, [editor])
+
+  // Every answerable question on the tutor's current page, so the dock can open
+  // or close a whole page at once.
+  const pageQids = useValue<string[]>(
+    'page question ids',
+    () =>
+      editor
+        ? editor
+            .getCurrentPageShapes()
+            .map((s) => (s.meta as { q?: QuestionMeta }).q?.id)
+            .filter((id): id is string => !!id)
+        : [],
+    [editor],
+  )
+  const anyOpenOnPage = pageQids.some((id) => openQids.has(id))
+
+  // qid -> "Linear functions · 2 · Q1": the page name without its date, then the
+  // question's order down the page. Ids carry a per-plan prefix, so they read badly.
+  const questionLabels = useValue<Record<string, string>>(
+    'question labels',
+    () => {
+      const out: Record<string, string> = {}
+      if (!isHost || !editor) return out
+      for (const page of editor.getPages()) {
+        const qs = [...editor.getPageShapeIds(page.id)]
+          .map((id) => editor.getShape(id)!)
+          .filter((sh) => (sh.meta as { q?: QuestionMeta }).q)
+          .sort((a, b) => a.y - b.y)
+        const pageName = page.name.includes(' · ') ? page.name.slice(page.name.indexOf(' · ') + 3) : page.name
+        qs.forEach((sh, i) => {
+          out[(sh.meta as { q?: QuestionMeta }).q!.id] = `${pageName} · Q${i + 1}`
+        })
+      }
+      return out
+    },
+    [editor, isHost],
+  )
+  const labelFor = useCallback((qid: string) => questionLabels[qid] ?? qid, [questionLabels])
+
+  // "Everyone's answered everything open": the tutor's cue to move on. `>=`, not
+  // `===`: a student who reconnects with a fresh id can push a count past the roster.
+  const allAnswered =
+    rosterSize > 0 &&
+    openQids.size > 0 &&
+    [...openQids].every((qid) => (lastStats?.questions.find((q) => q.qid === qid)?.answered ?? 0) >= rosterSize)
+
+  /** Open every question on this page, or, if any is open, close answering entirely. */
+  function togglePageAnswering() {
+    const qids = anyOpenOnPage ? [] : pageQids
+    setOpenQids(new Set(qids)) // optimistic; the server echoes the filtered set back
+    channel.send({ type: 'quiz-open', qids })
+  }
 
   const components = useMemo<TLComponents>(() => {
     if (isHost) {
-      const c: TLComponents = { MainMenu: HostMainMenu }
+      const c: TLComponents = { MainMenu: HostMainMenu, InFrontOfTheCanvas: AnswerOverlay }
       if (isLarge) c.SharePanel = HostSharePanel
       return c
     }
-    const c: TLComponents = {}
+    const c: TLComponents = { InFrontOfTheCanvas: AnswerOverlay }
     if (!canWrite) c.Toolbar = null
     if (!freeReign) c.PageMenu = null
     return c
-  }, [isHost, isLarge, canWrite, freeReign, HostMainMenu, HostSharePanel])
+  }, [isHost, isLarge, canWrite, freeReign, AnswerOverlay, HostMainMenu, HostSharePanel])
 
   if (store.status === 'loading') {
     return <div className="board-status board-scope">Connecting to the board…</div>
@@ -304,6 +399,26 @@ export function BoardCanvas({
             {freeReign ? <Unlock size={14} /> : <Lock size={14} />}
             {freeReign ? 'Free rein: On' : 'Free rein: Off'}
           </button>
+          {pageQids.length > 0 && (
+            <button
+              className={`dock-btn ${anyOpenOnPage ? 'primary' : ''}`}
+              title="Let students answer this page's questions. They stay on your page, with their own calculator."
+              onClick={togglePageAnswering}
+            >
+              {anyOpenOnPage ? <Square size={12} /> : <Play size={12} />}
+              {anyOpenOnPage ? 'Stop answering' : `Answer page (${pageQids.length})`}
+            </button>
+          )}
+          <button className="dock-btn" onClick={() => setStatsOpen((v) => !v)}>
+            <ListChecks size={14} />
+            {statsOpen ? 'Hide answers' : 'Answers'}
+          </button>
+          {allAnswered && (
+            <span className="qs-all-answered-pill">
+              <Check size={14} />
+              All answered
+            </span>
+          )}
           <button className="dock-btn" onClick={() => toggleTimer(!timerOpen)}>
             <TimerIcon size={14} />
             {timerOpen ? 'Hide timer' : 'Timer'}
@@ -326,6 +441,18 @@ export function BoardCanvas({
             {personalCalcOpen ? 'Hide calculator' : 'My calculator'}
           </button>
         </div>
+      )}
+
+      {isHost && statsOpen && (
+        <StatsPanel
+          channel={channel}
+          initialStats={lastStats}
+          rosterSize={rosterSize}
+          openQids={openQids}
+          allAnswered={allAnswered}
+          labelFor={labelFor}
+          onHide={() => setStatsOpen(false)}
+        />
       )}
 
       {timerOpen && (

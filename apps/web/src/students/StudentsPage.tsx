@@ -13,8 +13,7 @@ import { shortDate, timeLabel } from '../lessons/lessons.ts'
 interface Student {
   id: string
   name: string
-  email: string | null
-  parent_email: string | null
+  emails: StudentEmail[]
   portal_token: string
   notes: string | null
   meeting_url: string | null
@@ -23,6 +22,8 @@ interface Student {
   next_lesson_id: string | null
   next_lesson_at: string | null
 }
+
+interface StudentEmail { email: string; role: 'student' | 'parent' }
 
 interface Group {
   id: string
@@ -108,12 +109,12 @@ export function StudentsPage() {
     }
   }
 
-  async function updateStudent(id: string, name: string, email: string, notes: string, meetingUrl: string, parentEmail: string) {
+  async function updateStudent(id: string, name: string, emails: StudentEmail[], notes: string, meetingUrl: string) {
     await apiFetch(`/api/tutor/students/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({
-        name: name.trim(), email: email.trim() || null, notes: notes.trim() || null, meetingUrl: meetingUrl.trim() || null,
-        parentEmail: parentEmail.trim() || null,
+        name: name.trim(), emails: emails.filter((e) => e.email.trim()), notes: notes.trim() || null,
+        meetingUrl: meetingUrl.trim() || null,
       }),
     })
     await reload()
@@ -367,21 +368,20 @@ function EditStudentDialog({
 }: {
   student: Student
   onOpenChange: (open: boolean) => void
-  onSave: (id: string, name: string, email: string, notes: string, meetingUrl: string, parentEmail: string) => Promise<void>
+  onSave: (id: string, name: string, emails: StudentEmail[], notes: string, meetingUrl: string) => Promise<void>
 }) {
   const toast = useToast()
   const [name, setName] = useState(student.name)
-  const [email, setEmail] = useState(student.email ?? '')
+  const [emails, setEmails] = useState<StudentEmail[]>(student.emails)
   const [notes, setNotes] = useState(student.notes ?? '')
   const [meetingUrl, setMeetingUrl] = useState(student.meeting_url ?? '')
-  const [parentEmail, setParentEmail] = useState(student.parent_email ?? '')
   const [saving, setSaving] = useState(false)
 
   async function submit() {
     if (!name.trim() || saving) return
     setSaving(true)
     try {
-      await onSave(student.id, name, email, notes, meetingUrl, parentEmail)
+      await onSave(student.id, name, emails, notes, meetingUrl)
       onOpenChange(false)
       toast('Student updated')
     } catch (err) {
@@ -396,10 +396,8 @@ function EditStudentDialog({
       <DialogContent>
         <DialogTitle>Edit student</DialogTitle>
         <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <Field label="Email (optional)"><Input value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
-        <Field label="Parent's email (optional)">
-          <Input value={parentEmail} onChange={(e) => setParentEmail(e.target.value)}
-            placeholder="Calendar invites to this address count as this student's lessons" />
+        <Field label="Emails">
+          <EmailList emails={emails} onChange={setEmails} />
         </Field>
         <Field label="Notes (optional)"><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
         <Field label="Meeting link (optional)">
@@ -463,5 +461,29 @@ function AddMemberSelect({
         ))}
       </SelectContent>
     </Select>
+  )
+}
+
+// A student's addresses, each theirs or a parent's. Calendar invites to any
+// of them are this student's lessons (Settings → Google Calendar).
+function EmailList({ emails, onChange }: { emails: StudentEmail[]; onChange: (e: StudentEmail[]) => void }) {
+  const set = (i: number, patch: Partial<StudentEmail>) => onChange(emails.map((e, j) => (j === i ? { ...e, ...patch } : e)))
+  return (
+    <div className="email-list">
+      {emails.map((e, i) => (
+        <div key={i} className="email-row">
+          <Input value={e.email} placeholder="name@example.com" onChange={(ev) => set(i, { email: ev.target.value })} />
+          <select value={e.role} onChange={(ev) => set(i, { role: ev.target.value as StudentEmail['role'] })}>
+            <option value="student">Student</option>
+            <option value="parent">Parent</option>
+          </select>
+          <Button variant="ghost" onClick={() => onChange(emails.filter((_, j) => j !== i))} aria-label={`Remove ${e.email}`}>×</Button>
+        </div>
+      ))}
+      <Button variant="ghost" onClick={() => onChange([...emails, { email: '', role: emails.some((x) => x.role === 'student') ? 'parent' : 'student' }])}>
+        + Add email
+      </Button>
+      <p className="muted">Calendar invites to any of these count as this student's lessons.</p>
+    </div>
   )
 }

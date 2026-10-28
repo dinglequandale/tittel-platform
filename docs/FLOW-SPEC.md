@@ -322,3 +322,28 @@ into O6's shell items.
   waiting on a sync (one runs in the background). The bug: a forced sync joined a sync already
   in flight, which had started before the answer, so the stale inbox came back. A forced sync
   now waits for that run and starts a fresh one.
+
+### 9.2 Student and parent addresses; filling in what the invite didn't say (2026-10-28)
+
+- **`student_emails`** (student_id, email, role `student|parent`) replaces
+  `students.email`/`parent_email`. Those columns are backfilled, then cleared, by schema.sql. A
+  student can have any number of their own addresses (school, personal) and parents'. The same
+  parent address on siblings is allowed. Students → Edit lists them, each marked Student or
+  Parent.
+- **Matching:** any of a student's own addresses, then any parent address. Several students on
+  one invite are their group; with no such group, the inbox suggests "It's Rayan + Deen (new
+  group)". Title mentions can suggest several students too. Suggestions read in invite or title
+  order.
+- **The inbox dialog** (`LinkEventDialog`, replacing the "recognise as…" checkbox) opens when an
+  invite has people the app doesn't know, or when the answer is a new student or new group. It
+  covers who the lesson is with (any student, any group, + New student, or the suggested new
+  group), a name when one is being created, and each invitee as "X's email", "X's parent" or
+  "Someone else". It guesses from names in the addresses, otherwise the first invitee is the
+  student and the rest parents. An existing student or group with no unknown invitees links in
+  one click with no dialog.
+- **New lessons appear at once:** an inbox answer re-matches the feed kept in memory from the
+  last download (no new download). The re-match reads what it compares against in parallel,
+  writes only what changed, and inserts new lessons in one statement. Before this, linking
+  re-downloaded the calendar and wrote every lesson one round trip at a time (~90 ms each to
+  Supabase): several seconds. Saving an address also places any other series with that address
+  (both of Mateo's) in the same answer.

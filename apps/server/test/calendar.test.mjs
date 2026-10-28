@@ -123,28 +123,39 @@ check('nothing outside the window', occ.every((o) => o.end > from && o.start < t
 
 // Matching.
 const students = [
-  { id: 'maya', name: 'Maya Chen', email: 'maya.chen@example.com', parent_email: null },
-  { id: 'leo', name: 'Leo Brandt', email: null, parent_email: 'Parent.Of.Leo@example.com' },
-  { id: 'sam', name: 'Sam Ortiz', email: 'sam@example.com', parent_email: null },
-  { id: 'ethan', name: 'Ethan Park', email: null, parent_email: null },
+  // Maya uses two addresses (school + personal); either one is her.
+  { id: 'maya', name: 'Maya Chen', emails: ['maya@school.example.org', 'maya.chen@example.com'], parentEmails: [] },
+  { id: 'leo', name: 'Leo Brandt', emails: [], parentEmails: ['parent.of.leo@example.com'] },
+  { id: 'sam', name: 'Sam Ortiz', emails: ['sam@example.com'], parentEmails: [] },
+  { id: 'ethan', name: 'Ethan Park', emails: [], parentEmails: [] },
+  { id: 'rayan', name: 'Rayan Ali', emails: ['rayan@example.com'], parentEmails: [] },
+  { id: 'deen', name: 'Deen Ali', emails: ['deen@example.com'], parentEmails: [] },
 ]
 const groups = [{ id: 'alg', memberIds: ['maya', 'sam'] }]
 const ctx = (links = new Map()) => ({ links, students, groups, tutorEmails: new Set(['konrad@example.com']) })
 const m = (uid, c = ctx()) => matchOccurrence(occ.find((o) => o.uid === uid), c)
 
 check('student email match', JSON.stringify(m('maya-weekly@google.com')) === JSON.stringify({ kind: 'student', studentId: 'maya' }), m('maya-weekly@google.com'))
-check('parent email match (case-insensitive)', m('leo-once@google.com').studentId === 'leo', m('leo-once@google.com'))
+check('parent email match', m('leo-once@google.com').studentId === 'leo', m('leo-once@google.com'))
+check('any of a student\'s several addresses matches', matchOccurrence({ uid: 'm2', title: 'x', attendees: ['maya@school.example.org'] }, ctx()).studentId === 'maya')
+const pair = matchOccurrence({ uid: 'rd', title: 'Math Class', attendees: ['rayan@example.com', 'deen@example.com'] }, ctx())
+check('two students with no group -> suggest making one', pair.kind === 'none' && pair.suggestion?.groupId === null
+  && JSON.stringify(pair.suggestion.studentIds.sort()) === JSON.stringify(['deen', 'rayan']), pair)
+const pairTitle = matchOccurrence({ uid: 'rd2', title: 'Rayan + Deen Math Class!', attendees: [] }, ctx())
+check('two first names in the title -> a two-student suggestion', pairTitle.suggestion?.studentIds.length === 2, pairTitle)
+const sharedFirst = matchOccurrence({ uid: 'al', title: 'Ali review', attendees: [] }, ctx())
+check('a surname shared by siblings is not a first-name mention', sharedFirst.suggestion === null, sharedFirst)
 check('two students who form a group -> the group', m('algebra-group@google.com').groupId === 'alg', m('algebra-group@google.com'))
 const dinner = m('dinner@google.com')
-check('name in title is only a suggestion', dinner.kind === 'none' && dinner.suggestion?.studentId === 'maya', dinner)
+check('name in title is only a suggestion', dinner.kind === 'none' && dinner.suggestion?.studentIds.join() === 'maya', dinner)
 const makeup = m('ancient-series@google.com')
-check('first-name suggestion when unique', makeup.kind === 'none' && makeup.suggestion?.studentId === 'ethan', makeup)
+check('first-name suggestion when unique', makeup.kind === 'none' && makeup.suggestion?.studentIds.join() === 'ethan', makeup)
 const linked = m('dinner@google.com', ctx(new Map([['dinner@google.com', { studentId: null, groupId: null, ignored: true }]])))
 check('tutor said "not a lesson" -> ignored', linked.kind === 'ignored')
 const linked2 = m('ancient-series@google.com', ctx(new Map([['ancient-series@google.com', { studentId: 'ethan', groupId: null, ignored: false }]])))
 check('remembered link wins', linked2.kind === 'student' && linked2.studentId === 'ethan')
 check('tutor\'s own email never matches a student', matchOccurrence({ uid: 'x', title: 'Admin', attendees: ['konrad@example.com'] },
-  { ...ctx(), students: [...students, { id: 'me', name: 'Konrad', email: 'konrad@example.com', parent_email: null }] }).kind === 'none')
+  { ...ctx(), students: [...students, { id: 'me', name: 'Konrad', emails: ['konrad@example.com'], parentEmails: [] }] }).kind === 'none')
 
 // Which events count as lessons (defaults: a guest, a video link, sent by the tutor).
 const me = new Set(['konrad@example.com', 'konrad.cal@gmail.com'])
@@ -163,7 +174,7 @@ check('keywords: title must contain one (case-insensitive)', pass({ title: 'Seb 
 check('normalizeFilters fills defaults and drops junk', JSON.stringify(normalizeFilters({ requireGuest: false, keywords: [' sat ', 3, ''] })) === JSON.stringify({ requireGuest: false, requireVideoLink: true, requireOrganizer: true, keywords: ['sat'] }))
 check('calendar owner from the secret address', calendarOwnerOf('https://calendar.google.com/calendar/ical/konrad.cal%40gmail.com/private-abc123/basic.ics') === 'konrad.cal@gmail.com')
 check('…including an address that differs from the sign-in one', matchOccurrence({ uid: 'u', title: 'x', attendees: ['konrad.cal@gmail.com'] },
-  { ...ctx(), tutorEmails: me, students: [...students, { id: 'me2', name: 'Me', email: 'konrad.cal@gmail.com', parent_email: null }] }).kind === 'none')
+  { ...ctx(), tutorEmails: me, students: [...students, { id: 'me2', name: 'Me', emails: ['konrad.cal@gmail.com'], parentEmails: [] }] }).kind === 'none')
 
 console.log(failures ? `\n${failures} calendar check(s) failed.` : '\nAll calendar checks passed.')
 process.exit(failures ? 1 : 0)

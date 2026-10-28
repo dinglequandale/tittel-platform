@@ -6,10 +6,43 @@ export const studentsRouter = Router()
 
 // --- Students ----------------------------------------------------------------
 
+// A student's addresses as [{email, role}] (student_emails, schema.sql).
+const EMAILS = `coalesce((select json_agg(json_build_object('email', e.email, 'role', e.role) order by e.role desc, e.created_at)
+                    from student_emails e where e.student_id = s.id), '[]') as emails`
+
+export interface StudentEmail { email: string; role: 'student' | 'parent' }
+
+/** Cleans a client-supplied email list; null if any entry is malformed. */
+export function parseEmails(raw: unknown): StudentEmail[] | null {
+  if (!Array.isArray(raw) || raw.length > 20) return null
+  const out = new Map<string, StudentEmail>()
+  for (const e of raw) {
+    const email = typeof e?.email === 'string' ? e.email.trim().toLowerCase() : ''
+    const role = e?.role === 'parent' ? 'parent' : e?.role === 'student' ? 'student' : null
+    if (!role || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null
+    out.set(email, { email, role })
+  }
+  return [...out.values()]
+}
+
+/** Adds addresses to a student, keeping any already there. */
+export async function addStudentEmails(orgId: string, studentId: string, emails: StudentEmail[]): Promise<void> {
+  if (!emails.length) return
+  await orgQuery(
+    orgId,
+    `insert into student_emails (student_id, org_id, email, role)
+     select $2, $1, e.email, e.role
+       from unnest($3::text[], $4::text[]) as e(email, role)
+      where exists (select 1 from students s where s.id = $2 and s.org_id = $1)
+     on conflict (student_id, email) do update set role = excluded.role`,
+    [studentId, emails.map((e) => e.email), emails.map((e) => e.role)],
+  )
+}
+
 studentsRouter.get('/students', async (req, res) => {
   const rows = await orgQuery(
     req.auth!.orgId,
-    `select s.id, s.name, s.email, s.parent_email, s.portal_token, s.report_token, s.notes, s.meeting_url, s.created_at,
+    `select s.id, s.name, ${EMAILS}, s.portal_token, s.report_token, s.notes, s.meeting_url, s.created_at,
             b.id as board_id, nl.id as next_lesson_id, nl.scheduled_at as next_lesson_at
        from students s
        left join lateral (
@@ -34,35 +67,46 @@ studentsRouter.post('/students', async (req, res) => {
   if (typeof name !== 'string' || !name.trim()) {
     return res.status(400).json({ error: 'name is required' })
   }
+  const emails = email ? parseEmails([{ email, role: 'student' }]) : []
+  if (!emails) return res.status(400).json({ error: "that email address doesn't look right" })
   const id = newId()
   const rows = await orgQuery(
     req.auth!.orgId,
-    `insert into students (id, org_id, name, email, portal_token, report_token, notes)
-     values ($2, $1, $3, $4, $5, $6, $7)
-     returning id, name, email, portal_token, report_token, notes, created_at`,
-    [id, name.trim(), email || null, newToken(), newToken(), notes || null],
+    `insert into students (id, org_id, name, portal_token, report_token, notes)
+     values ($2, $1, $3, $4, $5, $6)
+     returning id, name, portal_token, report_token, notes, created_at`,
+    [id, name.trim(), newToken(), newToken(), notes || null],
   )
-  res.status(201).json({ student: rows[0] })
+  await addStudentEmails(req.auth!.orgId, id, emails)
+  res.status(201).json({ student: { ...rows[0], emails } })
 })
 
 studentsRouter.patch('/students/:id', async (req, res) => {
-  const { name, email, notes, meetingUrl, parentEmail } = req.body ?? {}
-  // email/notes are nullable — an explicit null clears them, distinct from
-  // the field being absent (undefined), which coalesce alone can't tell apart.
+  const { name, notes, meetingUrl } = req.body ?? {}
+  // `emails`, when present, replaces the student's whole address list.
+  const emails = req.body?.emails === undefined ? undefined : parseEmails(req.body.emails)
+  if (emails === null) return res.status(400).json({ error: "one of those email addresses doesn't look right" })
+  // notes/meeting_url are nullable — an explicit null clears them, distinct
+  // from the field being absent (undefined), which coalesce can't tell apart.
   const rows = await orgQuery(
     req.auth!.orgId,
     `update students set
        name = coalesce($3, name),
-       email = case when $4 then $5 else email end,
-       notes = case when $6 then $7 else notes end,
-       meeting_url = case when $8 then $9 else meeting_url end,
-       parent_email = case when $10 then $11 else parent_email end
+       notes = case when $4 then $5 else notes end,
+       meeting_url = case when $6 then $7 else meeting_url end
      where org_id = $1 and id = $2 and archived_at is null
-     returning id, name, email, parent_email, portal_token, report_token, notes, meeting_url, created_at`,
-    [req.params.id, name, email !== undefined, email ?? null, notes !== undefined, notes ?? null,
-     meetingUrl !== undefined, meetingUrl ?? null, parentEmail !== undefined, parentEmail ?? null],
+     returning id, name, portal_token, report_token, notes, meeting_url, created_at`,
+    [req.params.id, name, notes !== undefined, notes ?? null, meetingUrl !== undefined, meetingUrl ?? null],
   )
   if (!rows[0]) return res.status(404).json({ error: 'not found' })
+  if (emails) {
+    await orgQuery(
+      req.auth!.orgId,
+      `delete from student_emails where org_id = $1 and student_id = $2 and not (email = any($3::text[]))`,
+      [req.params.id, emails.map((e) => e.email)],
+    )
+    await addStudentEmails(req.auth!.orgId, req.params.id, emails)
+  }
   res.json({ student: rows[0] })
 })
 

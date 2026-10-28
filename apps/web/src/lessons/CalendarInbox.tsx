@@ -6,14 +6,17 @@ import {
 import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
 import { dayLabel, timeLabel } from './lessons.ts'
+import { LinkEventDialog, type GroupWho, type LinkTarget, type Who } from './LinkEventDialog.tsx'
 
 export interface UnmatchedSeries {
   uid: string
   title: string
   next: string
   count: number
+  /** Invitees other than the tutor. */
   attendees: string[]
-  suggestion: { studentId: string; name: string } | null
+  /** Who it probably is: one student, or several (groupId null = no group of them yet). */
+  suggestion: { studentIds: string[]; groupId: string | null; label: string } | null
 }
 export interface CalendarFilters {
   requireGuest: boolean
@@ -28,17 +31,17 @@ export interface CalendarStatus {
   lastSync?: { at: string; ok: boolean; error?: string; imported: number; filtered: number; unmatched: UnmatchedSeries[] }
 }
 
-interface Who { id: string; name: string }
-
 // "Who is this?" for calendar events the importer couldn't place by email
-// (FLOW-SPEC §2.1). One answer covers every week of a recurring event, and
-// can teach the importer the attendee's email for next time.
+// (FLOW-SPEC §2.1, §9.2). One answer covers every week of a recurring event.
+// When the invite has people the app doesn't know yet, a small dialog asks
+// which of them are the student or a parent, so the next invite lands by itself.
 export function CalendarInbox({ status, onChanged }: { status: CalendarStatus | null; onChanged: () => void }) {
   const toast = useToast()
   const [students, setStudents] = useState<Who[]>([])
-  const [groups, setGroups] = useState<Who[]>([])
+  const [groups, setGroups] = useState<GroupWho[]>([])
   // Answered rows leave at once; the server confirms in the background.
   const [answered, setAnswered] = useState<Set<string>>(new Set())
+  const [dialog, setDialog] = useState<{ item: UnmatchedSeries; target: LinkTarget } | null>(null)
   const unmatched = (status?.lastSync?.unmatched ?? []).filter((u) => !answered.has(u.uid))
 
   useEffect(() => {
@@ -62,15 +65,47 @@ export function CalendarInbox({ status, onChanged }: { status: CalendarStatus | 
   }
 
   const error = status.lastSync && !status.lastSync.ok ? status.lastSync.error : null
-  if (!unmatched.length && !error) return null
+  if (!unmatched.length && !error && !dialog) return null
 
-  async function link(uid: string, body: Record<string, unknown>) {
-    setAnswered((a) => new Set(a).add(uid))
+  const hide = (uid: string) => setAnswered((a) => new Set(a).add(uid))
+  const unhide = (uid: string) => setAnswered((a) => { const n = new Set(a); n.delete(uid); return n })
+
+  function linked(uid: string, lessons: number, label: string) {
+    hide(uid)
+    setDialog(null)
+    toast(lessons > 0 ? `Added ${lessons} lesson${lessons === 1 ? '' : 's'} with ${label}` : `Linked to ${label}`)
+    onChanged()
+  }
+
+  // An existing student or group with nobody new on the invite needs no
+  // questions: link straight away. Anything else opens the dialog.
+  async function answer(item: UnmatchedSeries, target: LinkTarget) {
+    if (item.attendees.length > 0 || target.kind === 'newStudent' || target.kind === 'newGroup') {
+      setDialog({ item, target })
+      return
+    }
+    hide(item.uid)
     try {
-      await apiFetch('/api/tutor/calendar/links', { method: 'POST', body: JSON.stringify({ uid, ...body }) })
-      onChanged()
+      const res = await apiFetch('/api/tutor/calendar/links', {
+        method: 'POST',
+        body: JSON.stringify({ uid: item.uid, ...(target.kind === 'student' ? { studentId: target.id } : { groupId: target.id }) }),
+      })
+      const label = target.kind === 'student'
+        ? students.find((s) => s.id === target.id)?.name ?? ''
+        : groups.find((g) => g.id === target.id)?.name ?? ''
+      linked(item.uid, res.linked?.lessons ?? 0, label)
     } catch (err) {
-      setAnswered((a) => { const next = new Set(a); next.delete(uid); return next })
+      unhide(item.uid)
+      toast((err as Error).message)
+    }
+  }
+
+  async function notALesson(uid: string) {
+    hide(uid)
+    try {
+      await apiFetch('/api/tutor/calendar/links', { method: 'POST', body: JSON.stringify({ uid, ignore: true }) })
+    } catch (err) {
+      unhide(uid)
       toast((err as Error).message)
     }
   }
@@ -82,29 +117,39 @@ export function CalendarInbox({ status, onChanged }: { status: CalendarStatus | 
       {unmatched.length > 0 && (
         <div className="surface-card card-pad-x">
           {unmatched.map((u) => (
-            <InboxRow key={u.uid} item={u} students={students} groups={groups} onLink={(body) => link(u.uid, body)} />
+            <InboxRow key={u.uid} item={u} students={students} groups={groups}
+              onAnswer={(t) => answer(u, t)} onIgnore={() => notALesson(u.uid)} />
           ))}
         </div>
+      )}
+      {dialog && (
+        <LinkEventDialog item={dialog.item} initial={dialog.target} students={students} groups={groups}
+          onClose={() => setDialog(null)}
+          onLinked={({ lessons, label }) => linked(dialog.item.uid, lessons, label)} />
       )}
     </section>
   )
 }
 
 function InboxRow({
-  item, students, groups, onLink,
+  item, students, groups, onAnswer, onIgnore,
 }: {
   item: UnmatchedSeries
   students: Who[]
   groups: Who[]
-  onLink: (body: Record<string, unknown>) => void
+  onAnswer: (target: LinkTarget) => void
+  onIgnore: () => void
 }) {
-  const guest = item.attendees.length === 1 ? item.attendees[0] : null
-  const [remember, setRemember] = useState<'' | 'student' | 'parent'>(guest ? 'student' : '')
+  const sg = item.suggestion
+  const suggested: LinkTarget | null = !sg ? null
+    : sg.groupId ? { kind: 'group', id: sg.groupId }
+      : sg.studentIds.length === 1 ? { kind: 'student', id: sg.studentIds[0] }
+        : { kind: 'newGroup', studentIds: sg.studentIds }
 
   function pick(value: string) {
-    const [kind, id] = [value.slice(0, 1), value.slice(2)]
-    if (kind === 'g') return onLink({ groupId: id })
-    onLink({ studentId: id, ...(guest && remember ? { rememberEmail: { email: guest, as: remember } } : {}) })
+    if (value === 'new') onAnswer({ kind: 'newStudent' })
+    else if (value.startsWith('g:')) onAnswer({ kind: 'group', id: value.slice(2) })
+    else onAnswer({ kind: 'student', id: value.slice(2) })
   }
 
   return (
@@ -114,24 +159,13 @@ function InboxRow({
         <div className="list-row-sub">
           {dayLabel(item.next)}, {timeLabel(item.next)}
           {item.count > 1 && ` · and ${item.count - 1} more in the next 4 weeks`}
-          {guest && ` · with ${guest}`}
+          {item.attendees.length > 0 && ` · with ${item.attendees.join(', ')}`}
         </div>
-        {guest && (
-          <label className="check-row inbox-remember">
-            <input type="checkbox" checked={!!remember} onChange={(e) => setRemember(e.target.checked ? 'student' : '')} />
-            Recognise {guest} next time, as the
-            <select value={remember || 'student'} disabled={!remember}
-              onChange={(e) => setRemember(e.target.value as 'student' | 'parent')}>
-              <option value="student">student's email</option>
-              <option value="parent">parent's email</option>
-            </select>
-          </label>
-        )}
       </div>
       <div className="slot-actions">
-        {item.suggestion && (
-          <Button variant="secondary" onClick={() => pick(`s:${item.suggestion!.studentId}`)}>
-            It's {item.suggestion.name}
+        {suggested && sg && (
+          <Button variant="secondary" onClick={() => onAnswer(suggested)}>
+            It's {sg.label}{suggested.kind === 'newGroup' ? ' (new group)' : ''}
           </Button>
         )}
         <Select value="" onValueChange={pick}>
@@ -139,9 +173,10 @@ function InboxRow({
           <SelectContent>
             {students.map((s) => <SelectItem key={s.id} value={`s:${s.id}`}>{s.name}</SelectItem>)}
             {groups.map((g) => <SelectItem key={g.id} value={`g:${g.id}`}>{g.name} (group)</SelectItem>)}
+            <SelectItem value="new">+ New student</SelectItem>
           </SelectContent>
         </Select>
-        <Button variant="ghost" onClick={() => onLink({ ignore: true })}>Not a lesson</Button>
+        <Button variant="ghost" onClick={onIgnore}>Not a lesson</Button>
       </div>
     </div>
   )

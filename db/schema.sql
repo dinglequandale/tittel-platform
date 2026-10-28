@@ -46,6 +46,20 @@ create table if not exists students (
 );
 create index if not exists students_org_idx on students(org_id);
 
+-- A student's email addresses: their own (school, personal) and their
+-- parents'. Calendar invites to any of them are this student's lessons
+-- (FLOW-SPEC §9.2). The same parent address may sit on siblings.
+-- Supersedes students.email / students.parent_email (backfilled below).
+create table if not exists student_emails (
+  student_id text not null references students(id) on delete cascade,
+  org_id     text not null references orgs(id) on delete cascade,
+  email      text not null,
+  role       text not null check (role in ('student', 'parent')),
+  created_at timestamptz not null default now(),
+  primary key (student_id, email)
+);
+create index if not exists student_emails_org_idx on student_emails(org_id, email);
+
 create table if not exists groups (
   id          text primary key,
   org_id      text not null references orgs(id) on delete cascade,
@@ -352,3 +366,16 @@ create unique index if not exists sessions_org_calendar_uid on sessions(org_id, 
 -- Tutor-owned parent contact (OVERHAUL R7); also how a parent-invited
 -- calendar event is matched to a younger student.
 alter table students add column if not exists parent_email text;
+
+-- student_emails replaces the single email/parent_email columns. Move any
+-- address still in them into the table, then clear them: the app no longer
+-- reads or writes them, and clearing keeps this re-runnable without
+-- resurrecting an address the tutor later removed.
+insert into student_emails (student_id, org_id, email, role)
+select id, org_id, lower(trim(email)), 'student' from students where email is not null and trim(email) <> ''
+on conflict do nothing;
+insert into student_emails (student_id, org_id, email, role)
+select id, org_id, lower(trim(parent_email)), 'parent' from students where parent_email is not null and trim(parent_email) <> ''
+on conflict do nothing;
+update students set email = null where email is not null;
+update students set parent_email = null where parent_email is not null;

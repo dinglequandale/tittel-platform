@@ -1,9 +1,10 @@
 import { Router } from 'express'
-import { newId } from '@tittel/shared'
+import { newId, newToken } from '@tittel/shared'
 import { orgQuery } from '../db.ts'
+import { parseEmails, addStudentEmails, type StudentEmail } from './students.ts'
 import {
   expandFeed, matchOccurrence, passesFilters, normalizeFilters, calendarOwnerOf, guestsOf,
-  type CalFilters, type CalLink, type CalOccurrence,
+  type CalFilters, type CalLink, type CalOccurrence, type CalSuggestion,
 } from '../lib/calendar.ts'
 
 // Google Calendar import (FLOW-SPEC §3 stage B). The tutor pastes their
@@ -65,7 +66,8 @@ interface UnmatchedSeries {
   next: string
   count: number
   attendees: string[]
-  suggestion: { studentId: string; name: string } | null
+  /** Who it probably is, with a display label ("Seb", "Rayan + Deen", a group's name). */
+  suggestion: (CalSuggestion & { label: string }) | null
 }
 interface SyncStatus {
   at: string
@@ -81,6 +83,9 @@ interface SyncStatus {
 // restart just means the next Home load syncs again.
 const lastSync = new Map<string, SyncStatus>()
 const inFlight = new Map<string, Promise<SyncStatus>>()
+// The feed as last downloaded. Answering the inbox re-matches this copy
+// instead of downloading the calendar again, so the new lessons show at once.
+const lastFeed = new Map<string, { occurrences: CalOccurrence[]; tutorEmails: Set<string>; to: Date }>()
 
 async function calendarSettings(orgId: string): Promise<{ icsUrl: string | null; filters: CalFilters }> {
   const [org] = await orgQuery<{ ics_url: string | null; filters: unknown }>(
@@ -93,17 +98,19 @@ async function calendarSettings(orgId: string): Promise<{ icsUrl: string | null;
 
 /**
  * Sync if the last one is older than STALE_MS, or always when `force`d.
- * Unforced callers share a run already in flight. A forced sync follows
- * something the tutor just changed (a link, a filter), so a run that started
- * before that change is stale: it waits for it, then runs fresh.
+ * Unforced callers share a run already in flight. A forced run follows
+ * something the tutor just changed (a link, a filter, an email), so a run
+ * that started before that change is stale: it waits for it, then runs
+ * fresh. `refetch: false` re-matches the feed already in memory (an inbox
+ * answer) instead of downloading the calendar again.
  */
-export function syncCalendar(orgId: string, tutorEmail: string, force = false): Promise<SyncStatus> {
+export function syncCalendar(orgId: string, tutorEmail: string, force = false, refetch = true): Promise<SyncStatus> {
   const prev = lastSync.get(orgId)
   if (!force && prev && Date.now() - new Date(prev.at).getTime() < STALE_MS) return Promise.resolve(prev)
   const running = inFlight.get(orgId)
   if (running && !force) return running
   const run: Promise<SyncStatus> = (running ? running.catch(() => undefined) : Promise.resolve())
-    .then(() => runSync(orgId, tutorEmail))
+    .then(() => (!refetch && lastFeed.has(orgId) ? applyFeed(orgId) : runSync(orgId, tutorEmail)))
     .then((s) => {
       const before = lastSync.get(orgId)
       return s.ok || !before ? s : { ...before, at: s.at, ok: false, error: s.error }
@@ -127,49 +134,98 @@ export async function syncCalendarBriefly(orgId: string, tutorEmail: string, wai
 
 async function runSync(orgId: string, tutorEmail: string): Promise<SyncStatus> {
   const at = new Date().toISOString()
-  const { icsUrl: raw, filters } = await calendarSettings(orgId)
+  const { icsUrl: raw } = await calendarSettings(orgId)
   const url = raw ? validFeedUrl(raw) : null
   if (!url) return { at, ok: false, error: 'no calendar connected', imported: 0, filtered: 0, unmatched: [] }
   // The calendar's own address and the sign-in address are both the tutor.
   const tutorEmails = new Set([tutorEmail.toLowerCase(), calendarOwnerOf(url.toString())].filter((e): e is string => !!e))
 
-  let occurrences: CalOccurrence[]
   const from = new Date(Date.now() - WINDOW_BACK_MS)
   const to = new Date(Date.now() + WINDOW_AHEAD_MS)
   try {
-    occurrences = expandFeed(await fetchFeed(url), from, to)
+    lastFeed.set(orgId, { occurrences: expandFeed(await fetchFeed(url), from, to), tutorEmails, to })
   } catch (err) {
     // A failed fetch must never look like "every event was deleted".
     return { at, ok: false, error: (err as Error).message, imported: 0, filtered: 0, unmatched: [] }
   }
+  return applyFeed(orgId)
+}
 
-  const students = await orgQuery<{ id: string; name: string; email: string | null; parent_email: string | null }>(
-    orgId,
-    `select id, name, email, parent_email from students where org_id = $1 and archived_at is null`,
-  )
-  const groupRows = await orgQuery<{ id: string; member_ids: string[] }>(
-    orgId,
-    `select g.id, coalesce(array_agg(gm.student_id) filter (where gm.student_id is not null), '{}') as member_ids
-       from groups g left join group_members gm on gm.group_id = g.id
-      where g.org_id = $1 and g.archived_at is null
-      group by g.id`,
-  )
-  const linkRows = await orgQuery<{ uid: string; student_id: string | null; group_id: string | null; ignored: boolean }>(
-    orgId,
-    `select uid, student_id, group_id, ignored from calendar_links where org_id = $1`,
-  )
+type Existing = {
+  id: string; calendar_uid: string; scheduled_at: Date; duration_min: number | null
+  calendar_meeting_url: string | null; student_id: string | null; group_id: string | null; status: string
+}
+
+/**
+ * Turn the feed in memory into lessons. Reads everything it compares
+ * against up front and writes only what changed (new lessons in one
+ * statement), because each database round trip is ~90 ms from Render to
+ * Supabase and a calendar has dozens of occurrences.
+ */
+async function applyFeed(orgId: string): Promise<SyncStatus> {
+  const at = new Date().toISOString()
+  const feed = lastFeed.get(orgId)!
+  const { tutorEmails, to } = feed
+
+  // Independent reads, in parallel: each is a ~90 ms round trip.
+  const [{ filters }, students, groupRows, linkRows, existingRows, natives] = await Promise.all([
+    calendarSettings(orgId),
+    orgQuery<{ id: string; name: string; emails: string[]; parent_emails: string[] }>(
+      orgId,
+      `select s.id, s.name,
+              coalesce(array_agg(e.email) filter (where e.role = 'student'), '{}') as emails,
+              coalesce(array_agg(e.email) filter (where e.role = 'parent'), '{}') as parent_emails
+         from students s left join student_emails e on e.student_id = s.id
+        where s.org_id = $1 and s.archived_at is null
+        group by s.id`,
+    ),
+    orgQuery<{ id: string; name: string; member_ids: string[] }>(
+      orgId,
+      `select g.id, g.name, coalesce(array_agg(gm.student_id) filter (where gm.student_id is not null), '{}') as member_ids
+         from groups g left join group_members gm on gm.group_id = g.id
+        where g.org_id = $1 and g.archived_at is null
+        group by g.id`,
+    ),
+    orgQuery<{ uid: string; student_id: string | null; group_id: string | null; ignored: boolean }>(
+      orgId,
+      `select uid, student_id, group_id, ignored from calendar_links where org_id = $1`,
+    ),
+    orgQuery<Existing>(
+      orgId,
+      `select id, calendar_uid, scheduled_at, duration_min, calendar_meeting_url, student_id, group_id, status
+         from sessions where org_id = $1 and calendar_uid is not null`,
+    ),
+    // Lessons scheduled in the app that a calendar event may turn out to be.
+    orgQuery<{ id: string; scheduled_at: Date; student_id: string | null; group_id: string | null; status: string }>(
+      orgId,
+      `select id, scheduled_at, student_id, group_id, status from sessions
+        where org_id = $1 and calendar_uid is null and status != 'cancelled'
+          and scheduled_at > now() - interval '2 days' and scheduled_at < $2`,
+      [new Date(to.getTime() + ADOPT_WITHIN_SEC * 1000).toISOString()],
+    ),
+  ])
+  const existing = new Map(existingRows.map((r) => [r.calendar_uid, r]))
+
   const ctx = {
-    students,
+    students: students.map((s) => ({ id: s.id, name: s.name, emails: s.emails, parentEmails: s.parent_emails })),
     groups: groupRows.map((g) => ({ id: g.id, memberIds: g.member_ids })),
     links: new Map<string, CalLink>(linkRows.map((l) => [l.uid, { studentId: l.student_id, groupId: l.group_id, ignored: l.ignored }])),
     tutorEmails,
   }
+  const nameOf = new Map(students.map((s) => [s.id, s.name]))
+  const groupName = new Map(groupRows.map((g) => [g.id, g.name]))
+  const label = (sg: CalSuggestion) =>
+    (sg.groupId && groupName.get(sg.groupId)) || sg.studentIds.map((id) => nameOf.get(id)?.split(' ')[0] ?? '').join(' + ')
 
   const seen: string[] = []
   const unmatched = new Map<string, UnmatchedSeries>()
   const filteredOut = new Set<string>()
+  const adopted = new Set<string>()
+  const updates: unknown[][] = []
+  const inserts: { id: string; key: string; at: string; dur: number; url: string | null; sid: string | null; gid: string | null }[] = []
   let imported = 0
-  for (const occ of occurrences) {
+
+  for (const occ of feed.occurrences) {
     // A series the tutor linked by hand always counts; everything else has
     // to look like a lesson first (Settings → Google Calendar).
     if (!ctx.links.has(occ.uid) && !passesFilters(occ, filters, tutorEmails)) {
@@ -185,14 +241,64 @@ async function runSync(orgId: string, tutorEmail: string): Promise<SyncStatus> {
       if (u) u.count++
       else unmatched.set(occ.uid, {
         uid: occ.uid, title: occ.title, next: occ.start.toISOString(), count: 1,
-        attendees: guestsOf(occ, tutorEmails), suggestion: match.suggestion,
+        attendees: guestsOf(occ, tutorEmails),
+        suggestion: match.suggestion ? { ...match.suggestion, label: label(match.suggestion) } : null,
       })
       continue
     }
-    if (await upsertOccurrence(orgId, occ, match.kind === 'student' ? match.studentId : null, match.kind === 'group' ? match.groupId : null)) {
-      seen.push(occ.key)
-      imported++
+
+    const studentId = match.kind === 'student' ? match.studentId : null
+    const groupId = match.kind === 'group' ? match.groupId : null
+    const dur = Math.max(5, Math.round((occ.end.getTime() - occ.start.getTime()) / 60_000))
+    const row = existing.get(occ.key)
+    if (row) {
+      // The calendar owns time, length, who and cancelled (a live lesson
+      // stays live); plan, homework, notes and the meeting override are the tutor's.
+      const status = occ.cancelled ? 'cancelled' : row.status === 'live' ? 'live' : 'scheduled'
+      if (new Date(row.scheduled_at).getTime() !== occ.start.getTime() || row.duration_min !== dur
+        || row.calendar_meeting_url !== occ.meetingUrl || row.student_id !== studentId
+        || row.group_id !== groupId || row.status !== status) {
+        updates.push([row.id, occ.key, occ.start.toISOString(), dur, occ.meetingUrl, studentId, groupId, status])
+      }
+    } else {
+      if (occ.cancelled) continue
+      // A lesson already scheduled in the app at the same time with the same
+      // person is this event: adopt it rather than show the lesson twice.
+      const native = natives.find((n) => !adopted.has(n.id)
+        && (studentId ? n.student_id === studentId : n.group_id === groupId)
+        && Math.abs(new Date(n.scheduled_at).getTime() - occ.start.getTime()) <= ADOPT_WITHIN_SEC * 1000)
+      if (native) {
+        adopted.add(native.id)
+        updates.push([native.id, occ.key, occ.start.toISOString(), dur, occ.meetingUrl, studentId, groupId, native.status === 'live' ? 'live' : 'scheduled'])
+      } else {
+        inserts.push({ id: newId(), key: occ.key, at: occ.start.toISOString(), dur, url: occ.meetingUrl, sid: studentId, gid: groupId })
+      }
     }
+    seen.push(occ.key)
+    imported++
+  }
+
+  for (const u of updates) {
+    await orgQuery(
+      orgId,
+      `update sessions set calendar_uid = $3, scheduled_at = $4, duration_min = $5, calendar_meeting_url = $6,
+                           student_id = $7, group_id = $8, status = $9
+        where org_id = $1 and id = $2`,
+      u,
+    )
+  }
+  if (inserts.length) {
+    await orgQuery(
+      orgId,
+      `insert into sessions (id, org_id, calendar_uid, scheduled_at, duration_min, calendar_meeting_url,
+                             student_id, group_id, started_at, status)
+       select x.id, $1, x.uid, x.at, x.dur, x.url, x.sid, x.gid, null, 'scheduled'
+         from unnest($2::text[], $3::text[], $4::timestamptz[], $5::int[], $6::text[], $7::text[], $8::text[])
+              as x(id, uid, at, dur, url, sid, gid)
+       on conflict do nothing`,
+      [inserts.map((i) => i.id), inserts.map((i) => i.key), inserts.map((i) => i.at), inserts.map((i) => i.dur),
+       inserts.map((i) => i.url), inserts.map((i) => i.sid), inserts.map((i) => i.gid)],
+    )
   }
 
   // Events deleted from (or no longer matched in) the calendar: a future
@@ -217,49 +323,6 @@ async function runSync(orgId: string, tutorEmail: string): Promise<SyncStatus> {
   )
 
   return { at, ok: true, imported, filtered: filteredOut.size, unmatched: [...unmatched.values()] }
-}
-
-/** Returns false when there's nothing to import (a cancelled week we never had). */
-async function upsertOccurrence(orgId: string, occ: CalOccurrence, studentId: string | null, groupId: string | null): Promise<boolean> {
-  const durationMin = Math.max(5, Math.round((occ.end.getTime() - occ.start.getTime()) / 60_000))
-  const fields = [occ.key, occ.start.toISOString(), durationMin, occ.meetingUrl, studentId, groupId, occ.cancelled]
-  // The calendar owns time, length, who and status (a live lesson stays live);
-  // plan, homework, notes and the tutor's meeting override are never touched.
-  const set = `scheduled_at = $3, duration_min = $4, calendar_meeting_url = $5, student_id = $6, group_id = $7,
-               status = case when $8 then 'cancelled' when status = 'live' then 'live' else 'scheduled' end`
-  const [updated] = await orgQuery(
-    orgId,
-    `update sessions set ${set} where org_id = $1 and calendar_uid = $2 returning id`,
-    fields,
-  )
-  if (updated) return true
-  if (occ.cancelled) return false
-
-  // A lesson already scheduled in the app at the same time with the same
-  // person is this event: adopt it rather than show the lesson twice.
-  const [adopted] = await orgQuery(
-    orgId,
-    `update sessions set calendar_uid = $2, ${set}
-      where id = (select id from sessions
-                   where org_id = $1 and calendar_uid is null and status != 'cancelled'
-                     and (student_id = $6 or group_id = $7)
-                     and abs(extract(epoch from scheduled_at - $3::timestamptz)) <= ${ADOPT_WITHIN_SEC}
-                   order by abs(extract(epoch from scheduled_at - $3::timestamptz)) limit 1)
-        and org_id = $1
-      returning id`,
-    fields,
-  )
-  if (adopted) return true
-
-  await orgQuery(
-    orgId,
-    `insert into sessions (id, org_id, calendar_uid, scheduled_at, duration_min, calendar_meeting_url,
-                           student_id, group_id, started_at, status)
-     values ($9, $1, $2, $3, $4, $5, $6, $7, null, case when $8 then 'cancelled' else 'scheduled' end)
-     on conflict do nothing`,
-    [...fields, newId()],
-  )
-  return true
 }
 
 function maskFeed(raw: string): string {
@@ -323,49 +386,106 @@ calendarRouter.post('/calendar/sync', async (req, res) => {
   res.json(await status(req.auth!.orgId, req.auth!.email, true))
 })
 
-// "This is Maya" / "Not a lesson" for a whole event series. Optionally
-// remember an attendee's email on the student (or as their parent's), so the
-// next new event with them matches by itself.
+// Answer the inbox for a whole event series: "Not a lesson", or who it's
+// with: an existing student or group, a new student, or a new group of
+// students (an invite with several of them). `emails` saves invitees as a
+// student's own address or their parent's, so future invites with them are
+// recognised without asking again (FLOW-SPEC §9.2).
 calendarRouter.post('/calendar/links', async (req, res) => {
   const orgId = req.auth!.orgId
-  const { uid, studentId, groupId, ignore, rememberEmail } = req.body ?? {}
+  const { uid, ignore, newStudent, newGroup } = req.body ?? {}
+  let studentId: string | null = typeof req.body?.studentId === 'string' ? req.body.studentId : null
+  let groupId: string | null = typeof req.body?.groupId === 'string' ? req.body.groupId : null
   if (typeof uid !== 'string' || !uid) return res.status(400).json({ error: 'uid is required' })
-  if (!ignore && (typeof studentId === 'string') === (typeof groupId === 'string')) {
-    return res.status(400).json({ error: 'pass exactly one of studentId or groupId, or ignore' })
+
+  if (!ignore) {
+    const targets = [studentId, groupId, newStudent, newGroup].filter(Boolean).length
+    if (targets !== 1) return res.status(400).json({ error: 'say who it is with: one student, group, new student or new group' })
   }
-  if (typeof studentId === 'string') {
-    const [s] = await orgQuery(orgId, `select id from students where org_id = $1 and id = $2 and archived_at is null`, [studentId])
-    if (!s) return res.status(404).json({ error: 'student not found' })
+
+  // Invitees to remember, each tied to one student the lesson is with.
+  const rawEmails: unknown[] = Array.isArray(req.body?.emails) ? req.body.emails : []
+  const emailSets = new Map<string, StudentEmail[]>()
+  let memberIds: string[] = []
+
+  if (!ignore) {
+    if (newStudent) {
+      const name = typeof newStudent.name === 'string' ? newStudent.name.trim() : ''
+      if (!name) return res.status(400).json({ error: 'the new student needs a name' })
+      studentId = newId()
+      await orgQuery(
+        orgId,
+        `insert into students (id, org_id, name, portal_token, report_token) values ($2, $1, $3, $4, $5)`,
+        [studentId, name, newToken(), newToken()],
+      )
+    } else if (newGroup) {
+      const ids: string[] = Array.isArray(newGroup.studentIds) ? newGroup.studentIds.filter((x: unknown) => typeof x === 'string') : []
+      const name = typeof newGroup.name === 'string' && newGroup.name.trim() ? newGroup.name.trim() : null
+      const found = ids.length >= 2
+        ? await orgQuery(orgId, `select id from students where org_id = $1 and id = any($2::text[]) and archived_at is null`, [ids])
+        : []
+      if (!name || found.length !== ids.length || ids.length < 2) return res.status(400).json({ error: 'a new group needs a name and two or more students' })
+      groupId = newId()
+      await orgQuery(orgId, `insert into groups (id, org_id, name) values ($2, $1, $3)`, [groupId, name])
+      await orgQuery(
+        orgId,
+        `insert into group_members (group_id, student_id)
+         select $2, s.id from students s where s.org_id = $1 and s.id = any($3::text[])`,
+        [groupId, ids],
+      )
+    }
+
+    if (studentId) {
+      const [s] = await orgQuery(orgId, `select id from students where org_id = $1 and id = $2 and archived_at is null`, [studentId])
+      if (!s) return res.status(404).json({ error: 'student not found' })
+      memberIds = [studentId]
+    } else if (groupId) {
+      const members = await orgQuery<{ id: string }>(
+        orgId,
+        `select s.id from groups g join group_members gm on gm.group_id = g.id join students s on s.id = gm.student_id
+          where g.org_id = $1 and g.id = $2 and g.archived_at is null and s.archived_at is null`,
+        [groupId],
+      )
+      const [g] = await orgQuery(orgId, `select id from groups where org_id = $1 and id = $2 and archived_at is null`, [groupId])
+      if (!g) return res.status(404).json({ error: 'group not found' })
+      memberIds = members.map((m) => m.id)
+    }
+
+    for (const e of rawEmails) {
+      const item = e as { email?: unknown; role?: unknown; studentId?: unknown }
+      const owner = typeof item.studentId === 'string' ? item.studentId : memberIds.length === 1 ? memberIds[0] : null
+      if (!owner || !memberIds.includes(owner)) return res.status(400).json({ error: 'each email must belong to someone in this lesson' })
+      const parsed = parseEmails([{ email: item.email, role: item.role }])
+      if (!parsed) return res.status(400).json({ error: "one of those email addresses doesn't look right" })
+      emailSets.set(owner, [...(emailSets.get(owner) ?? []), ...parsed])
+    }
   }
-  if (typeof groupId === 'string') {
-    const [g] = await orgQuery(orgId, `select id from groups where org_id = $1 and id = $2 and archived_at is null`, [groupId])
-    if (!g) return res.status(404).json({ error: 'group not found' })
-  }
+
   await orgQuery(
     orgId,
     `insert into calendar_links (org_id, uid, student_id, group_id, ignored) values ($1, $2, $3, $4, $5)
      on conflict (org_id, uid) do update set student_id = $3, group_id = $4, ignored = $5`,
-    [uid, ignore ? null : studentId ?? null, ignore ? null : groupId ?? null, !!ignore],
+    [uid, ignore ? null : studentId, ignore ? null : groupId, !!ignore],
   )
-  if (!ignore && typeof studentId === 'string' && rememberEmail && typeof rememberEmail.email === 'string') {
-    const column = rememberEmail.as === 'parent' ? 'parent_email' : 'email'
-    // Never overwrite an email the tutor already set.
-    await orgQuery(
-      orgId,
-      `update students set ${column} = $3 where org_id = $1 and id = $2 and ${column} is null`,
-      [studentId, rememberEmail.email.trim().toLowerCase()],
-    )
-  }
+  for (const [owner, list] of emailSets) await addStudentEmails(orgId, owner, list)
+
   const cached = lastSync.get(orgId)
   if (cached) lastSync.set(orgId, { ...cached, unmatched: cached.unmatched.filter((u) => u.uid !== uid) })
   if (ignore) {
-    // Nothing to import, so answer at once; a background sync removes any
-    // lesson this series had already produced.
-    void syncCalendar(orgId, req.auth!.email, true).catch(() => undefined)
+    // Nothing to import, so answer at once; re-matching in the background
+    // removes any lesson this series had already produced.
+    void syncCalendar(orgId, req.auth!.email, true, false).catch(() => undefined)
     const { icsUrl, filters } = await calendarSettings(orgId)
     return res.json({ connected: !!icsUrl, feed: icsUrl ? maskFeed(icsUrl) : undefined, filters, lastSync: lastSync.get(orgId) })
   }
-  res.json(await status(orgId, req.auth!.email, true))
+  // Re-match the feed in memory (no download): this series' lessons, plus
+  // any other series the newly saved emails now recognise, appear at once.
+  const { icsUrl, filters } = await calendarSettings(orgId)
+  const s = await syncCalendar(orgId, req.auth!.email, true, false)
+  res.json({
+    connected: !!icsUrl, feed: icsUrl ? maskFeed(icsUrl) : undefined, filters, lastSync: s,
+    linked: { studentId, groupId, lessons: (lastFeed.get(orgId)?.occurrences ?? []).filter((o) => o.uid === uid && !o.cancelled).length },
+  })
 })
 
 // Which events count as lessons. Saving re-syncs, so the inbox and the week

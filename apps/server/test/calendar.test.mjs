@@ -1,6 +1,8 @@
 // Calendar import (lib/calendar.ts): recurrence expansion and matching
 // against a synthetic Google-style feed. Run: node --import tsx test/calendar.test.mjs
-import { expandFeed, matchOccurrence } from '../src/lib/calendar.ts'
+import {
+  expandFeed, matchOccurrence, passesFilters, normalizeFilters, calendarOwnerOf, DEFAULT_FILTERS,
+} from '../src/lib/calendar.ts'
 
 let failures = 0
 function check(name, ok, got) {
@@ -127,7 +129,7 @@ const students = [
   { id: 'ethan', name: 'Ethan Park', email: null, parent_email: null },
 ]
 const groups = [{ id: 'alg', memberIds: ['maya', 'sam'] }]
-const ctx = (links = new Map()) => ({ links, students, groups, tutorEmail: 'konrad@example.com' })
+const ctx = (links = new Map()) => ({ links, students, groups, tutorEmails: new Set(['konrad@example.com']) })
 const m = (uid, c = ctx()) => matchOccurrence(occ.find((o) => o.uid === uid), c)
 
 check('student email match', JSON.stringify(m('maya-weekly@google.com')) === JSON.stringify({ kind: 'student', studentId: 'maya' }), m('maya-weekly@google.com'))
@@ -143,6 +145,25 @@ const linked2 = m('ancient-series@google.com', ctx(new Map([['ancient-series@goo
 check('remembered link wins', linked2.kind === 'student' && linked2.studentId === 'ethan')
 check('tutor\'s own email never matches a student', matchOccurrence({ uid: 'x', title: 'Admin', attendees: ['konrad@example.com'] },
   { ...ctx(), students: [...students, { id: 'me', name: 'Konrad', email: 'konrad@example.com', parent_email: null }] }).kind === 'none')
+
+// Which events count as lessons (defaults: a guest, a video link, sent by the tutor).
+const me = new Set(['konrad@example.com', 'konrad.cal@gmail.com'])
+const ev = (o) => ({ title: 'Math', attendees: [], declined: [], organizer: 'konrad.cal@gmail.com', meetingUrl: 'https://meet.google.com/x', ...o })
+const pass = (o, f = DEFAULT_FILTERS) => passesFilters(ev(o), f, me)
+check('lesson: guest + link + sent by the calendar owner', pass({ attendees: ['konrad.cal@gmail.com', 'seb@example.com'] }))
+check('no guests (a personal event) is not a lesson', !pass({ attendees: ['konrad.cal@gmail.com'] }))
+check('a meeting room is not a guest', !pass({ attendees: ['konrad.cal@gmail.com', 'c_123@resource.calendar.google.com'] }))
+check('no video link is not a lesson by default', !pass({ attendees: ['seb@example.com'], meetingUrl: null }))
+check('…but is when that rule is off', pass({ attendees: ['seb@example.com'], meetingUrl: null }, { ...DEFAULT_FILTERS, requireVideoLink: false }))
+check('someone else\'s invite (a party) is not a lesson', !pass({ attendees: ['seb@example.com'], organizer: 'friend@example.com' }))
+check('no ORGANIZER = made in this calendar = the tutor\'s', pass({ attendees: ['seb@example.com'], organizer: null }))
+check('declined by the tutor is never a lesson', !pass({ attendees: ['seb@example.com'], declined: ['konrad.cal@gmail.com'] }, normalizeFilters({ requireGuest: false, requireVideoLink: false, requireOrganizer: false })))
+const kw = { ...DEFAULT_FILTERS, keywords: ['math class', 'SAT'] }
+check('keywords: title must contain one (case-insensitive)', pass({ title: 'Seb Math Class', attendees: ['seb@example.com'] }, kw) && !pass({ title: 'Sponsor call', attendees: ['seb@example.com'] }, kw))
+check('normalizeFilters fills defaults and drops junk', JSON.stringify(normalizeFilters({ requireGuest: false, keywords: [' sat ', 3, ''] })) === JSON.stringify({ requireGuest: false, requireVideoLink: true, requireOrganizer: true, keywords: ['sat'] }))
+check('calendar owner from the secret address', calendarOwnerOf('https://calendar.google.com/calendar/ical/konrad.cal%40gmail.com/private-abc123/basic.ics') === 'konrad.cal@gmail.com')
+check('…including an address that differs from the sign-in one', matchOccurrence({ uid: 'u', title: 'x', attendees: ['konrad.cal@gmail.com'] },
+  { ...ctx(), tutorEmails: me, students: [...students, { id: 'me2', name: 'Me', email: 'konrad.cal@gmail.com', parent_email: null }] }).kind === 'none')
 
 console.log(failures ? `\n${failures} calendar check(s) failed.` : '\nAll calendar checks passed.')
 process.exit(failures ? 1 : 0)

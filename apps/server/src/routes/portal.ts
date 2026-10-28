@@ -10,8 +10,12 @@ export const portalRouter = Router()
 // tutor side (routes/sessions.ts).
 const STUDENT_LESSONS = `
   select se.id, se.scheduled_at, se.duration_min, se.group_id, g.name as group_name,
-         coalesce(se.meeting_url, se.calendar_meeting_url, ls.meeting_url, st.meeting_url,
-                  o.settings->>'defaultMeetingUrl') as meeting_url
+         case when o.settings->>'meetingLinkSource' = 'own'
+              then coalesce(se.meeting_url, ls.meeting_url, st.meeting_url, o.settings->>'defaultMeetingUrl',
+                            se.calendar_meeting_url)
+              else coalesce(se.meeting_url, se.calendar_meeting_url, ls.meeting_url, st.meeting_url,
+                            o.settings->>'defaultMeetingUrl')
+         end as meeting_url
     from students st
     join sessions se on se.org_id = st.org_id
                     and (se.student_id = st.id

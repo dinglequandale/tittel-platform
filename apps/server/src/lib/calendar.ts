@@ -15,6 +15,8 @@ export interface CalOccurrence {
   cancelled: boolean
   /** Lower-cased attendee and organizer emails. */
   attendees: string[]
+  /** Attendees who declined (PARTSTAT=DECLINED), lower-cased. */
+  declined: string[]
   organizer: string | null
   meetingUrl: string | null
 }
@@ -50,6 +52,10 @@ function toOccurrence(uid: string, key: string, item: ICAL.Event, start: Date, e
     end,
     cancelled: String(item.component.getFirstPropertyValue('status') ?? '').toUpperCase() === 'CANCELLED',
     attendees: item.attendees.map((a) => email(a.getFirstValue())).filter((e): e is string => !!e),
+    declined: item.attendees
+      .filter((a) => String(a.getParameter('partstat') ?? '').toUpperCase() === 'DECLINED')
+      .map((a) => email(a.getFirstValue()))
+      .filter((e): e is string => !!e),
     organizer: email(item.organizer),
     meetingUrl: meetingUrlOf(item),
   }
@@ -111,6 +117,84 @@ export function expandFeed(text: string, from: Date, to: Date): CalOccurrence[] 
   return out.sort((a, b) => a.start.getTime() - b.start.getTime())
 }
 
+/**
+ * Which calendar events count as lessons (Settings → Google Calendar). A
+ * tutor's calendar is mostly not lessons; without these, every dinner and
+ * meeting lands in the inbox. Each rule is optional; an event must pass all
+ * the enabled ones. A series the tutor linked by hand always counts.
+ */
+export interface CalFilters {
+  /** Someone besides the tutor is invited. */
+  requireGuest: boolean
+  /** The event has a Meet, Zoom or Teams link. */
+  requireVideoLink: boolean
+  /** The tutor sent the invite (organiser), not someone inviting them. */
+  requireOrganizer: boolean
+  /** If any, the title must contain one of these (case-insensitive). */
+  keywords: string[]
+}
+
+// Measured on a real tutor calendar (2026-10-28): 101 event series in four
+// weeks; these three defaults kept 7, of which 6 were lessons.
+export const DEFAULT_FILTERS: CalFilters = {
+  requireGuest: true,
+  requireVideoLink: true,
+  requireOrganizer: true,
+  keywords: [],
+}
+
+export function normalizeFilters(raw: unknown): CalFilters {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const bool = (k: keyof CalFilters) => (typeof r[k] === 'boolean' ? (r[k] as boolean) : (DEFAULT_FILTERS[k] as boolean))
+  const keywords = Array.isArray(r.keywords)
+    ? r.keywords.filter((k): k is string => typeof k === 'string').map((k) => k.trim()).filter(Boolean).slice(0, 30)
+    : []
+  return { requireGuest: bool('requireGuest'), requireVideoLink: bool('requireVideoLink'), requireOrganizer: bool('requireOrganizer'), keywords }
+}
+
+/**
+ * The email a Google calendar's secret address belongs to: it's the calendar
+ * id in the path (…/calendar/ical/<id>/private-…/basic.ics). It can differ
+ * from the address the tutor signs in with, and both are "the tutor".
+ */
+export function calendarOwnerOf(feedUrl: string): string | null {
+  try {
+    const parts = new URL(feedUrl).pathname.split('/')
+    const i = parts.indexOf('ical')
+    const id = i >= 0 ? decodeURIComponent(parts[i + 1] ?? '').toLowerCase() : ''
+    return id.includes('@') ? id : null
+  } catch {
+    return null
+  }
+}
+
+/** Room and resource calendars are attendees, but never people. */
+function isPerson(addr: string): boolean {
+  return !/@resource\.calendar\.google\.com$/i.test(addr)
+}
+
+export function guestsOf(occ: Pick<CalOccurrence, 'attendees'>, tutorEmails: Set<string>): string[] {
+  return occ.attendees.filter((e) => !tutorEmails.has(e) && isPerson(e))
+}
+
+export function passesFilters(
+  occ: Pick<CalOccurrence, 'title' | 'attendees' | 'declined' | 'organizer' | 'meetingUrl'>,
+  filters: CalFilters,
+  tutorEmails: Set<string>,
+): boolean {
+  // An invite the tutor turned down is never a lesson they're teaching.
+  if (occ.declined.some((e) => tutorEmails.has(e))) return false
+  if (filters.requireGuest && guestsOf(occ, tutorEmails).length === 0) return false
+  if (filters.requireVideoLink && !occ.meetingUrl) return false
+  // No ORGANIZER means the event was made in this calendar, i.e. by the tutor.
+  if (filters.requireOrganizer && occ.organizer && !tutorEmails.has(occ.organizer)) return false
+  if (filters.keywords.length) {
+    const t = occ.title.toLowerCase()
+    if (!filters.keywords.some((k) => t.includes(k.toLowerCase()))) return false
+  }
+  return true
+}
+
 export interface MatchStudent { id: string; name: string; email: string | null; parent_email: string | null }
 export interface MatchGroup { id: string; memberIds: string[] }
 export interface CalLink { studentId: string | null; groupId: string | null; ignored: boolean }
@@ -131,15 +215,14 @@ export type CalMatch =
  */
 export function matchOccurrence(
   occ: Pick<CalOccurrence, 'uid' | 'title' | 'attendees'>,
-  ctx: { links: Map<string, CalLink>; students: MatchStudent[]; groups: MatchGroup[]; tutorEmail: string },
+  ctx: { links: Map<string, CalLink>; students: MatchStudent[]; groups: MatchGroup[]; tutorEmails: Set<string> },
 ): CalMatch {
   const link = ctx.links.get(occ.uid)
   if (link?.ignored) return { kind: 'ignored' }
   if (link?.studentId) return { kind: 'student', studentId: link.studentId }
   if (link?.groupId) return { kind: 'group', groupId: link.groupId }
 
-  const tutor = ctx.tutorEmail.toLowerCase()
-  const guests = new Set(occ.attendees.filter((e) => e !== tutor))
+  const guests = new Set(guestsOf(occ, ctx.tutorEmails))
   const byOwn = ctx.students.filter((s) => s.email && guests.has(s.email.toLowerCase()))
   const matched = byOwn.length
     ? byOwn

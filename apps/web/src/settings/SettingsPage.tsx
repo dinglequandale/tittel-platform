@@ -15,12 +15,27 @@ export function SettingsPage() {
   const [meetingUrl, setMeetingUrl] = useState('')
   const [saved, setSaved] = useState('')
   const [saving, setSaving] = useState(false)
+  const [linkSource, setLinkSource] = useState<'invite' | 'own'>('invite')
 
   useEffect(() => {
     apiFetch('/api/tutor/org')
-      .then((o) => { setOrgName(o.name); setMeetingUrl(o.defaultMeetingUrl); setSaved(o.defaultMeetingUrl) })
+      .then((o) => {
+        setOrgName(o.name); setMeetingUrl(o.defaultMeetingUrl); setSaved(o.defaultMeetingUrl)
+        setLinkSource(o.meetingLinkSource === 'own' ? 'own' : 'invite')
+      })
       .catch(() => {})
   }, [])
+
+  async function saveLinkSource(next: 'invite' | 'own') {
+    const prev = linkSource
+    setLinkSource(next)
+    try {
+      await apiFetch('/api/tutor/org', { method: 'PATCH', body: JSON.stringify({ meetingLinkSource: next }) })
+    } catch (err) {
+      setLinkSource(prev)
+      toast((err as Error).message)
+    }
+  }
 
   async function saveMeetingUrl() {
     setSaving(true)
@@ -60,6 +75,17 @@ export function SettingsPage() {
         </p>
         <div className="row-end">
           <Button onClick={saveMeetingUrl} disabled={saving || meetingUrl.trim() === saved}>{saving ? 'Saving…' : 'Save'}</Button>
+        </div>
+        <div className="radio-col">
+          <div className="list-row-title">When a calendar invite has its own meeting link</div>
+          <label className="check-row">
+            <input type="radio" name="link-source" checked={linkSource === 'invite'} onChange={() => saveLinkSource('invite')} />
+            Use the invite's link (for example, a new Meet for each invite)
+          </label>
+          <label className="check-row">
+            <input type="radio" name="link-source" checked={linkSource === 'own'} onChange={() => saveLinkSource('own')} />
+            Use the student's link, or mine above
+          </label>
         </div>
       </div>
 

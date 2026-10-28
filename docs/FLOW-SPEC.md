@@ -301,3 +301,24 @@ into O6's shell items.
   ordinary lessons.
 - **Not done:** writing to Google (stage C, OAuth after O5); calendars other than Google's
   (widen the allowlist when a partner needs Outlook or iCloud).
+
+### 9.1 After Konrad's first real sync (2026-10-28)
+
+- **Problem:** every event reached the inbox (101 series in four weeks); "Not a lesson" seemed
+  to do nothing; one meeting-link behaviour for everyone.
+- **Filters** (Settings → Google Calendar → "Which events are lessons?", stored in
+  `orgs.settings.calendarFilters`): someone besides you is invited · has a Meet/Zoom/Teams
+  link · you sent the invite · optional title keywords. All rules are optional; an event must
+  pass every one that's on. Defaults are the first three. A series linked by hand always counts.
+  Invites the tutor declined are always skipped. On Konrad's real calendar the defaults kept 7 of
+  101 series: 6 lessons and one sponsor call.
+- **The tutor is two addresses:** the sign-in email and the calendar's own (the id in the secret
+  address path). Before this, a calendar owned by a different address than the sign-in one made
+  every event "someone else's" and counted the tutor as a guest.
+- **Meeting link choice** (`orgs.settings.meetingLinkSource`, Settings → Lessons): `invite`
+  (default) uses each invite's own link, e.g. a fresh Meet per invite; `own` uses the
+  series/student/tutor link and falls back to the invite's. A per-lesson override still wins.
+- **Inbox answers are instant:** the row leaves at once in the UI. "Not a lesson" replies without
+  waiting on a sync (one runs in the background). The bug: a forced sync joined a sync already
+  in flight, which had started before the answer, so the stale inbox came back. A forced sync
+  now waits for that run and starts a fresh one.

@@ -15,10 +15,17 @@ export interface UnmatchedSeries {
   attendees: string[]
   suggestion: { studentId: string; name: string } | null
 }
+export interface CalendarFilters {
+  requireGuest: boolean
+  requireVideoLink: boolean
+  requireOrganizer: boolean
+  keywords: string[]
+}
 export interface CalendarStatus {
   connected: boolean
   feed?: string
-  lastSync?: { at: string; ok: boolean; error?: string; imported: number; unmatched: UnmatchedSeries[] }
+  filters?: CalendarFilters
+  lastSync?: { at: string; ok: boolean; error?: string; imported: number; filtered: number; unmatched: UnmatchedSeries[] }
 }
 
 interface Who { id: string; name: string }
@@ -30,7 +37,9 @@ export function CalendarInbox({ status, onChanged }: { status: CalendarStatus | 
   const toast = useToast()
   const [students, setStudents] = useState<Who[]>([])
   const [groups, setGroups] = useState<Who[]>([])
-  const unmatched = status?.lastSync?.unmatched ?? []
+  // Answered rows leave at once; the server confirms in the background.
+  const [answered, setAnswered] = useState<Set<string>>(new Set())
+  const unmatched = (status?.lastSync?.unmatched ?? []).filter((u) => !answered.has(u.uid))
 
   useEffect(() => {
     if (!unmatched.length) return
@@ -56,10 +65,12 @@ export function CalendarInbox({ status, onChanged }: { status: CalendarStatus | 
   if (!unmatched.length && !error) return null
 
   async function link(uid: string, body: Record<string, unknown>) {
+    setAnswered((a) => new Set(a).add(uid))
     try {
       await apiFetch('/api/tutor/calendar/links', { method: 'POST', body: JSON.stringify({ uid, ...body }) })
       onChanged()
     } catch (err) {
+      setAnswered((a) => { const next = new Set(a); next.delete(uid); return next })
       toast((err as Error).message)
     }
   }

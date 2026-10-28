@@ -1,7 +1,10 @@
 import { Router } from 'express'
 import { newId } from '@tittel/shared'
 import { orgQuery } from '../db.ts'
-import { expandFeed, matchOccurrence, type CalLink, type CalOccurrence } from '../lib/calendar.ts'
+import {
+  expandFeed, matchOccurrence, passesFilters, normalizeFilters, calendarOwnerOf, guestsOf,
+  type CalFilters, type CalLink, type CalOccurrence,
+} from '../lib/calendar.ts'
 
 // Google Calendar import (FLOW-SPEC §3 stage B). The tutor pastes their
 // calendar's secret iCal address once; opening the app syncs the next four
@@ -69,6 +72,8 @@ interface SyncStatus {
   ok: boolean
   error?: string
   imported: number
+  /** Event series in the window the tutor's filters left out. */
+  filtered: number
   unmatched: UnmatchedSeries[]
 }
 
@@ -77,26 +82,35 @@ interface SyncStatus {
 const lastSync = new Map<string, SyncStatus>()
 const inFlight = new Map<string, Promise<SyncStatus>>()
 
-async function feedUrlOf(orgId: string): Promise<string | null> {
-  const [org] = await orgQuery<{ ics_url: string | null }>(
+async function calendarSettings(orgId: string): Promise<{ icsUrl: string | null; filters: CalFilters }> {
+  const [org] = await orgQuery<{ ics_url: string | null; filters: unknown }>(
     orgId,
-    `select settings->>'icsUrl' as ics_url from orgs where id = $1::text /* org_id */`,
+    `select settings->>'icsUrl' as ics_url, settings->'calendarFilters' as filters
+       from orgs where id = $1::text /* org_id */`,
   )
-  return org?.ics_url ?? null
+  return { icsUrl: org?.ics_url ?? null, filters: normalizeFilters(org?.filters) }
 }
 
-/** Sync if the last one is older than STALE_MS (or `force`). Concurrent callers share one run. */
-export function syncCalendar(orgId: string, tutorEmail: string, force = false): Promise<SyncStatus> | null {
+/**
+ * Sync if the last one is older than STALE_MS, or always when `force`d.
+ * Unforced callers share a run already in flight. A forced sync follows
+ * something the tutor just changed (a link, a filter), so a run that started
+ * before that change is stale: it waits for it, then runs fresh.
+ */
+export function syncCalendar(orgId: string, tutorEmail: string, force = false): Promise<SyncStatus> {
   const prev = lastSync.get(orgId)
   if (!force && prev && Date.now() - new Date(prev.at).getTime() < STALE_MS) return Promise.resolve(prev)
-  let run = inFlight.get(orgId)
-  if (!run) {
-    run = runSync(orgId, tutorEmail)
-      .then((s) => (s.ok || !prev ? s : { ...prev, at: s.at, ok: false, error: s.error }))
-      .then((s) => { lastSync.set(orgId, s); return s })
-      .finally(() => inFlight.delete(orgId))
-    inFlight.set(orgId, run)
-  }
+  const running = inFlight.get(orgId)
+  if (running && !force) return running
+  const run: Promise<SyncStatus> = (running ? running.catch(() => undefined) : Promise.resolve())
+    .then(() => runSync(orgId, tutorEmail))
+    .then((s) => {
+      const before = lastSync.get(orgId)
+      return s.ok || !before ? s : { ...before, at: s.at, ok: false, error: s.error }
+    })
+    .then((s) => { lastSync.set(orgId, s); return s })
+    .finally(() => { if (inFlight.get(orgId) === run) inFlight.delete(orgId) })
+  inFlight.set(orgId, run)
   return run
 }
 
@@ -106,17 +120,18 @@ export function syncCalendar(orgId: string, tutorEmail: string, force = false): 
  * and the next load shows it.
  */
 export async function syncCalendarBriefly(orgId: string, tutorEmail: string, waitMs = 3000): Promise<void> {
-  if (!(await feedUrlOf(orgId))) return
+  if (!(await calendarSettings(orgId)).icsUrl) return
   const run = syncCalendar(orgId, tutorEmail)
-  if (!run) return
   await Promise.race([run.catch(() => undefined), new Promise((r) => setTimeout(r, waitMs))])
 }
 
 async function runSync(orgId: string, tutorEmail: string): Promise<SyncStatus> {
   const at = new Date().toISOString()
-  const raw = await feedUrlOf(orgId)
+  const { icsUrl: raw, filters } = await calendarSettings(orgId)
   const url = raw ? validFeedUrl(raw) : null
-  if (!url) return { at, ok: false, error: 'no calendar connected', imported: 0, unmatched: [] }
+  if (!url) return { at, ok: false, error: 'no calendar connected', imported: 0, filtered: 0, unmatched: [] }
+  // The calendar's own address and the sign-in address are both the tutor.
+  const tutorEmails = new Set([tutorEmail.toLowerCase(), calendarOwnerOf(url.toString())].filter((e): e is string => !!e))
 
   let occurrences: CalOccurrence[]
   const from = new Date(Date.now() - WINDOW_BACK_MS)
@@ -125,7 +140,7 @@ async function runSync(orgId: string, tutorEmail: string): Promise<SyncStatus> {
     occurrences = expandFeed(await fetchFeed(url), from, to)
   } catch (err) {
     // A failed fetch must never look like "every event was deleted".
-    return { at, ok: false, error: (err as Error).message, imported: 0, unmatched: [] }
+    return { at, ok: false, error: (err as Error).message, imported: 0, filtered: 0, unmatched: [] }
   }
 
   const students = await orgQuery<{ id: string; name: string; email: string | null; parent_email: string | null }>(
@@ -147,13 +162,20 @@ async function runSync(orgId: string, tutorEmail: string): Promise<SyncStatus> {
     students,
     groups: groupRows.map((g) => ({ id: g.id, memberIds: g.member_ids })),
     links: new Map<string, CalLink>(linkRows.map((l) => [l.uid, { studentId: l.student_id, groupId: l.group_id, ignored: l.ignored }])),
-    tutorEmail,
+    tutorEmails,
   }
 
   const seen: string[] = []
   const unmatched = new Map<string, UnmatchedSeries>()
+  const filteredOut = new Set<string>()
   let imported = 0
   for (const occ of occurrences) {
+    // A series the tutor linked by hand always counts; everything else has
+    // to look like a lesson first (Settings → Google Calendar).
+    if (!ctx.links.has(occ.uid) && !passesFilters(occ, filters, tutorEmails)) {
+      filteredOut.add(occ.uid)
+      continue
+    }
     const match = matchOccurrence(occ, ctx)
     if (match.kind === 'ignored') continue
     if (match.kind === 'none') {
@@ -163,7 +185,7 @@ async function runSync(orgId: string, tutorEmail: string): Promise<SyncStatus> {
       if (u) u.count++
       else unmatched.set(occ.uid, {
         uid: occ.uid, title: occ.title, next: occ.start.toISOString(), count: 1,
-        attendees: occ.attendees.filter((e) => e !== tutorEmail.toLowerCase()), suggestion: match.suggestion,
+        attendees: guestsOf(occ, tutorEmails), suggestion: match.suggestion,
       })
       continue
     }
@@ -194,7 +216,7 @@ async function runSync(orgId: string, tutorEmail: string): Promise<SyncStatus> {
     [to.toISOString(), seen],
   )
 
-  return { at, ok: true, imported, unmatched: [...unmatched.values()] }
+  return { at, ok: true, imported, filtered: filteredOut.size, unmatched: [...unmatched.values()] }
 }
 
 /** Returns false when there's nothing to import (a cancelled week we never had). */
@@ -250,10 +272,10 @@ function maskFeed(raw: string): string {
 }
 
 async function status(orgId: string, tutorEmail: string, force = false) {
-  const raw = await feedUrlOf(orgId)
+  const { icsUrl: raw, filters } = await calendarSettings(orgId)
   if (!raw) return { connected: false }
   const s = await syncCalendar(orgId, tutorEmail, force)
-  return { connected: true, feed: maskFeed(raw), lastSync: s }
+  return { connected: true, feed: maskFeed(raw), filters, lastSync: s }
 }
 
 calendarRouter.get('/calendar', async (req, res) => {
@@ -334,5 +356,27 @@ calendarRouter.post('/calendar/links', async (req, res) => {
       [studentId, rememberEmail.email.trim().toLowerCase()],
     )
   }
+  const cached = lastSync.get(orgId)
+  if (cached) lastSync.set(orgId, { ...cached, unmatched: cached.unmatched.filter((u) => u.uid !== uid) })
+  if (ignore) {
+    // Nothing to import, so answer at once; a background sync removes any
+    // lesson this series had already produced.
+    void syncCalendar(orgId, req.auth!.email, true).catch(() => undefined)
+    const { icsUrl, filters } = await calendarSettings(orgId)
+    return res.json({ connected: !!icsUrl, feed: icsUrl ? maskFeed(icsUrl) : undefined, filters, lastSync: lastSync.get(orgId) })
+  }
+  res.json(await status(orgId, req.auth!.email, true))
+})
+
+// Which events count as lessons. Saving re-syncs, so the inbox and the week
+// reflect the new rules straight away.
+calendarRouter.put('/calendar/filters', async (req, res) => {
+  const orgId = req.auth!.orgId
+  const filters = normalizeFilters(req.body?.filters)
+  await orgQuery(
+    orgId,
+    `update orgs set settings = jsonb_set(settings, '{calendarFilters}', $2::jsonb) where id = $1::text /* org_id */`,
+    [JSON.stringify(filters)],
+  )
   res.json(await status(orgId, req.auth!.email, true))
 })

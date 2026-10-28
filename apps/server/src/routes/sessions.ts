@@ -36,17 +36,23 @@ export async function materializeSeries(orgId: string): Promise<void> {
   )
 }
 
-// One lesson as Home and the lesson page see it. Meeting link resolves most
-// specific first: the tutor's override on this lesson, the calendar event's
-// own link, its weekly series, the student, the tutor's default.
+// One lesson as Home and the lesson page see it. The meeting link is the
+// tutor's override on this lesson if any. Then, by the tutor's choice in
+// Settings (orgs.settings.meetingLinkSource): 'invite' (default) prefers the
+// calendar event's own link, so a fresh Meet link per invite works; 'own'
+// prefers the series, student or tutor link and falls back to the invite's.
 const LESSON_SELECT = `
   select se.id, se.scheduled_at, se.duration_min, se.status, se.notes, se.series_id, se.board_id,
          se.student_id, st.name as student_name,
          se.group_id, g.name as group_name,
          se.plan_id, pl.title as plan_title,
          se.meeting_url as own_meeting_url,
-         coalesce(se.meeting_url, se.calendar_meeting_url, ls.meeting_url, st.meeting_url,
-                  o.settings->>'defaultMeetingUrl') as meeting_url,
+         case when o.settings->>'meetingLinkSource' = 'own'
+              then coalesce(se.meeting_url, ls.meeting_url, st.meeting_url, o.settings->>'defaultMeetingUrl',
+                            se.calendar_meeting_url)
+              else coalesce(se.meeting_url, se.calendar_meeting_url, ls.meeting_url, st.meeting_url,
+                            o.settings->>'defaultMeetingUrl')
+         end as meeting_url,
          se.calendar_uid is not null as from_calendar,
          case when ls.id is not null and ls.archived_at is null
               then json_build_object('weekday', ls.weekday, 'startTime', to_char(ls.start_time, 'HH24:MI'), 'tz', ls.tz)

@@ -35,11 +35,15 @@ async function resolveTutorAuth(token: string): Promise<TutorAuth | null> {
   if (!jwks) return null
   let supabaseUid: string
   let email: string
+  // Signup's name and business name (Google gives full_name), used once when
+  // the workspace is first set up.
+  let meta: Record<string, unknown> = {}
   try {
     const { payload } = await jwtVerify(token, jwks)
     if (!payload.sub) throw new Error('missing sub')
     supabaseUid = payload.sub
     email = typeof payload.email === 'string' ? payload.email : ''
+    if (payload.user_metadata && typeof payload.user_metadata === 'object') meta = payload.user_metadata as Record<string, unknown>
   } catch {
     return null
   }
@@ -57,15 +61,18 @@ async function resolveTutorAuth(token: string): Promise<TutorAuth | null> {
     // lands first wins, the loser's org becomes an orphan and gets deleted.
     const orgId = newId()
     const userId = newId()
+    const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 120) : null)
+    const displayName = text(meta.display_name) ?? text(meta.full_name) ?? text(meta.name)
+    const orgName = text(meta.org_name) ?? displayName ?? (email ? email.split('@')[0] : 'My tutoring')
     await pool.query(
       `insert into orgs (id, name, plan, trial_ends_at) values ($1, $2, 'trial', now() + interval '30 days')`,
-      [orgId, email ? `${email.split('@')[0]}'s org` : 'New org'],
+      [orgId, orgName],
     )
     const inserted = await pool.query<{ id: string; org_id: string; role: 'owner' | 'tutor' }>(
-      `insert into users (id, org_id, supabase_uid, email, role) values ($1, $2, $3, $4, 'owner')
+      `insert into users (id, org_id, supabase_uid, email, role, display_name) values ($1, $2, $3, $4, 'owner', $5)
        on conflict (supabase_uid) do nothing
        returning id, org_id, role`,
-      [userId, orgId, supabaseUid, email],
+      [userId, orgId, supabaseUid, email, displayName],
     )
     if (inserted.rows[0]) {
       user = inserted.rows[0]

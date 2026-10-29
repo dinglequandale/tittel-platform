@@ -256,7 +256,7 @@ export function LinkEventDialog({
                   <select value={roles[email] ?? 'none'} onChange={(e) => setRoles({ ...roles, [email]: e.target.value })}>
                     {members.map((m, i) => (
                       <optgroup key={m.key} label={display(m, i)}>
-                        <option value={`${m.key}|student`}>{firstName(display(m, i))}'s email</option>
+                        <option value={`${m.key}|student`}>{firstName(display(m, i))}'s own (13+)</option>
                         <option value={`${m.key}|parent`}>{firstName(display(m, i))}'s parent</option>
                       </optgroup>
                     ))}

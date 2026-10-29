@@ -52,6 +52,9 @@ export function Home() {
   const [homeworkCount, setHomeworkCount] = useState<number | null>(null)
   const [scheduling, setScheduling] = useState(false)
   const [calendar, setCalendar] = useState<CalendarStatus | null>(null)
+  const [tutorName, setTutorName] = useState('')
+  const [demo, setDemo] = useState<{ studentId: string; lessonId: string; assignmentIds: string[] } | null>(null)
+  const [trying, setTrying] = useState(false)
   const [, setTick] = useState(0)
 
   // The lessons read syncs Google Calendar first (when connected), so the
@@ -71,13 +74,14 @@ export function Home() {
 
   useEffect(() => {
     load()
+    apiFetch('/api/tutor/org').then((o) => { setTutorName((o.displayName ?? '').split(' ')[0]); setDemo(o.demo ?? null) }).catch(() => {})
     // Start buttons light up 15 minutes before a lesson; re-check each minute.
     const t = window.setInterval(() => setTick((n) => n + 1), 60_000)
     return () => window.clearInterval(t)
   }, [])
 
   const name = session?.user.email?.split('@')[0]
-  const displayName = name ? name.charAt(0).toUpperCase() + name.slice(1) : ''
+  const displayName = tutorName || (name ? name.charAt(0).toUpperCase() + name.slice(1) : '')
 
   if (lessons === null) return <PageLoading />
 
@@ -93,14 +97,37 @@ export function Home() {
   const upcomingToday = todays.filter((l) => lessonEnd(l).getTime() > now)
   const needPrep = lessons.filter((l) => lessonEnd(l).getTime() > now && (!l.plan_id || l.homework.length === 0)).length
 
+  // The sample student doesn't count towards getting started.
   const steps = [
-    { label: 'Add a student', hint: 'They get one private link for everything', done: (studentCount ?? 0) > 0 },
-    { label: 'Schedule a lesson', hint: 'Weekly slots repeat by themselves', done: lessons.length > 0 },
-    { label: 'Give homework', hint: 'From the lesson, in one step', done: (homeworkCount ?? 0) > 0 },
+    { label: 'Add a student', hint: 'They get one private link for everything', done: (studentCount ?? 0) - (demo ? 1 : 0) > 0 },
+    { label: 'Schedule a lesson', hint: 'Weekly slots repeat by themselves', done: lessons.some((l) => l.student_id !== demo?.studentId) },
+    { label: 'Give homework', hint: 'From the lesson, in one step', done: (homeworkCount ?? 0) - (demo?.assignmentIds.length ?? 0) > 0 },
   ]
   const doneCount = steps.filter((s) => s.done).length
   const showOnboarding = studentCount !== null && homeworkCount !== null && doneCount < steps.length
   const stepColors = ['blue', 'mint', 'gold'] as const
+
+  async function tryDemo() {
+    setTrying(true)
+    try {
+      const { lessonId } = await apiFetch('/api/tutor/demo', { method: 'POST', body: '{}' })
+      navigate(`/app/lessons/${lessonId}`)
+    } catch (err) {
+      toast((err as Error).message)
+      setTrying(false)
+    }
+  }
+
+  async function removeDemo() {
+    try {
+      await apiFetch('/api/tutor/demo', { method: 'DELETE' })
+      setDemo(null)
+      load()
+      toast('Sample removed')
+    } catch (err) {
+      toast((err as Error).message)
+    }
+  }
 
   async function start(l: Lesson) {
     try {
@@ -151,6 +178,19 @@ export function Home() {
               </div>
             ))}
           </div>
+          {!demo && (
+            <div className="onboard-try">
+              <Button variant="secondary" onClick={tryDemo} disabled={trying}>{trying ? 'Setting it up…' : 'Explore with a sample student'}</Button>
+              <span className="muted">A lesson that's already happened, with homework and answers to follow up on. Remove it any time.</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {demo && (
+        <div className="surface-card demo-banner">
+          <span>You're exploring with a sample student, <Link to={`/app/lessons/${demo.lessonId}`} className="card-link">Sam R.</Link></span>
+          <Button variant="ghost" onClick={removeDemo}>Remove sample</Button>
         </div>
       )}
 

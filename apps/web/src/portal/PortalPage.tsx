@@ -31,6 +31,7 @@ export function PortalPage() {
   const { studentToken } = useParams()
   const navigate = useNavigate()
   const [studentName, setStudentName] = useState('')
+  const [tutorName, setTutorName] = useState('')
   const [lessons, setLessons] = useState<PortalLesson[]>([])
   const [notes, setNotes] = useState<{ id: string; scheduled_at: string; group_name: string | null; board_pdf: string }[]>([])
   const [assignments, setAssignments] = useState<Assignment[] | null>(null)
@@ -40,7 +41,7 @@ export function PortalPage() {
   useEffect(() => {
     if (!studentToken) return
     apiFetch(`/api/portal/${studentToken}`)
-      .then((d) => { setStudentName(d.studentName); setLessons(d.lessons ?? []); setNotes(d.notes ?? []); setAssignments(d.assignments) })
+      .then((d) => { setStudentName(d.studentName); setTutorName(d.tutorName ?? ''); setLessons(d.lessons ?? []); setNotes(d.notes ?? []); setAssignments(d.assignments) })
       .catch((e) => setError(linkErrorMessage(e)))
     // Join lights up 15 minutes before; re-check each minute.
     const t = window.setInterval(() => setTick((n) => n + 1), 60_000)
@@ -62,7 +63,7 @@ export function PortalPage() {
   if (error) {
     return (
       <main className="page">
-        <div className="page-brand">{BRAND_NAME}</div>
+        <div className="page-brand">{tutorName || BRAND_NAME}</div>
         <div className="page-card page-error">
           <h1 style={{ fontFamily: 'var(--font-display)' }}>Couldn't open this portal</h1>
           <p>{error}</p>
@@ -73,7 +74,7 @@ export function PortalPage() {
   if (!assignments) {
     return (
       <main className="page">
-        <div className="page-brand">{BRAND_NAME}</div>
+        <div className="page-brand">{tutorName || BRAND_NAME}</div>
         <p className="page-loading">Loading…</p>
       </main>
     )
@@ -81,7 +82,7 @@ export function PortalPage() {
 
   return (
     <main className="page">
-      <div className="page-brand">{BRAND_NAME}</div>
+      <div className="page-brand">{tutorName || BRAND_NAME}</div>
       <h1 style={{ fontFamily: 'var(--font-display)' }}>Hi, {studentName.split(' ')[0]}</h1>
 
       {lessons.length > 0 && (

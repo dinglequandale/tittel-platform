@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Button, Field, Input } from '@tittel/ui'
 import { supabase } from '../lib/supabase.ts'
 import { AuthLayout } from './AuthLayout.tsx'
+import { GoogleButton } from './PasswordReset.tsx'
 
 export function Login() {
   const navigate = useNavigate()
@@ -33,9 +34,11 @@ export function Login() {
         <Field label="Password" error={error}>
           <Input type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
+        <Link to="/forgot" className="auth-forgot">Forgot your password?</Link>
         <Button type="submit" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
         </Button>
+        <GoogleButton label="Sign in with Google" />
       </form>
     </AuthLayout>
   )

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { CalendarDays, Users, BookOpen, BarChart3, Settings, Plus } from 'lucide-react'
 import { Shell, Wordmark, Qed, Menu, MenuTrigger, MenuContent, MenuItem } from '@tittel/ui'
@@ -9,6 +9,8 @@ import { AppToastProvider } from '../lib/toast.tsx'
 import { ScheduleLessonDialog } from '../lessons/ScheduleLessonDialog.tsx'
 import { HomeworkForDialog } from '../lessons/HomeworkForDialog.tsx'
 import { GlobalSearch } from './GlobalSearch.tsx'
+import { ConsentDialog } from './ConsentDialog.tsx'
+import { apiFetch } from '../lib/api.ts'
 
 // Five places, organised around the tutor's week rather than the database
 // (FLOW-SPEC §2.6): lessons are the hub; Library and Insights are where you
@@ -27,6 +29,8 @@ export function AppShell() {
   const navigate = useNavigate()
   const [scheduling, setScheduling] = useState(false)
   const [givingHomework, setGivingHomework] = useState(false)
+  const [me, setMe] = useState<{ displayName: string; consentAt: string | null } | null>(null)
+  useEffect(() => { apiFetch('/api/tutor/org').then(setMe).catch(() => {}) }, [])
   // Opening a dialog from a menu item waits a tick, so the menu has closed
   // first instead of lingering behind the dialog.
   const later = (fn: () => void) => () => window.setTimeout(fn, 0)
@@ -39,7 +43,7 @@ export function AppShell() {
 
   const email = session?.user.email ?? ''
   const local = email.split('@')[0]
-  const displayName = local ? local.charAt(0).toUpperCase() + local.slice(1) : BRAND_NAME
+  const displayName = me?.displayName || (local ? local.charAt(0).toUpperCase() + local.slice(1) : BRAND_NAME)
   const initial = displayName[0].toUpperCase()
 
   return (
@@ -99,6 +103,7 @@ export function AppShell() {
       </Shell>
       <ScheduleLessonDialog open={scheduling} onOpenChange={setScheduling} />
       <HomeworkForDialog open={givingHomework} onOpenChange={setGivingHomework} />
+      {me && !me.consentAt && <ConsentDialog onDone={() => setMe({ ...me, consentAt: new Date().toISOString() })} />}
     </AppToastProvider>
   )
 }

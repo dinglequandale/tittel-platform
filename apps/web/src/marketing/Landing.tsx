@@ -24,6 +24,9 @@ export function Landing() {
           <Link to="/try" className="btn btn-secondary">Try a free board</Link>
         </div>
       </main>
+      <footer className="landing-footer">
+        <Link to="/privacy">Privacy</Link> · <Link to="/terms">Terms</Link>
+      </footer>
     </div>
   )
 }

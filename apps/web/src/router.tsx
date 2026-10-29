@@ -2,6 +2,8 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { Landing } from './marketing/Landing.tsx'
 import { Login } from './auth/Login.tsx'
 import { Signup } from './auth/Signup.tsx'
+import { ForgotPassword, ResetPassword } from './auth/PasswordReset.tsx'
+import { LegalPage } from './marketing/LegalPage.tsx'
 import { RequireAuth } from './shell/RequireAuth.tsx'
 import { AppShell } from './shell/AppShell.tsx'
 import { Home } from './shell/Home.tsx'
@@ -29,6 +31,10 @@ export function Router() {
       <Route path="/try" element={<TryLanding />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/forgot" element={<ForgotPassword />} />
+      <Route path="/reset" element={<ResetPassword />} />
+      <Route path="/privacy" element={<LegalPage doc="privacy" />} />
+      <Route path="/terms" element={<LegalPage doc="terms" />} />
 
       <Route element={<RequireAuth />}>
         <Route path="/app" element={<AppShell />}>

@@ -384,7 +384,8 @@ function NewStudentDialog({
   onClosed?: () => void
 }) {
   const toast = useToast()
-  const blank: StudentEmail[] = [{ email: '', role: 'student' }]
+  // Parent by default: a student's own address is only for 13 and over.
+  const blank: StudentEmail[] = [{ email: '', role: 'parent' }]
   const [name, setName] = useState('')
   const [emails, setEmails] = useState<StudentEmail[]>(blank)
   const [notes, setNotes] = useState('')
@@ -466,7 +467,7 @@ function NewStudentDialog({
           </>
         ) : (
           <form className="dialog-form" onSubmit={(e) => { e.preventDefault(); void submit(false) }}>
-            <Field label="Name"><Input ref={nameRef} autoFocus value={name} onChange={(e) => setName(e.target.value)} /></Field>
+            <Field label="Name"><Input ref={nameRef} autoFocus value={name} placeholder="First name and last initial is enough" onChange={(e) => setName(e.target.value)} /></Field>
             <Field label="Emails (optional)">
               <EmailList emails={emails} onChange={setEmails} />
             </Field>
@@ -657,13 +658,13 @@ function EmailList({ emails, onChange }: { emails: StudentEmail[]; onChange: (e:
         <div key={i} className="email-row">
           <Input type="email" inputMode="email" value={e.email} placeholder="name@example.com" onChange={(ev) => set(i, { email: ev.target.value })} />
           <select value={e.role} onChange={(ev) => set(i, { role: ev.target.value as StudentEmail['role'] })}>
-            <option value="student">Student</option>
             <option value="parent">Parent</option>
+            <option value="student">Student's own (13+)</option>
           </select>
           <Button variant="ghost" onClick={() => onChange(emails.filter((_, j) => j !== i))} aria-label={`Remove ${e.email}`}>×</Button>
         </div>
       ))}
-      <Button variant="ghost" onClick={() => onChange([...emails, { email: '', role: emails.some((x) => x.role === 'student') ? 'parent' : 'student' }])}>
+      <Button variant="ghost" onClick={() => onChange([...emails, { email: '', role: 'parent' }])}>
         + Add email
       </Button>
       <p className="muted">Calendar invites to any of these count as this student's lessons.</p>

@@ -1,8 +1,10 @@
+import './lib/sentry.ts'
 import 'express-async-errors'
 import path from 'node:path'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
+import * as Sentry from '@sentry/node'
 import { pool } from './db.ts'
 import { requireTutor } from './auth.ts'
 import { studentsRouter } from './routes/students.ts'
@@ -21,6 +23,8 @@ import { orgRouter } from './routes/org.ts'
 import { calendarRouter } from './routes/calendar.ts'
 import { filesRouter, publicFilesRouter } from './routes/files.ts'
 import { followUpRouter } from './routes/followUp.ts'
+import { demoRouter } from './routes/demo.ts'
+import { rateLimit } from './lib/rateLimit.ts'
 
 // The configured Express app — defined separately from the listen() bootstrap
 // (src/index.ts) so it can also be imported elsewhere (e.g. tests) without
@@ -71,19 +75,22 @@ app.use('/api/tutor', requireTutor, orgRouter)
 app.use('/api/tutor', requireTutor, calendarRouter)
 app.use('/api/tutor', requireTutor, filesRouter)
 app.use('/api/tutor', requireTutor, followUpRouter)
+app.use('/api/tutor', requireTutor, demoRouter)
 // Uploaded files by their token: plan pages on boards, worksheets on portals.
-app.use('/api/files', publicFilesRouter)
+app.use('/api/files', rateLimit(1200), publicFilesRouter)
 
 // Phase 2 — student-facing magic-link surfaces (no Supabase auth; the token
 // itself is the access control — see attemptQuery/studentQuery in db.ts).
-app.use('/api/portal', portalRouter)
-app.use('/api/attempt', attemptRouter)
+// Render sits one proxy in front, so the client's IP is the forwarded one.
+if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1)
+app.use('/api/portal', rateLimit(600), portalRouter)
+app.use('/api/attempt', rateLimit(1200), attemptRouter)
 
 // Phase 3 — live boards (PLAN.md §6.3). /api/board is public: the board id
 // (plus an optional display name) is the whole guest access model, same as
 // the rest of the live-teaching surface. Asset uploads live at the bare
 // /uploads path (no /api prefix), matching the ported whiteboard's convention.
-app.use('/api/board', boardJoinRouter)
+app.use('/api/board', rateLimit(600), boardJoinRouter)
 app.use(boardAssetsRouter)
 
 // Any unmatched /api route is a 404 (not the SPA fallback HTML).
@@ -99,6 +106,7 @@ app.use('/api', (err: unknown, _req: express.Request, res: express.Response, _ne
     return res.status(status).json({ error: (err as Error).message })
   }
   console.error('[api error]', err)
+  Sentry.captureException(err)
   res.status(500).json({ error: 'internal error' })
 })
 

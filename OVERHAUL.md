@@ -401,6 +401,19 @@ time goes to teaching on it (from O2), recruiting partners, and the two licence 
 - **O5 Design partners (5 tutors, free, ~week 6).** Lean landing, password reset + Google,
   onboarding seed, child-data minimisation + legal pages, Sentry, CI, Render paid, Payment Link
   for the founding year. Each partner gets a 30-minute onboarding call; watch, don't help.
+  **Status (2026-10-29), code side built:** password reset (/forgot, /reset); Google sign-in
+  (button appears when `VITE_GOOGLE_AUTH=on`); signup asks name and business name (kept on the
+  user and workspace; the business name heads the student portal); a one-time consent step in
+  the app before students (parent permission for under-13s, minimal data), student emails
+  labelled "own (13+)" with parent as the default; draft Privacy Policy and Terms at /privacy
+  and /terms with bracketed gaps; "Explore with a sample student" (routes/demo.ts: a past
+  lesson with results to follow up on, removable in one click); per-IP rate limits on the public
+  link routes; Sentry on server and web, off unless a DSN is set; GitHub Actions CI (typecheck,
+  test, build), with the paste/invitee parser checks now in `npm test`.
+  **Konrad's side:** enable Google in Supabase and set the auth redirect URLs (/app, /reset);
+  fill and review the legal drafts; Sentry DSNs; Render paid plan, backups, BOARD_TOKEN_SECRET,
+  ANTHROPIC_API_KEY; the Stripe Payment Link; the final name (blocks signups); the lean
+  landing copy.
 - **O6 Earn it.** Fix what partners hit. Student record + mastery when asked, ⌘K, Settings. Stripe
   Checkout/portal/gates once ≥3 have paid.
 - **O7 Public launch.** Showpiece landing, final name/domain swap via `brand.ts`, OG, Lighthouse

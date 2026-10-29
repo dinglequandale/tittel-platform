@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.1",
+    "@sentry/node": "^8.55.0",
     "@tittel/shared": "*",
     "@tldraw/sync-core": "3.15.5",
     "express": "^4.19.2",

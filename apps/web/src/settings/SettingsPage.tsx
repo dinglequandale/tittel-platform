@@ -12,6 +12,8 @@ export function SettingsPage() {
   const { session } = useSession()
   const toast = useToast()
   const [orgName, setOrgName] = useState('')
+  const [tutorName, setTutorName] = useState('')
+  const [savedNames, setSavedNames] = useState({ org: '', tutor: '' })
   const [meetingUrl, setMeetingUrl] = useState('')
   const [saved, setSaved] = useState('')
   const [saving, setSaving] = useState(false)
@@ -22,6 +24,7 @@ export function SettingsPage() {
     apiFetch('/api/tutor/org')
       .then((o) => {
         setOrgName(o.name); setMeetingUrl(o.defaultMeetingUrl); setSaved(o.defaultMeetingUrl)
+        setTutorName(o.displayName ?? ''); setSavedNames({ org: o.name, tutor: o.displayName ?? '' })
         setLinkSource(o.meetingLinkSource === 'own' ? 'own' : 'invite')
         setAi({ available: !!o.aiAvailable, on: o.aiHelp !== false })
       })
@@ -49,6 +52,16 @@ export function SettingsPage() {
     }
   }
 
+  async function saveNames() {
+    try {
+      await apiFetch('/api/tutor/org', { method: 'PATCH', body: JSON.stringify({ name: orgName.trim(), displayName: tutorName.trim() }) })
+      setSavedNames({ org: orgName.trim(), tutor: tutorName.trim() })
+      toast('Saved')
+    } catch (err) {
+      toast((err as Error).message)
+    }
+  }
+
   async function saveMeetingUrl() {
     setSaving(true)
     try {
@@ -70,9 +83,13 @@ export function SettingsPage() {
           <span className="kv-row-key">Email</span>
           <span className="kv-row-val">{session?.user.email || '—'}</span>
         </div>
-        <div className="kv-row">
-          <span className="kv-row-key">Workspace</span>
-          <span className="kv-row-val">{orgName || '—'}</span>
+        <Field label="Your name"><Input value={tutorName} autoComplete="name" onChange={(e) => setTutorName(e.target.value)} /></Field>
+        <Field label="Business name" hint="Shown to students and parents.">
+          <Input value={orgName} onChange={(e) => setOrgName(e.target.value)} />
+        </Field>
+        <div className="row-end">
+          <Button variant="secondary" onClick={saveNames}
+            disabled={!orgName.trim() || (orgName.trim() === savedNames.org && tutorName.trim() === savedNames.tutor)}>Save</Button>
         </div>
       </div>
 

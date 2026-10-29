@@ -31,9 +31,10 @@ const STUDENT_LESSONS = `
 // every assignment with attempt status and, once submitted, their score. The
 // attempt_token deep-links into the runner.
 portalRouter.get('/:token', async (req, res) => {
-  const [student] = await studentQuery<{ id: string; name: string; org_id: string }>(
+  const [student] = await studentQuery<{ id: string; name: string; org_id: string; org_name: string }>(
     req.params.token,
-    `select id, name, org_id from students where portal_token = $1 and archived_at is null`,
+    `select s.id, s.name, s.org_id, o.name as org_name
+       from students s join orgs o on o.id = s.org_id where s.portal_token = $1 and s.archived_at is null`,
   )
   if (!student) return res.status(404).json({ error: 'not found' })
 
@@ -83,7 +84,8 @@ portalRouter.get('/:token', async (req, res) => {
       order by asg.created_at desc`,
   )
 
-  res.json({ studentName: student.name, lessons, notes, assignments })
+  // The tutor's business name heads the portal (their brand, not ours).
+  res.json({ studentName: student.name, tutorName: student.org_name, lessons, notes, assignments })
 })
 
 // Join a lesson from the portal: the board the tutor teaches on (created on

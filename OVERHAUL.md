@@ -367,9 +367,14 @@ time goes to teaching on it (from O2), recruiting partners, and the two licence 
     `<Mon 27 Oct> · <plan title>`, with ` · n` added when there are several pages.
   - **API:** `loadPlanOntoBoard(editor, planDoc, { idPrefix })` in `apps/web/src/board/`. A library
     quick-load passes `plan-<planId>-v<version>`.
-  - **PDF plans:** O2 defines the `lessons.doc` shape. Proposed: `{ title, source: 'pdf',
-    storageKey, pageCount, pages: [] }`, each page a locked background image (Storage-backed on
-    persistent boards).
+  - **PDF plans (as built):** the lesson page renders a dropped PDF in the browser, one PNG per
+    page, into the durable `files` table, and saves it as an ordinary plan of image blocks
+    (`src: /api/files/<token>`, maxWidth 900, spacingAfter 40). The board loads it like any plan,
+    so no PDF-specific board code or board-assets table is needed.
+  **Status (2026-10-29):** done: lesson load (52251b2, 7dba274), quiz overlay + answers panel
+  (7be563f), the top tutor bar with Lesson page / End lesson (c9a753f, b83a458), B7
+  server-enforced write access (00589a7), G1. Left: games port, snapshot+asset survival
+  (room assets are still in memory), and the smoke coverage in *Accept*.
   *Accept:* Konrad teaches every class that week on the platform; the smoke suite covers quiz
   timing and snapshot+asset survival across a restart.
 - **O3 The weekly loop.** Session persistence, the session summary (AI draft + edit + link/email),

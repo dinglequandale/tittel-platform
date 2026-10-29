@@ -160,7 +160,7 @@ boardJoinRouter.post('/:boardId/token', async (req, res) => {
       userId: req.auth!.userId,
       name: req.auth!.email.split('@')[0] || 'Tutor',
     })
-    return res.json({ role: 'host', mode, boardToken, displayName: 'Tutor' })
+    return res.json({ role: 'host', mode, boardToken, displayName: 'Tutor', userId: req.auth!.userId })
   }
 
   const name: string | undefined = typeof req.body?.name === 'string' ? req.body.name.trim().slice(0, 64) : undefined
@@ -168,12 +168,15 @@ boardJoinRouter.post('/:boardId/token', async (req, res) => {
     return res.status(400).json({ error: 'name is required to join this class' })
   }
   const displayName = name || 'Guest'
+  // The board identifies this guest by `userId` (presence, write grants, and
+  // the server's read-only check), so it must come from the token, not the client.
+  const userId = newId()
   const boardToken = await signBoardToken({
     boardId: req.params.boardId,
     orgId: board.org_id,
     role: 'guest',
-    userId: newId(),
+    userId,
     name: displayName,
   })
-  res.json({ role: 'guest', mode, boardToken, displayName })
+  res.json({ role: 'guest', mode, boardToken, displayName, userId })
 })

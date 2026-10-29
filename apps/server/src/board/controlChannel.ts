@@ -245,6 +245,11 @@ export function handleControl(ws: WebSocket, room: Room, role: 'host' | 'guest')
         if (msg.allow) room.writers.add(msg.userId)
         else room.writers.delete(msg.userId)
         broadcastToGuests({ type: 'access', userId: msg.userId, allow: !!msg.allow })
+        // Sync sessions take read-only at connect; drop this student's so their
+        // client reconnects under the new grant (see index.ts /connect).
+        for (const [sessionId, userId] of room.syncUsers) {
+          if (userId === msg.userId) room.socketRoom.closeSession(sessionId)
+        }
       } else if (msg?.type === 'free-reign') {
         room.freeReign = !!msg.on
         broadcastToGuests({ type: 'free-reign', on: room.freeReign })

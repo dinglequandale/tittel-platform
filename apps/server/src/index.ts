@@ -20,12 +20,25 @@ const server = http.createServer(app)
 // frames are far smaller: snapshots cap at 5 MB and images go over /uploads.
 const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 })
 
-async function lookupBoard(boardId: string): Promise<{ archived: boolean } | null> {
-  const { rows } = await pool.query<{ archived_at: string | null }>(
-    'select archived_at from boards where id = $1',
+async function lookupBoard(boardId: string): Promise<{ archived: boolean; mode: 'small' | 'large' } | null> {
+  const { rows } = await pool.query<{ archived_at: string | null; mode: string | null }>(
+    `select b.archived_at, c.mode
+       from boards b
+       left join classes c on c.id = b.class_id
+      where b.id = $1`,
     [boardId],
   )
-  return rows[0] ? { archived: rows[0].archived_at != null } : null
+  if (!rows[0]) return null
+  return { archived: rows[0].archived_at != null, mode: rows[0].mode === 'large' ? 'large' : 'small' }
+}
+
+type Resolved = {
+  role: 'host' | 'guest'
+  persistent: boolean
+  /** Persistent boards only: the class mode from the DB. */
+  mode?: 'small' | 'large'
+  /** Persistent boards only: the server-issued id from the board token. */
+  userId?: string
 }
 
 /**
@@ -38,7 +51,7 @@ async function lookupBoard(boardId: string): Promise<{ archived: boolean } | nul
 async function resolveConnection(
   boardId: string,
   url: URL,
-): Promise<{ role: 'host' | 'guest'; persistent: boolean } | null> {
+): Promise<Resolved | null> {
   const board = await lookupBoard(boardId)
   // Archiving a board promises its link stops working. Tokens live for 12h,
   // so this is checked on every connect, not only when one is minted.
@@ -47,13 +60,13 @@ async function resolveConnection(
   if (boardToken) {
     const payload = await verifyBoardToken(boardToken)
     if (!payload || payload.boardId !== boardId) return null
-    return { role: payload.role, persistent: true }
+    return { role: payload.role, persistent: true, mode: board?.mode, userId: payload.userId }
   }
   // The `?role=host` fallback is only for the unauthenticated, non-persistent
   // /try quick-board path. A persistent board with no valid boardToken is
   // always a guest — otherwise anyone with the board id could self-grant
   // host (camera control, write-access grants, quiz answer keys/stats).
-  if (board) return { role: 'guest', persistent: true }
+  if (board) return { role: 'guest', persistent: true, mode: board.mode }
   const role = url.searchParams.get('role') === 'host' ? 'host' : 'guest'
   return { role, persistent: false }
 }
@@ -70,12 +83,12 @@ server.on('upgrade', (req, socket, head) => {
 
   if (parts[0] === 'connect' && parts[1]) {
     const boardId = decodeURIComponent(parts[1])
-    // TODO(security): the tldraw sync socket accepts writes from any guest
-    // regardless of role — access control here is client-side-only (the
-    // guest UI just doesn't show editing tools). Fixing properly means
-    // passing `isReadonly` per-session and rewiring write-access grants
-    // through the sync layer itself; out of scope for this pass (HANDOFF.md
-    // B7). `resolved.role` is available here if that work happens later.
+    // Write access is enforced here, not just hidden in the guest's UI (HANDOFF
+    // B7): on a persistent large-class board a guest's sync session is
+    // read-only unless the host granted their token's userId. A grant or
+    // revoke closes that guest's sessions (controlChannel 'access'), and the
+    // client's automatic reconnect lands back here with the new answer. The
+    // ephemeral /try board can't be enforced: its host role is self-asserted.
     resolveConnection(boardId, url)
       .then(async (resolved) => {
         if (!resolved) {
@@ -83,9 +96,16 @@ server.on('upgrade', (req, socket, head) => {
           return
         }
         const room = await getOrCreateRoom(boardId, resolved.persistent)
+        if (resolved.mode) room.mode = resolved.mode
+        const isReadonly =
+          resolved.persistent &&
+          resolved.role === 'guest' &&
+          room.mode === 'large' &&
+          !(resolved.userId && room.writers.has(resolved.userId))
         wss.handleUpgrade(req, socket, head, (ws) => {
           const sessionId = url.searchParams.get('sessionId') || crypto.randomUUID()
-          room.socketRoom.handleSocketConnect({ sessionId, socket: ws as never })
+          if (resolved.userId) room.syncUsers.set(sessionId, resolved.userId)
+          room.socketRoom.handleSocketConnect({ sessionId, socket: ws as never, isReadonly })
         })
       })
       .catch((err) => {
@@ -101,6 +121,7 @@ server.on('upgrade', (req, socket, head) => {
           return
         }
         const room = await getOrCreateRoom(boardId, resolved.persistent)
+        if (resolved.mode) room.mode = resolved.mode
         wss.handleUpgrade(req, socket, head, (ws) => handleControl(ws, room, resolved.role))
       })
       .catch((err) => {

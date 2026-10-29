@@ -37,6 +37,8 @@ export interface Room {
   studentsCanEdit: boolean
   mode: 'small' | 'large'
   writers: Set<string>
+  /** Sync sessionId -> the board-token userId that opened it (persistent boards). */
+  syncUsers: Map<string, string>
   freeReign: boolean
   timerVisible: boolean
   lastTimerState: { remainingMs: number; sentAt: number; running: boolean } | null
@@ -128,6 +130,7 @@ async function createRoom(id: string, persistent: boolean): Promise<Room> {
     studentsCanEdit: false,
     mode: 'small',
     writers: new Set(),
+    syncUsers: new Map(),
     freeReign: false,
     timerVisible: false,
     lastTimerState: null,
@@ -148,6 +151,7 @@ async function createRoom(id: string, persistent: boolean): Promise<Room> {
   room.socketRoom = new TLSocketRoom<any, void>({
     initialSnapshot: (initialSnapshot as never) ?? undefined,
     onSessionRemoved(_room, args) {
+      room.syncUsers.delete(args.sessionId)
       if (args.numSessionsRemaining === 0) scheduleClose(room)
     },
     onDataChange() {

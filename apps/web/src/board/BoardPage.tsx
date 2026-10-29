@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api.ts'
+import { supabase } from '../lib/supabase.ts'
 import { ControlChannel } from './controlChannel.ts'
 import { BoardCanvas } from './BoardCanvas.tsx'
 import './board.css'
@@ -33,7 +34,49 @@ function animalName(): string {
 
 const NAME_KEY = 'board-name'
 
-type Resolved = { isHost: boolean; mode: ClassMode; displayName: string; authParams: string }
+type Resolved = {
+  isHost: boolean
+  mode: ClassMode
+  displayName: string
+  authParams: string
+  /** Persistent boards: the board token's server-issued id (see joinToken). */
+  userId?: string
+}
+
+type TokenResponse = { role: string; mode: string; boardToken: string; displayName: string; userId: string }
+
+// Board tokens live 12h; reuse a guest's for a bit less than that.
+const TOKEN_REUSE_MS = 11 * 60 * 60 * 1000
+
+/**
+ * POST /api/board/:id/token, keeping a guest's token for this tab. The board
+ * knows a student by the token's userId (presence, the tutor's write grants,
+ * the server's read-only check), so a refresh must not mint a new identity:
+ * a student granted the pen would come back locked. Signed-in tutors always
+ * mint fresh (their id is their account anyway).
+ */
+async function joinToken(boardId: string, name?: string): Promise<TokenResponse> {
+  const key = `board-join:${boardId}`
+  const { data } = await supabase.auth.getSession()
+  if (!data.session) {
+    try {
+      const cached = JSON.parse(sessionStorage.getItem(key) ?? 'null') as (TokenResponse & { at: number }) | null
+      if (cached && cached.role === 'guest' && Date.now() - cached.at < TOKEN_REUSE_MS) return cached
+    } catch {
+      /* unreadable cache: mint a new token */
+    }
+  }
+  const res = (await apiFetch(`/api/board/${boardId}/token`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })) as TokenResponse
+  try {
+    if (res.role === 'guest') sessionStorage.setItem(key, JSON.stringify({ ...res, at: Date.now() }))
+  } catch {
+    /* storage blocked: the student just gets a new id on refresh */
+  }
+  return res
+}
 
 /**
  * Resolves who's joining and how, for BOTH board kinds:
@@ -55,10 +98,7 @@ export function BoardPage() {
     let cancelled = false
 
     async function joinPersistent(mode: ClassMode, name?: string) {
-      const res = await apiFetch(`/api/board/${boardId}/token`, {
-        method: 'POST',
-        body: JSON.stringify({ name }),
-      })
+      const res = await joinToken(boardId!, name)
       if (cancelled) return
       setNeedsName(null)
       setResolved({
@@ -66,6 +106,7 @@ export function BoardPage() {
         mode: res.mode === 'large' ? 'large' : mode,
         displayName: res.displayName,
         authParams: `boardToken=${encodeURIComponent(res.boardToken)}`,
+        userId: res.userId,
       })
     }
 
@@ -136,13 +177,14 @@ export function BoardPage() {
           sessionStorage.setItem(NAME_KEY, name)
           setNeedsName(null)
           // Re-run the effect's join path with the now-cached name.
-          apiFetch(`/api/board/${boardId}/token`, { method: 'POST', body: JSON.stringify({ name }) })
+          joinToken(boardId, name)
             .then((res) => {
               setResolved({
                 isHost: false,
                 mode: needsName,
                 displayName: res.displayName,
                 authParams: `boardToken=${encodeURIComponent(res.boardToken)}`,
+                userId: res.userId,
               })
             })
             .catch((err) => setError((err as Error).message))
@@ -164,15 +206,19 @@ function BoardGate({
   mode,
   displayName,
   authParams,
+  userId: tokenUserId,
 }: {
   boardId: string
   isHost: boolean
   mode: ClassMode
   displayName: string
   authParams: string
+  userId?: string
 }) {
   const [channel, setChannel] = useState<ControlChannel | null>(null)
-  const userId = stablePerTabId()
+  // Persistent boards use the token's id (the server enforces grants by it);
+  // the /try board has no token, so a per-tab id stands in.
+  const userId = tokenUserId ?? stablePerTabId()
 
   useEffect(() => {
     const ch = new ControlChannel(boardId, isHost, authParams)

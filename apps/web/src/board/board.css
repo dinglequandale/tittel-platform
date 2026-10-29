@@ -301,35 +301,52 @@
   font-size: 1.05rem;
 }
 
-/* Compact tutor controls, tucked into the bottom-right corner. */
-.tutor-dock {
-  position: fixed;
-  right: 12px;
-  bottom: 12px;
-  z-index: 1000;
+/* The tutor's bar (and a student's calculator toggle) lives in tldraw's own
+   top-center slot (components.TopPanel), so tldraw's layout keeps it clear of
+   the drawing toolbar, the menus and the licence watermark. It wraps rather
+   than overflowing on a narrow screen; below 1100px buttons go icon-only
+   (each keeps its name as title + aria-label). */
+.board-bar {
+  pointer-events: all;
   display: flex;
-  flex-wrap: wrap-reverse;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
-  gap: 8px;
-  max-width: calc(100vw - 24px);
+  gap: 2px;
+  margin: 6px 6px 0;
+  padding: 4px;
+  max-width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-1);
+  font-family: var(--font-body);
+}
+
+.board-bar__sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 2px;
+  background: var(--line);
 }
 
 .dock-btn {
   appearance: none;
   cursor: pointer;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--ink);
+  font: inherit;
   font-size: 0.82rem;
   font-weight: 600;
-  padding: 0.4rem 0.8rem;
-  border-radius: 999px;
-  box-shadow: var(--shadow-1);
+  height: 32px;
+  padding: 0 0.65rem;
+  border-radius: 10px;
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.4rem;
+  text-decoration: none;
   transition: background var(--duration-micro) var(--ease);
 }
 
@@ -339,52 +356,44 @@
 
 .dock-btn:focus-visible {
   outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 .dock-btn.primary {
   background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  color: var(--paper);
 }
 
 .dock-btn.primary:hover {
   background: var(--accent-hover);
 }
 
+.dock-btn.end {
+  color: var(--incorrect-ink);
+}
+
+.dock-btn.end:hover {
+  background: var(--pink-wash);
+}
+
 .lesson-status {
   font-size: 0.78rem;
   font-weight: 600;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 0.35rem 0.7rem;
-  box-shadow: var(--shadow-1);
-  white-space: nowrap;
-}
-
-.share-control {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 0.25rem 0.3rem 0.25rem 0.7rem;
-  box-shadow: var(--shadow-1);
-}
-
-.share-link {
-  font-size: 0.8rem;
   color: var(--ink-2);
+  padding: 0 0.6rem;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 38vw;
 }
 
-/* Floating calculator panel (resizable), parked bottom-right above the dock. */
+@media (max-width: 1099px) {
+  .board-bar .dock-label {
+    display: none;
+  }
+  .board-bar .dock-btn {
+    padding: 0 0.5rem;
+  }
+}
+
+/* Floating calculator panel (resizable), parked bottom-right. */
 .calc-panel {
   position: fixed;
   right: 12px;
@@ -671,15 +680,15 @@
   box-shadow: var(--shadow-2);
 }
 
-/* Library plan picker: a panel that opens upward out of the tutor dock. */
+/* Library plan picker: a panel that drops down from the top bar. */
 .lesson-picker {
   position: relative;
 }
 
 .lesson-picker__panel {
   position: absolute;
-  right: 0;
-  bottom: calc(100% + 8px);
+  left: 0;
+  top: calc(100% + 8px);
   width: 280px;
   max-height: 320px;
   overflow-y: auto;

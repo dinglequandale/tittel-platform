@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Tldraw,
   DefaultMainMenu,
@@ -23,6 +24,8 @@ import {
   Square,
   ListChecks,
   Check,
+  ArrowUpRight,
+  LogOut,
 } from 'lucide-react'
 import type { QuestionMeta, QuizStats } from '@tittel/shared'
 import { useSync } from '@tldraw/sync'
@@ -41,6 +44,16 @@ import { StatsPanel } from './quiz/StatsPanel.tsx'
 import './board.css'
 
 type ClassMode = 'small' | 'large'
+
+// The bar's contents, handed from BoardCanvas into tldraw's TopPanel slot. A
+// context (not a closure) keeps the slot component's identity stable, so
+// tldraw doesn't remount it on every state change.
+const BarContext = createContext<ReactNode>(null)
+
+function BoardTopPanel() {
+  const bar = useContext(BarContext)
+  return bar ? <div className="board-bar">{bar}</div> : null
+}
 
 function connectUrl(boardId: string, authParams: string) {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
@@ -85,7 +98,6 @@ export function BoardCanvas({
   const [studentsCanEdit, setStudentsCanEdit] = useState(false)
   const lastCalcState = useRef<unknown>(null)
   const lastCalcGeom = useRef<unknown>(null)
-  const [linkCopied, setLinkCopied] = useState(false)
   const [pdfStatus, setPdfStatus] = useState<string | null>(null)
   const grantedAtom = useMemo(() => atom('granted-writers', new Set<string>()), [])
   const [freeReign, setFreeReign] = useState(false)
@@ -104,6 +116,8 @@ export function BoardCanvas({
   // Only a signed-in tutor's persistent board has plans (the /try board has no account).
   const signedInHost = isHost && authParams.startsWith('boardToken=')
   const lessons = useLessons({ editor, channel, boardId, enabled: signedInHost })
+  const navigate = useNavigate()
+  const lessonHref = lessons.sessionId ? `/app/lessons/${encodeURIComponent(lessons.sessionId)}` : null
   // Answers (host only): the panel toggle and the latest stats on the wire, so a
   // freshly opened panel starts populated.
   const [statsOpen, setStatsOpen] = useState(false)
@@ -351,13 +365,20 @@ export function BoardCanvas({
     channel.send({ type: 'quiz-open', qids })
   }
 
+  function endLesson() {
+    const msg = lessonHref
+      ? 'End the lesson and go back to its page? Students can stay on the board.'
+      : 'Leave the board? Students can stay on it.'
+    if (window.confirm(msg)) navigate(lessonHref ?? '/app')
+  }
+
   const components = useMemo<TLComponents>(() => {
     if (isHost) {
-      const c: TLComponents = { MainMenu: HostMainMenu, InFrontOfTheCanvas: AnswerOverlay }
+      const c: TLComponents = { MainMenu: HostMainMenu, InFrontOfTheCanvas: AnswerOverlay, TopPanel: BoardTopPanel }
       if (isLarge) c.SharePanel = HostSharePanel
       return c
     }
-    const c: TLComponents = { InFrontOfTheCanvas: AnswerOverlay }
+    const c: TLComponents = { InFrontOfTheCanvas: AnswerOverlay, TopPanel: BoardTopPanel }
     if (!canWrite) c.Toolbar = null
     if (!freeReign) c.PageMenu = null
     return c
@@ -375,73 +396,118 @@ export function BoardCanvas({
     )
   }
 
+  const status = lessons.status ?? pdfStatus
+  const bar: ReactNode = isHost ? (
+    <>
+      {lessonHref && (
+        <a
+          className="dock-btn"
+          href={lessonHref}
+          target="_blank"
+          rel="noopener"
+          title="Open the lesson page in a new tab"
+          aria-label="Lesson page"
+        >
+          <ArrowUpRight size={15} />
+          <span className="dock-label">Lesson page</span>
+        </a>
+      )}
+      {signedInHost && (
+        <>
+          <LessonPicker onPick={lessons.loadLibraryLesson} />
+          <span className="board-bar__sep" />
+        </>
+      )}
+      <button
+        className={`dock-btn ${freeReign ? 'primary' : ''}`}
+        role="switch"
+        aria-checked={freeReign}
+        aria-label={freeReign ? 'Students: roaming' : 'Students: following you'}
+        title={
+          freeReign
+            ? 'Students move around the board on their own, with their own calculator. Click to bring them back to your view.'
+            : 'Students see your page and view. Click to let them move around the board on their own.'
+        }
+        onClick={() => toggleFreeReign(!freeReign)}
+      >
+        {freeReign ? <Unlock size={15} /> : <Lock size={15} />}
+        <span className="dock-label">{freeReign ? 'Students: roaming' : 'Students: following you'}</span>
+      </button>
+      {pageQids.length > 0 && (
+        <button
+          className={`dock-btn ${anyOpenOnPage ? 'primary' : ''}`}
+          aria-label={anyOpenOnPage ? 'Stop answering' : `Answer page (${pageQids.length})`}
+          title="Let students answer this page's questions. They stay on your page, with their own calculator."
+          onClick={togglePageAnswering}
+        >
+          {anyOpenOnPage ? <Square size={13} /> : <Play size={13} />}
+          <span className="dock-label">{anyOpenOnPage ? 'Stop answering' : `Answer page (${pageQids.length})`}</span>
+        </button>
+      )}
+      <button
+        className="dock-btn"
+        aria-label={statsOpen ? 'Hide answers' : 'Answers'}
+        title={statsOpen ? 'Hide answers' : 'Answers'}
+        onClick={() => setStatsOpen((v) => !v)}
+      >
+        <ListChecks size={15} />
+        <span className="dock-label">Answers</span>
+      </button>
+      {allAnswered && (
+        <span className="qs-all-answered-pill">
+          <Check size={14} />
+          All answered
+        </span>
+      )}
+      <span className="board-bar__sep" />
+      <button
+        className="dock-btn"
+        aria-label={calcOpen ? 'Hide calculator' : 'Calculator'}
+        title={calcOpen ? 'Hide calculator' : 'Calculator'}
+        onClick={() => setCalcOpen((v) => !v)}
+      >
+        <CalculatorIcon size={15} />
+      </button>
+      <button
+        className="dock-btn"
+        aria-label={timerOpen ? 'Hide timer' : 'Timer'}
+        title={timerOpen ? 'Hide timer' : 'Timer'}
+        onClick={() => toggleTimer(!timerOpen)}
+      >
+        <TimerIcon size={15} />
+      </button>
+      <span className="board-bar__sep" />
+      <CopyLinkButton boardId={boardId} />
+      <button className="dock-btn" aria-label="Export PDF" title="Export the board as a PDF" onClick={exportPdf}>
+        <FileDown size={15} />
+      </button>
+      {signedInHost && (
+        <button className="dock-btn end" onClick={endLesson}>
+          <LogOut size={15} />
+          {lessonHref ? 'End lesson' : 'Leave'}
+        </button>
+      )}
+      {status && <span className="lesson-status" role="status">{status}</span>}
+    </>
+  ) : studentSoloCalc ? (
+    <button className="dock-btn" onClick={() => setPersonalCalcOpen((v) => !v)}>
+      <CalculatorIcon size={15} />
+      {personalCalcOpen ? 'Hide calculator' : 'My calculator'}
+    </button>
+  ) : null
+
   return (
     <div className="board-root board-scope">
-      <Tldraw
-        store={store.store}
-        onMount={(ed) => {
-          editorRef.current = ed
-          setEditor(ed)
-        }}
-        components={components}
-      />
-
-      {isHost && (
-        <div className="tutor-dock">
-          {(lessons.status ?? pdfStatus) && <span className="lesson-status">{lessons.status ?? pdfStatus}</span>}
-          {signedInHost && <LessonPicker onPick={lessons.loadLibraryLesson} />}
-          <ShareControl boardId={boardId} collapsed={linkCopied} onCopied={() => setLinkCopied(true)} />
-          <button
-            className={`dock-btn ${freeReign ? 'primary' : ''}`}
-            title="Let students roam pages/zoom freely and use their own calculators"
-            onClick={() => toggleFreeReign(!freeReign)}
-          >
-            {freeReign ? <Unlock size={14} /> : <Lock size={14} />}
-            {freeReign ? 'Free rein: On' : 'Free rein: Off'}
-          </button>
-          {pageQids.length > 0 && (
-            <button
-              className={`dock-btn ${anyOpenOnPage ? 'primary' : ''}`}
-              title="Let students answer this page's questions. They stay on your page, with their own calculator."
-              onClick={togglePageAnswering}
-            >
-              {anyOpenOnPage ? <Square size={12} /> : <Play size={12} />}
-              {anyOpenOnPage ? 'Stop answering' : `Answer page (${pageQids.length})`}
-            </button>
-          )}
-          <button className="dock-btn" onClick={() => setStatsOpen((v) => !v)}>
-            <ListChecks size={14} />
-            {statsOpen ? 'Hide answers' : 'Answers'}
-          </button>
-          {allAnswered && (
-            <span className="qs-all-answered-pill">
-              <Check size={14} />
-              All answered
-            </span>
-          )}
-          <button className="dock-btn" onClick={() => toggleTimer(!timerOpen)}>
-            <TimerIcon size={14} />
-            {timerOpen ? 'Hide timer' : 'Timer'}
-          </button>
-          <button className="dock-btn" onClick={() => setCalcOpen((v) => !v)}>
-            <CalculatorIcon size={14} />
-            {calcOpen ? 'Hide calculator' : 'Calculator'}
-          </button>
-          <button className="dock-btn" onClick={exportPdf}>
-            <FileDown size={14} />
-            Export PDF
-          </button>
-        </div>
-      )}
-
-      {!isHost && studentSoloCalc && (
-        <div className="tutor-dock">
-          <button className="dock-btn" onClick={() => setPersonalCalcOpen((v) => !v)}>
-            <CalculatorIcon size={14} />
-            {personalCalcOpen ? 'Hide calculator' : 'My calculator'}
-          </button>
-        </div>
-      )}
+      <BarContext.Provider value={bar}>
+        <Tldraw
+          store={store.store}
+          onMount={(ed) => {
+            editorRef.current = ed
+            setEditor(ed)
+          }}
+          components={components}
+        />
+      </BarContext.Provider>
 
       {isHost && statsOpen && (
         <StatsPanel
@@ -523,11 +589,8 @@ function WriteAccessControls({
   )
 }
 
-// Stays visible for the whole session rather than disappearing after the
-// first copy (a tutor often needs to re-send the link mid-lesson) —
-// collapses to a compact dock button once the link's been copied once so it
-// doesn't keep hogging space.
-function ShareControl({ boardId, collapsed, onCopied }: { boardId: string; collapsed: boolean; onCopied: () => void }) {
+// Stays in the bar for the whole session: a tutor often re-sends the link mid-lesson.
+function CopyLinkButton({ boardId }: { boardId: string }) {
   const link = `${window.location.origin}/b/${boardId}`
   const [copied, setCopied] = useState(false)
 
@@ -535,27 +598,15 @@ function ShareControl({ boardId, collapsed, onCopied }: { boardId: string; colla
     try {
       await navigator.clipboard.writeText(link)
       setCopied(true)
-      onCopied()
       setTimeout(() => setCopied(false), 1500)
     } catch {
-      /* clipboard blocked — leave it up so they can copy manually */
+      window.prompt('Copy this link for your students:', link)
     }
   }
 
-  if (collapsed) {
-    return (
-      <button className="dock-btn" title={link} onClick={copy}>
-        {copied ? 'Copied!' : <><LinkIcon size={14} /> Copy link</>}
-      </button>
-    )
-  }
-
   return (
-    <div className="share-control">
-      <span className="share-link">{link}</span>
-      <button className="dock-btn primary" onClick={copy}>
-        {copied ? 'Copied!' : 'Copy link'}
-      </button>
-    </div>
+    <button className="dock-btn" aria-label="Copy student link" title={link} onClick={copy}>
+      {copied ? <Check size={15} /> : <LinkIcon size={15} />}
+    </button>
   )
 }

@@ -475,19 +475,19 @@
   cursor: not-allowed;
 }
 
-/* "Everyone's answered": a deliberately loud "you can move on" signal — a dock
+/* "Everyone's answered": a deliberately loud "you can move on" signal — a top-bar
    pill (glanceable with the panel closed) and a banner inside the panel. */
 .qs-all-answered-pill {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  height: 32px;
   font-size: 0.82rem;
   font-weight: 700;
   color: var(--paper);
   background: var(--correct);
-  padding: 0.4rem 0.8rem;
-  border-radius: var(--radius-pill);
-  box-shadow: var(--shadow-1);
+  padding: 0 0.7rem;
+  border-radius: 10px;
   white-space: nowrap;
 }
 

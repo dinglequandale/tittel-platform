@@ -75,6 +75,9 @@ export function useLessons({
   const hydrated = useRef(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const sessionParam = searchParams.get('lesson')
+  // The lesson this board is being taught for: from Start's `?lesson=` (read
+  // before it's stripped), else the newest lesson whose plan is on the board.
+  const [sessionId, setSessionId] = useState<string | null>(sessionParam)
 
   const flash = useCallback((msg: string, ms = 3000) => {
     setStatus(msg)
@@ -126,10 +129,13 @@ export function useLessons({
     let cancelled = false
     ;(async () => {
       const refs = new Map<string, LessonRef>()
+      let lastSession: string | null = null
       for (const page of editor.getPages()) {
         const ref = lessonRefOf(page.meta)
         if (ref) refs.set(lessonPrefix(ref), ref)
+        if (ref?.kind === 'session') lastSession = ref.id
       }
+      setSessionId((id) => id ?? lastSession)
       let stale = 0
       await Promise.all(
         [...refs].map(async ([prefix, ref]) => {
@@ -170,5 +176,5 @@ export function useLessons({
     [load, fail],
   )
 
-  return { status, answerKeys, loadLibraryLesson }
+  return { status, answerKeys, sessionId, loadLibraryLesson }
 }

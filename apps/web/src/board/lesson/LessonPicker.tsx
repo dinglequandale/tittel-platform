@@ -8,8 +8,8 @@ interface LibraryLesson {
   version: number
 }
 
-// Dock button + list of the library's plans. Rendered inside the fixed tutor
-// dock (not a portal) so it stacks above tldraw's UI without z-index games.
+// Bar button + list of the library's plans. Rendered inside the tutor's top bar
+// (not a portal) so it stacks above tldraw's UI without z-index games.
 export function LessonPicker({ onPick }: { onPick: (lessonId: string) => void }) {
   const [open, setOpen] = useState(false)
   const [lessons, setLessons] = useState<LibraryLesson[] | null>(null)
@@ -36,9 +36,15 @@ export function LessonPicker({ onPick }: { onPick: (lessonId: string) => void })
 
   return (
     <div className="lesson-picker" ref={root}>
-      <button className="dock-btn" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        <BookOpen size={14} />
-        Lesson
+      <button
+        className="dock-btn"
+        aria-expanded={open}
+        aria-label="Put a plan on the board"
+        title="Put a plan from your library on the board"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <BookOpen size={15} />
+        <span className="dock-label">Plans</span>
       </button>
       {open && (
         <div className="lesson-picker__panel" role="menu">

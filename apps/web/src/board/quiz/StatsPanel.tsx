@@ -148,7 +148,7 @@ export function StatsPanel({
 
       <div className="qs-body">
         {!hasQuestions ? (
-          <div className="qs-empty">No questions on the board yet. Load a plan with answerable problems.</div>
+          <div className="qs-empty">No questions on the board yet. When a plan with answers goes on the board, its questions show up here.</div>
         ) : (
           <div className="qs-list">
             {stats!.questions.map((q) => (

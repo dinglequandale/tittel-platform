@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ConfirmDialog } from '@tittel/ui'
 import {
   Tldraw,
   DefaultMainMenu,
@@ -365,12 +366,8 @@ export function BoardCanvas({
     channel.send({ type: 'quiz-open', qids })
   }
 
-  function endLesson() {
-    const msg = lessonHref
-      ? 'End the lesson and go back to its page? Students can stay on the board.'
-      : 'Leave the board? Students can stay on it.'
-    if (window.confirm(msg)) navigate(lessonHref ?? '/app')
-  }
+  // In-app, not window.confirm (blocked in an unfocused tab, and unstyled).
+  const [confirmEnd, setConfirmEnd] = useState(false)
 
   const components = useMemo<TLComponents>(() => {
     if (isHost) {
@@ -482,7 +479,7 @@ export function BoardCanvas({
         <FileDown size={15} />
       </button>
       {signedInHost && (
-        <button className="dock-btn end" onClick={endLesson}>
+        <button className="dock-btn end" onClick={() => setConfirmEnd(true)}>
           <LogOut size={15} />
           {lessonHref ? 'End lesson' : 'Leave'}
         </button>
@@ -508,6 +505,19 @@ export function BoardCanvas({
           components={components}
         />
       </BarContext.Provider>
+
+      <ConfirmDialog
+        open={confirmEnd}
+        onOpenChange={setConfirmEnd}
+        title={lessonHref ? 'End the lesson?' : 'Leave the board?'}
+        description={
+          lessonHref
+            ? 'You’ll go back to the lesson page. Students can stay on the board until they close it.'
+            : 'Students can stay on the board until they close it.'
+        }
+        confirmLabel={lessonHref ? 'End lesson' : 'Leave'}
+        onConfirm={() => navigate(lessonHref ?? '/app')}
+      />
 
       {isHost && statsOpen && (
         <StatsPanel

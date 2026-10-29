@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { ChevronRight, X } from 'lucide-react'
 import type { QuestionStats, QuizStats, Submission } from '@tittel/shared'
+import { ConfirmDialog } from '@tittel/ui'
 import type { ControlChannel } from '../controlChannel.ts'
 import { downloadStatsCsv, type LabelFor } from './exportStats.ts'
 import './quiz.css'
@@ -105,26 +106,9 @@ export function StatsPanel({
     el.addEventListener('pointerup', onUp)
   }
 
-  function handleReveal() {
-    if (!stats || stats.revealed) return
-    if (
-      !window.confirm(
-        'Reveal correct answers to every student now? This pushes the key to the whole class and cannot be undone (short of Reset).'
-      )
-    ) {
-      return
-    }
-    channel.send({ type: 'quiz-reveal' })
-  }
-
-  function handleReset() {
-    if (
-      !window.confirm("Reset this class's quiz results? This wipes every student's submissions.")
-    ) {
-      return
-    }
-    channel.send({ type: 'quiz-reset' })
-  }
+  // An in-app dialog, not window.confirm: the browser's own one is blocked in an
+  // unfocused tab (it just returns false) and can't be styled or tested.
+  const [confirming, setConfirming] = useState<'reveal' | 'reset' | null>(null)
 
   function handleExport() {
     if (!stats) return
@@ -167,7 +151,7 @@ export function StatsPanel({
       </div>
 
       <div className="qs-footer">
-        <button className="qs-btn" onClick={handleReset} disabled={!hasQuestions}>
+        <button className="qs-btn" onClick={() => setConfirming('reset')} disabled={!hasQuestions}>
           Reset
         </button>
         <button className="qs-btn" onClick={handleExport} disabled={!hasQuestions}>
@@ -175,12 +159,29 @@ export function StatsPanel({
         </button>
         <button
           className="qs-btn primary"
-          onClick={handleReveal}
+          onClick={() => setConfirming('reveal')}
           disabled={!hasQuestions || !!stats?.revealed}
         >
           {stats?.revealed ? 'Answers revealed' : 'Reveal answers'}
         </button>
       </div>
+
+      <ConfirmDialog
+        open={confirming === 'reveal'}
+        onOpenChange={(open) => !open && setConfirming(null)}
+        title="Reveal the answers?"
+        description="Every student sees the correct answer under each question. Only Reset takes it back."
+        confirmLabel="Reveal answers"
+        onConfirm={() => channel.send({ type: 'quiz-reveal' })}
+      />
+      <ConfirmDialog
+        open={confirming === 'reset'}
+        onOpenChange={(open) => !open && setConfirming(null)}
+        title="Reset this class's answers?"
+        description="This wipes every student's submissions, so the numbers start again from zero."
+        confirmLabel="Reset answers"
+        onConfirm={() => channel.send({ type: 'quiz-reset' })}
+      />
     </div>
   )
 }

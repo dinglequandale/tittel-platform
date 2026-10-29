@@ -737,3 +737,10 @@
   color: var(--ink-3);
   padding: 8px;
 }
+
+/* The app's dialogs (ConfirmDialog etc.) portal to <body> with no z-index;
+   on the board they must clear tldraw and the floating panels (up to 1500). */
+.overlay,
+.dialog-content {
+  z-index: 2000;
+}

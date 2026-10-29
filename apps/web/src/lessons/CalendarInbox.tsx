@@ -7,6 +7,7 @@ import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
 import { dayLabel, timeLabel } from './lessons.ts'
 import { LinkEventDialog, type GroupWho, type LinkTarget, type Who } from './LinkEventDialog.tsx'
+import { proposePeople } from './invitees.ts'
 
 export interface UnmatchedSeries {
   uid: string
@@ -33,8 +34,9 @@ export interface CalendarStatus {
 
 // "Who is this?" for calendar events the importer couldn't place by email
 // (FLOW-SPEC §2.1, §9.2). One answer covers every week of a recurring event.
-// When the invite has people the app doesn't know yet, a small dialog asks
-// which of them are the student or a parent, so the next invite lands by itself.
+// When the invite has people the app doesn't know yet, a small dialog,
+// already filled in from their addresses and the title, asks who they are,
+// so the next invite lands by itself.
 export function CalendarInbox({ status, onChanged }: { status: CalendarStatus | null; onChanged: () => void }) {
   const toast = useToast()
   const [students, setStudents] = useState<Who[]>([])
@@ -80,7 +82,8 @@ export function CalendarInbox({ status, onChanged }: { status: CalendarStatus | 
   // An existing student or group with nobody new on the invite needs no
   // questions: link straight away. Anything else opens the dialog.
   async function answer(item: UnmatchedSeries, target: LinkTarget) {
-    if (item.attendees.length > 0 || target.kind === 'newStudent' || target.kind === 'newGroup') {
+    const known = new Set(students.flatMap((s) => (s.emails ?? []).map((e) => e.email)))
+    if (item.attendees.some((e) => !known.has(e)) || target.kind === 'new') {
       setDialog({ item, target })
       return
     }
@@ -144,10 +147,16 @@ function InboxRow({
   const suggested: LinkTarget | null = !sg ? null
     : sg.groupId ? { kind: 'group', id: sg.groupId }
       : sg.studentIds.length === 1 ? { kind: 'student', id: sg.studentIds[0] }
-        : { kind: 'newGroup', studentIds: sg.studentIds }
+        : { kind: 'new', studentIds: sg.studentIds }
+  // Nobody in the app matches: offer the people the invite itself suggests.
+  const known = new Set(students.flatMap((s) => (s.emails ?? []).map((e) => e.email)))
+  const proposed = proposePeople(item.title, item.attendees.filter((e) => !known.has(e))).people
+  const proposedLabel = proposed.length && proposed.every((p) => p.name)
+    ? proposed.length === 1 ? proposed[0].name : `${item.title.trim()} (${proposed.length} new students)`
+    : null
 
   function pick(value: string) {
-    if (value === 'new') onAnswer({ kind: 'newStudent' })
+    if (value === 'new') onAnswer({ kind: 'new' })
     else if (value.startsWith('g:')) onAnswer({ kind: 'group', id: value.slice(2) })
     else onAnswer({ kind: 'student', id: value.slice(2) })
   }
@@ -163,17 +172,21 @@ function InboxRow({
         </div>
       </div>
       <div className="slot-actions">
-        {suggested && sg && (
+        {suggested && sg ? (
           <Button variant="secondary" onClick={() => onAnswer(suggested)}>
-            It's {sg.label}{suggested.kind === 'newGroup' ? ' (new group)' : ''}
+            It's {sg.label}{suggested.kind === 'new' ? ' (new group)' : ''}
+          </Button>
+        ) : (
+          <Button variant="secondary" onClick={() => onAnswer({ kind: 'new' })}>
+            {proposedLabel ? `Add ${proposedLabel}…` : 'Who is this?'}
           </Button>
         )}
         <Select value="" onValueChange={pick}>
-          <SelectTrigger><SelectValue placeholder="Who is this?" /></SelectTrigger>
+          <SelectTrigger><SelectValue placeholder={students.length || groups.length ? 'Someone else…' : 'Other…'} /></SelectTrigger>
           <SelectContent>
             {students.map((s) => <SelectItem key={s.id} value={`s:${s.id}`}>{s.name}</SelectItem>)}
             {groups.map((g) => <SelectItem key={g.id} value={`g:${g.id}`}>{g.name} (group)</SelectItem>)}
-            <SelectItem value="new">+ New student</SelectItem>
+            <SelectItem value="new">+ New student or group</SelectItem>
           </SelectContent>
         </Select>
         <Button variant="ghost" onClick={onIgnore}>Not a lesson</Button>

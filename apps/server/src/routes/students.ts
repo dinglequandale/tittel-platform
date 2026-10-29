@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { newId, newToken } from '@tittel/shared'
 import { orgQuery } from '../db.ts'
+import { rematchCalendar } from './calendar.ts'
 
 export const studentsRouter = Router()
 
@@ -23,6 +24,50 @@ export function parseEmails(raw: unknown): StudentEmail[] | null {
     out.set(email, { email, role })
   }
   return [...out.values()]
+}
+
+export interface NewStudent { name: string; emails: StudentEmail[]; notes: string | null }
+
+/** Cleans [{name, emails?, notes?}] from a client; a message for the tutor if any entry is off. */
+export function parseNewStudents(raw: unknown, max = 100): NewStudent[] | string {
+  if (!Array.isArray(raw) || raw.length === 0) return 'name is required'
+  if (raw.length > max) return `add up to ${max} students at a time`
+  const out: NewStudent[] = []
+  for (const r of raw) {
+    const name = typeof r?.name === 'string' ? r.name.trim() : ''
+    if (!name || name.length > 120) return 'name is required'
+    const emails = r?.emails === undefined ? [] : parseEmails(r.emails)
+    if (!emails) return `${name}: one of those email addresses doesn't look right`
+    out.push({ name, emails, notes: typeof r?.notes === 'string' && r.notes.trim() ? r.notes.trim() : null })
+  }
+  return out
+}
+
+/**
+ * Creates students with their addresses in two round trips, however many:
+ * one New student, a pasted list, a group's new members, or the people on
+ * a calendar invite. Returns their ids in the same order.
+ */
+export async function createStudents(orgId: string, list: NewStudent[]): Promise<string[]> {
+  const ids = list.map(() => newId())
+  await orgQuery(
+    orgId,
+    `insert into students (id, org_id, name, portal_token, report_token, notes)
+     select x.id, $1, x.name, x.pt, x.rt, x.notes
+       from unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[]) as x(id, name, pt, rt, notes)`,
+    [ids, list.map((s) => s.name), list.map(() => newToken()), list.map(() => newToken()), list.map((s) => s.notes)],
+  )
+  const rows = list.flatMap((s, i) => s.emails.map((e) => ({ id: ids[i], ...e })))
+  if (rows.length) {
+    await orgQuery(
+      orgId,
+      `insert into student_emails (student_id, org_id, email, role)
+       select e.sid, $1, e.email, e.role from unnest($2::text[], $3::text[], $4::text[]) as e(sid, email, role)
+       on conflict (student_id, email) do update set role = excluded.role`,
+      [rows.map((r) => r.id), rows.map((r) => r.email), rows.map((r) => r.role)],
+    )
+  }
+  return ids
 }
 
 /** Adds addresses to a student, keeping any already there. */
@@ -52,7 +97,8 @@ studentsRouter.get('/students', async (req, res) => {
        ) b on true
        left join lateral (
          select id, scheduled_at from sessions
-          where student_id = s.id and status != 'cancelled'
+          where (student_id = s.id or group_id in (select gm.group_id from group_members gm where gm.student_id = s.id))
+            and status != 'cancelled'
             and scheduled_at + make_interval(mins => coalesce(duration_min, 60)) > now()
           order by scheduled_at limit 1
        ) nl on true
@@ -62,23 +108,27 @@ studentsRouter.get('/students', async (req, res) => {
   res.json({ students: rows })
 })
 
+// One student ({name, emails?, notes?}; `email` is a lone student address),
+// or several at once ({students: [...]}, a pasted list).
 studentsRouter.post('/students', async (req, res) => {
-  const { name, email, notes } = req.body ?? {}
-  if (typeof name !== 'string' || !name.trim()) {
-    return res.status(400).json({ error: 'name is required' })
-  }
-  const emails = email ? parseEmails([{ email, role: 'student' }]) : []
-  if (!emails) return res.status(400).json({ error: "that email address doesn't look right" })
-  const id = newId()
+  const orgId = req.auth!.orgId
+  const body = req.body ?? {}
+  const bulk = Array.isArray(body.students)
+  const list = parseNewStudents(bulk ? body.students : [{
+    name: body.name, notes: body.notes,
+    emails: body.emails ?? (body.email ? [{ email: body.email, role: 'student' }] : undefined),
+  }])
+  if (typeof list === 'string') return res.status(400).json({ error: list })
+  const ids = await createStudents(orgId, list)
   const rows = await orgQuery(
-    req.auth!.orgId,
-    `insert into students (id, org_id, name, portal_token, report_token, notes)
-     values ($2, $1, $3, $4, $5, $6)
-     returning id, name, portal_token, report_token, notes, created_at`,
-    [id, name.trim(), newToken(), newToken(), notes || null],
+    orgId,
+    `select s.id, s.name, ${EMAILS}, s.portal_token, s.report_token, s.notes, s.created_at
+       from students s where s.org_id = $1 and s.id = any($2::text[])`,
+    [ids],
   )
-  await addStudentEmails(req.auth!.orgId, id, emails)
-  res.status(201).json({ student: { ...rows[0], emails } })
+  const created = ids.map((id) => rows.find((r) => r.id === id))
+  rematchCalendar(orgId)
+  res.status(201).json(bulk ? { students: created } : { student: created[0] })
 })
 
 studentsRouter.patch('/students/:id', async (req, res) => {
@@ -106,6 +156,7 @@ studentsRouter.patch('/students/:id', async (req, res) => {
       [req.params.id, emails.map((e) => e.email)],
     )
     await addStudentEmails(req.auth!.orgId, req.params.id, emails)
+    rematchCalendar(req.auth!.orgId)
   }
   res.json({ student: rows[0] })
 })
@@ -119,6 +170,7 @@ studentsRouter.delete('/students/:id', async (req, res) => {
     [req.params.id],
   )
   if (!rows[0]) return res.status(404).json({ error: 'not found' })
+  rematchCalendar(req.auth!.orgId)
   res.status(204).end()
 })
 
@@ -188,19 +240,49 @@ studentsRouter.get('/groups', async (req, res) => {
   res.json({ groups: rows })
 })
 
+// A group in one go: its name, the students already in the app who are in
+// it, new students to create for it, and parent addresses shared by all of
+// them (siblings booked through one parent).
 studentsRouter.post('/groups', async (req, res) => {
+  const orgId = req.auth!.orgId
   const { name } = req.body ?? {}
   if (typeof name !== 'string' || !name.trim()) {
     return res.status(400).json({ error: 'name is required' })
   }
+  const studentIds: string[] = Array.isArray(req.body?.studentIds) ? req.body.studentIds.filter((x: unknown) => typeof x === 'string') : []
+  const fresh = Array.isArray(req.body?.newStudents) && req.body.newStudents.length ? parseNewStudents(req.body.newStudents, 30) : []
+  if (typeof fresh === 'string') return res.status(400).json({ error: fresh })
+  const parentEmails = Array.isArray(req.body?.parentEmails)
+    ? parseEmails(req.body.parentEmails.map((email: unknown) => ({ email, role: 'parent' }))) : []
+  if (!parentEmails) return res.status(400).json({ error: "that parent email address doesn't look right" })
+  const found = studentIds.length
+    ? await orgQuery(orgId, `select id from students where org_id = $1 and id = any($2::text[]) and archived_at is null`, [studentIds])
+    : []
+  if (found.length !== new Set(studentIds).size) return res.status(400).json({ error: 'student not found' })
+
   const id = newId()
   const rows = await orgQuery(
-    req.auth!.orgId,
+    orgId,
     `insert into groups (id, org_id, name) values ($2, $1, $3)
      returning id, name, created_at`,
     [id, name.trim()],
   )
-  res.status(201).json({ group: { ...rows[0], members: [] } })
+  const memberIds = [...new Set(studentIds), ...(fresh.length ? await createStudents(orgId, fresh) : [])]
+  if (memberIds.length) {
+    await orgQuery(
+      orgId,
+      `insert into group_members (group_id, student_id)
+       select $2, s.id from students s where s.org_id = $1 and s.id = any($3::text[])
+       on conflict do nothing`,
+      [id, memberIds],
+    )
+  }
+  for (const sid of memberIds) await addStudentEmails(orgId, sid, parentEmails)
+  const members = memberIds.length
+    ? await orgQuery(orgId, `select id, name from students where org_id = $1 and id = any($2::text[]) order by name`, [memberIds])
+    : []
+  rematchCalendar(orgId)
+  res.status(201).json({ group: { ...rows[0], members } })
 })
 
 // Get-or-create the group's shared board (HANDOFF.md D1): group-class
@@ -266,6 +348,7 @@ studentsRouter.delete('/groups/:id', async (req, res) => {
     [req.params.id],
   )
   if (!rows[0]) return res.status(404).json({ error: 'not found' })
+  rematchCalendar(req.auth!.orgId)
   res.status(204).end()
 })
 
@@ -292,6 +375,7 @@ studentsRouter.post('/groups/:id/members', async (req, res) => {
       [req.params.id, studentId],
     )
   }
+  rematchCalendar(req.auth!.orgId)
   res.status(204).end()
 })
 
@@ -309,5 +393,6 @@ studentsRouter.delete('/groups/:id/members/:studentId', async (req, res) => {
         and exists (select 1 from groups g where g.id = $2 and g.org_id = $1)`,
     [req.params.id, req.params.studentId],
   )
+  rematchCalendar(req.auth!.orgId)
   res.status(204).end()
 })

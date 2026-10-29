@@ -347,3 +347,34 @@ into O6's shell items.
   re-downloaded the calendar and wrote every lesson one round trip at a time (~90 ms each to
   Supabase): several seconds. Saving an address also places any other series with that address
   (both of Mateo's) in the same answer.
+
+### 9.3 A whole practice in a few steps (2026-10-28, after the tutor-persona walkthrough)
+
+A usability agent playing a new tutor ("Maya", about 10 students, siblings, a group of 3) took
+~22 actions for a sibling pair and ~31 for a group of 3, retyped 5 of 6 names the inbox guessed,
+and saw invites stay unmatched after creating the right students. Changes:
+
+- **New student** takes several addresses at once (Student/Parent each), submits on Enter, has
+  "Save & add another", and ignores stray clicks outside once something is typed. **Paste a
+  list** adds many: one per line, name then addresses (commas, tabs or semicolons); the address
+  containing the student's first name is theirs, else the first one; the rest are parents'.
+  `POST /students` takes `{students: [...]}` for this; the single form keeps working.
+- **New group** in one dialog: tick students already here, type names for new ones, and an
+  optional parent email shared by all (siblings). `POST /groups` takes `studentIds`,
+  `newStudents`, `parentEmails`. One address on several students is allowed, and an invite
+  from it matches all of them, so their group.
+- **Roster changes re-match the calendar** (new or edited student, archived student, group made,
+  member added or removed) using the feed in memory, in the background; a read of the calendar
+  waits for a re-match in flight, so This week is current when the tutor gets there.
+- **Unknown invitees are read for names** (`apps/web/src/lessons/invitees.ts`): "leo.park09@" is
+  Leo Park; an invitee whose first name is in the title is the student and the rest parents;
+  with nobody named, a title about children ("Haddad kids", "Mrs. Okafor's son") or an address
+  with only an initial means parents of students still to name (two for "kids"), else every
+  invitee is a student ("SAT Math Group" → three new students in a new group). The inbox button
+  says what it will do ("Add Ava Nguyen…", "Add SAT Math Group (3 new students)…") and opens the
+  dialog filled in. A blank name under "First name (Haddad family)" gets the family name added.
+- **The dialog** can mix students already here and new ones in a new group, and offers "Parent
+  of all of them" for an address (`studentId: '*'` on `POST /calendar/links`; `newGroup` takes
+  `newStudents`). Everything is checked before anyone is created.
+- Group members count as scheduled (their next lesson can be the group's), and the Students
+  table fits a phone (group and board columns drop off below 720 px).

@@ -196,8 +196,6 @@ html, body, #root {
 .calendar-prompt { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; margin-top: 8px; }
 .inbox-row { align-items: flex-start; gap: 12px; flex-wrap: wrap; padding-top: 14px; padding-bottom: 14px; }
 .inbox-row-main { min-width: 0; flex: 1 1 260px; }
-.inbox-remember { margin-top: 6px; font-size: 12.5px; color: var(--ink-2); flex-wrap: wrap; }
-.inbox-remember select { font: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; background: var(--surface); }
 .calendar-filters { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
 .radio-col { display: flex; flex-direction: column; gap: 6px; }
 .email-list { display: flex; flex-direction: column; gap: 6px; }
@@ -207,3 +205,22 @@ html, body, #root {
 .invitees { display: flex; flex-direction: column; gap: 8px; }
 .invitee-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .invitee-email { font-size: 13.5px; min-width: 0; overflow-wrap: anywhere; }
+
+/* One-step roster: New student / New group / inbox dialog. */
+.dialog-form { display: flex; flex-direction: column; gap: var(--space-4); }
+.member-picker { display: flex; flex-direction: column; gap: 6px; }
+.member-picker > .btn, .person-add > .btn { align-self: flex-start; }
+.member-picker-list { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; padding: 4px 2px; }
+.people-list { display: flex; flex-direction: column; gap: 6px; }
+.person-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; min-height: 36px; }
+.person-existing { font-weight: 600; font-size: 14px; }
+.person-add { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.paste-preview { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; font-size: 13.5px; }
+.paste-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+
+/* Phones: name, portal link, next lesson and actions; group and board drop off. */
+@media (max-width: 720px) {
+  .stu-head { display: none; }
+  .stu-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; padding: 10px 14px; }
+  .stu-row > :nth-child(2), .stu-row > :nth-child(4) { display: none; }
+}

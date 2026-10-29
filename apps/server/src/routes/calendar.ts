@@ -1,7 +1,7 @@
 import { Router } from 'express'
-import { newId, newToken } from '@tittel/shared'
+import { newId } from '@tittel/shared'
 import { orgQuery } from '../db.ts'
-import { parseEmails, addStudentEmails, type StudentEmail } from './students.ts'
+import { parseEmails, parseNewStudents, createStudents, addStudentEmails, type StudentEmail } from './students.ts'
 import {
   expandFeed, matchOccurrence, passesFilters, normalizeFilters, calendarOwnerOf, guestsOf,
   type CalFilters, type CalLink, type CalOccurrence, type CalSuggestion,
@@ -105,10 +105,12 @@ async function calendarSettings(orgId: string): Promise<{ icsUrl: string | null;
  * answer) instead of downloading the calendar again.
  */
 export function syncCalendar(orgId: string, tutorEmail: string, force = false, refetch = true): Promise<SyncStatus> {
-  const prev = lastSync.get(orgId)
-  if (!force && prev && Date.now() - new Date(prev.at).getTime() < STALE_MS) return Promise.resolve(prev)
+  // A run in flight is newer than the last result (say, a re-match after a
+  // new student), so unforced readers wait for it.
   const running = inFlight.get(orgId)
   if (running && !force) return running
+  const prev = lastSync.get(orgId)
+  if (!force && prev && Date.now() - new Date(prev.at).getTime() < STALE_MS) return Promise.resolve(prev)
   const run: Promise<SyncStatus> = (running ? running.catch(() => undefined) : Promise.resolve())
     .then(() => (!refetch && lastFeed.has(orgId) ? applyFeed(orgId) : runSync(orgId, tutorEmail)))
     .then((s) => {
@@ -119,6 +121,15 @@ export function syncCalendar(orgId: string, tutorEmail: string, force = false, r
     .finally(() => { if (inFlight.get(orgId) === run) inFlight.delete(orgId) })
   inFlight.set(orgId, run)
   return run
+}
+
+/**
+ * The roster changed (a student, an address, a group): re-match the calendar
+ * already in memory, in the background, so an invite that now matches leaves
+ * the inbox and becomes lessons without waiting for the next download.
+ */
+export function rematchCalendar(orgId: string): void {
+  if (lastFeed.has(orgId)) void syncCalendar(orgId, '', true, false).catch(() => undefined)
 }
 
 /**
@@ -387,10 +398,11 @@ calendarRouter.post('/calendar/sync', async (req, res) => {
 })
 
 // Answer the inbox for a whole event series: "Not a lesson", or who it's
-// with: an existing student or group, a new student, or a new group of
-// students (an invite with several of them). `emails` saves invitees as a
-// student's own address or their parent's, so future invites with them are
-// recognised without asking again (FLOW-SPEC §9.2).
+// with: an existing student or group, a new student ({name, emails?}), or a
+// new group ({name, studentIds?, newStudents?: [{name, emails?}]}, two or
+// more people in all). `emails` saves invitees as a student's own address or
+// their parent's (studentId '*': a parent of everyone in the lesson), so
+// future invites with them are recognised without asking again (FLOW-SPEC §9.2).
 calendarRouter.post('/calendar/links', async (req, res) => {
   const orgId = req.auth!.orgId
   const { uid, ignore, newStudent, newGroup } = req.body ?? {}
@@ -409,29 +421,42 @@ calendarRouter.post('/calendar/links', async (req, res) => {
   let memberIds: string[] = []
 
   if (!ignore) {
+    // Check everything before creating anyone, so a bad answer leaves nothing behind.
+    const newIds: unknown[] = Array.isArray(newGroup?.studentIds) ? newGroup.studentIds : []
+    for (const e of rawEmails) {
+      const item = e as { email?: unknown; role?: unknown; studentId?: unknown }
+      if (!parseEmails([{ email: item?.email, role: item?.role }])) {
+        return res.status(400).json({ error: "one of those email addresses doesn't look right" })
+      }
+      // New people have no id yet: their addresses are theirs or everyone's.
+      const owner = item.studentId
+      if ((newStudent && owner !== undefined && owner !== '*') || (newGroup && owner !== '*' && !newIds.includes(owner))) {
+        return res.status(400).json({ error: 'each email must belong to someone in this lesson' })
+      }
+    }
     if (newStudent) {
-      const name = typeof newStudent.name === 'string' ? newStudent.name.trim() : ''
-      if (!name) return res.status(400).json({ error: 'the new student needs a name' })
-      studentId = newId()
-      await orgQuery(
-        orgId,
-        `insert into students (id, org_id, name, portal_token, report_token) values ($2, $1, $3, $4, $5)`,
-        [studentId, name, newToken(), newToken()],
-      )
+      const list = parseNewStudents([newStudent], 1)
+      if (typeof list === 'string') return res.status(400).json({ error: 'the new student needs a name' })
+      ;[studentId] = await createStudents(orgId, list)
     } else if (newGroup) {
       const ids: string[] = Array.isArray(newGroup.studentIds) ? newGroup.studentIds.filter((x: unknown) => typeof x === 'string') : []
+      const fresh = Array.isArray(newGroup.newStudents) && newGroup.newStudents.length ? parseNewStudents(newGroup.newStudents, 30) : []
       const name = typeof newGroup.name === 'string' && newGroup.name.trim() ? newGroup.name.trim() : null
-      const found = ids.length >= 2
+      if (typeof fresh === 'string') return res.status(400).json({ error: fresh })
+      const found = ids.length
         ? await orgQuery(orgId, `select id from students where org_id = $1 and id = any($2::text[]) and archived_at is null`, [ids])
         : []
-      if (!name || found.length !== ids.length || ids.length < 2) return res.status(400).json({ error: 'a new group needs a name and two or more students' })
+      if (!name || found.length !== ids.length || ids.length + fresh.length < 2) {
+        return res.status(400).json({ error: 'a new group needs a name and two or more students' })
+      }
       groupId = newId()
       await orgQuery(orgId, `insert into groups (id, org_id, name) values ($2, $1, $3)`, [groupId, name])
+      const all = [...ids, ...(fresh.length ? await createStudents(orgId, fresh) : [])]
       await orgQuery(
         orgId,
         `insert into group_members (group_id, student_id)
          select $2, s.id from students s where s.org_id = $1 and s.id = any($3::text[])`,
-        [groupId, ids],
+        [groupId, all],
       )
     }
 
@@ -453,11 +478,13 @@ calendarRouter.post('/calendar/links', async (req, res) => {
 
     for (const e of rawEmails) {
       const item = e as { email?: unknown; role?: unknown; studentId?: unknown }
-      const owner = typeof item.studentId === 'string' ? item.studentId : memberIds.length === 1 ? memberIds[0] : null
-      if (!owner || !memberIds.includes(owner)) return res.status(400).json({ error: 'each email must belong to someone in this lesson' })
-      const parsed = parseEmails([{ email: item.email, role: item.role }])
-      if (!parsed) return res.status(400).json({ error: "one of those email addresses doesn't look right" })
-      emailSets.set(owner, [...(emailSets.get(owner) ?? []), ...parsed])
+      const owners = item.studentId === '*' ? memberIds
+        : typeof item.studentId === 'string' ? [item.studentId] : memberIds.length === 1 ? memberIds : []
+      if (!owners.length || !owners.every((o) => memberIds.includes(o))) {
+        return res.status(400).json({ error: 'each email must belong to someone in this lesson' })
+      }
+      const parsed = parseEmails([{ email: item.email, role: item.role }])!
+      for (const owner of owners) emailSets.set(owner, [...(emailSets.get(owner) ?? []), ...parsed])
     }
   }
 

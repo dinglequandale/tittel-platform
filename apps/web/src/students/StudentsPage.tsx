@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   Button, Field, Input, EmptyState, CopyButton, PageLoading, ConfirmDialog,
@@ -82,13 +82,18 @@ export function StudentsPage() {
   // Boards now appear by themselves the first time a lesson starts or the
   // student joins, so the natural next step after adding a student is their
   // first lesson.
-  async function createStudent(name: string, email: string, notes: string, scheduleNext: boolean) {
+  async function createStudent(name: string, emails: StudentEmail[], notes: string, scheduleNext: boolean) {
     const { student } = await apiFetch('/api/tutor/students', {
       method: 'POST',
-      body: JSON.stringify({ name, email: email || undefined, notes: notes || undefined }),
+      body: JSON.stringify({ name, emails, notes: notes || undefined }),
     })
     await reload()
     if (scheduleNext) setScheduleFor(`s:${student.id}`)
+  }
+
+  async function createStudents(list: NewStudentRow[]) {
+    await apiFetch('/api/tutor/students', { method: 'POST', body: JSON.stringify({ students: list }) })
+    await reload()
   }
 
   async function createStudentBoard(id: string) {
@@ -129,8 +134,8 @@ export function StudentsPage() {
     }
   }
 
-  async function createGroup(name: string) {
-    await apiFetch('/api/tutor/groups', { method: 'POST', body: JSON.stringify({ name }) })
+  async function createGroup(group: NewGroup) {
+    await apiFetch('/api/tutor/groups', { method: 'POST', body: JSON.stringify(group) })
     await reload()
   }
 
@@ -176,8 +181,8 @@ export function StudentsPage() {
           </button>
         </div>
         <div className="toolbar-actions">
-          <NewGroupDialog onCreate={createGroup} />
-          <NewStudentDialog onCreate={createStudent} defaultOpen={params.get('new') === '1'}
+          <NewGroupDialog students={students ?? []} onCreate={createGroup} />
+          <NewStudentDialog onCreate={createStudent} onCreateMany={createStudents} defaultOpen={params.get('new') === '1'}
             onClosed={() => params.has('new') && setParams({}, { replace: true })} />
         </div>
       </div>
@@ -309,32 +314,73 @@ export function StudentsPage() {
   )
 }
 
+interface NewStudentRow { name: string; emails: StudentEmail[] }
+
+// "Leo Park, leo@x.com, grace@x.com" per line (commas, tabs or semicolons, so
+// a spreadsheet column pastes too). The address with the student's first name
+// in it is theirs, else the first one; the rest are parents'.
+function parseStudentList(text: string): NewStudentRow[] {
+  return text.split(/\r?\n/).map((line) => {
+    const parts = line.split(/[,;\t]+/).map((x) => x.trim()).filter(Boolean)
+    const emails = parts.filter((x) => x.includes('@')).map((x) => x.toLowerCase())
+    const name = parts.filter((x) => !x.includes('@')).join(' ')
+    const first = name.split(/\s+/)[0]?.toLowerCase() ?? ''
+    const own = emails.find((e) => first.length > 1 && e.split('@')[0].includes(first)) ?? emails[0]
+    return { name, emails: emails.map((email) => ({ email, role: email === own ? 'student' as const : 'parent' as const })) }
+  }).filter((r) => r.name)
+}
+
 function NewStudentDialog({
-  onCreate, defaultOpen = false, onClosed,
+  onCreate, onCreateMany, defaultOpen = false, onClosed,
 }: {
-  onCreate: (name: string, email: string, notes: string, scheduleNext: boolean) => Promise<void>
+  onCreate: (name: string, emails: StudentEmail[], notes: string, scheduleNext: boolean) => Promise<void>
+  onCreateMany: (list: NewStudentRow[]) => Promise<void>
   defaultOpen?: boolean
   onClosed?: () => void
 }) {
   const toast = useToast()
+  const blank: StudentEmail[] = [{ email: '', role: 'student' }]
   const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
+  const [emails, setEmails] = useState<StudentEmail[]>(blank)
   const [notes, setNotes] = useState('')
   const [scheduleNext, setScheduleNext] = useState(true)
+  const [pasting, setPasting] = useState(false)
+  const [pasted, setPasted] = useState('')
   const [open, setOpenState] = useState(defaultOpen)
+  const nameRef = useRef<HTMLInputElement>(null)
+  function reset() {
+    setName(''); setEmails(blank); setNotes(''); setPasted(''); setPasting(false)
+  }
   function setOpen(next: boolean) {
     setOpenState(next)
-    if (!next) onClosed?.()
+    if (!next) { reset(); onClosed?.() }
   }
   const [saving, setSaving] = useState(false)
+  const dirty = !!(name.trim() || notes.trim() || pasted.trim() || emails.some((e) => e.email.trim()))
+  const list = pasting ? parseStudentList(pasted) : []
 
-  async function submit() {
+  // "Save & add another" keeps the dialog open for the next one.
+  async function submit(another: boolean) {
     if (!name.trim() || saving) return
     setSaving(true)
     try {
-      await onCreate(name.trim(), email.trim(), notes.trim(), scheduleNext)
-      setName(''); setEmail(''); setNotes(''); setOpen(false)
-      toast('Student added')
+      await onCreate(name.trim(), emails.filter((e) => e.email.trim()), notes.trim(), scheduleNext && !another)
+      toast(`Added ${name.trim()}`)
+      if (another) { reset(); nameRef.current?.focus() } else setOpen(false)
+    } catch (err) {
+      toast((err as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function submitMany() {
+    if (!list.length || saving) return
+    setSaving(true)
+    try {
+      await onCreateMany(list)
+      toast(`Added ${list.length} student${list.length === 1 ? '' : 's'}`)
+      setOpen(false)
     } catch (err) {
       toast((err as Error).message)
     } finally {
@@ -345,19 +391,52 @@ function NewStudentDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild><Button>New student</Button></DialogTrigger>
-      <DialogContent>
-        <DialogTitle>New student</DialogTitle>
-        <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <Field label="Email (optional)"><Input value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
-        <Field label="Notes (optional)"><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
-        <label className="check-row">
-          <input type="checkbox" checked={scheduleNext} onChange={(e) => setScheduleNext(e.target.checked)} />
-          Schedule their first lesson next
-        </label>
-        <div className="row-end">
-          <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
-          <Button onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Create'}</Button>
-        </div>
+      {/* A stray click outside mustn't throw away what's been typed. */}
+      <DialogContent onInteractOutside={(e) => dirty && e.preventDefault()}>
+        <DialogTitle>{pasting ? 'Add several students' : 'New student'}</DialogTitle>
+        {pasting ? (
+          <>
+            <Field label="One student per line" hint="Name, then their email and any parent emails.">
+              <textarea className="input" rows={6} autoFocus value={pasted} onChange={(e) => setPasted(e.target.value)}
+                placeholder={'Leo Park, leo.park09@gmail.com, grace.park@gmail.com\nAva Nguyen, ava.nguyen@gmail.com\nIsabel Ruiz'} />
+            </Field>
+            {list.length > 0 && (
+              <div className="paste-preview">
+                {list.map((r, i) => (
+                  <div key={i} className="paste-row">
+                    <strong>{r.name}</strong>
+                    <span className="muted">
+                      {r.emails.length ? r.emails.map((e) => `${e.email} (${e.role === 'student' ? 'student' : 'parent'})`).join(', ') : 'no email'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="row-end">
+              <Button variant="ghost" onClick={() => setPasting(false)}>Add one at a time</Button>
+              <Button onClick={submitMany} disabled={saving || !list.length}>
+                {saving ? 'Adding…' : list.length ? `Add ${list.length} student${list.length === 1 ? '' : 's'}` : 'Add students'}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <form className="dialog-form" onSubmit={(e) => { e.preventDefault(); void submit(false) }}>
+            <Field label="Name"><Input ref={nameRef} autoFocus value={name} onChange={(e) => setName(e.target.value)} /></Field>
+            <Field label="Emails (optional)">
+              <EmailList emails={emails} onChange={setEmails} />
+            </Field>
+            <Field label="Notes (optional)"><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+            <label className="check-row">
+              <input type="checkbox" checked={scheduleNext} onChange={(e) => setScheduleNext(e.target.checked)} />
+              Schedule their first lesson next
+            </label>
+            <div className="row-end">
+              <Button variant="ghost" type="button" onClick={() => setPasting(true)}>Paste a list</Button>
+              <Button variant="secondary" type="button" onClick={() => submit(true)} disabled={saving || !name.trim()}>Save &amp; add another</Button>
+              <Button type="submit" disabled={saving || !name.trim()}>{saving ? 'Saving…' : 'Save'}</Button>
+            </div>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   )
@@ -413,18 +492,40 @@ function EditStudentDialog({
   )
 }
 
-function NewGroupDialog({ onCreate }: { onCreate: (name: string) => Promise<void> }) {
+interface NewGroup { name: string; studentIds: string[]; newStudents: { name: string }[]; parentEmails: string[] }
+
+// A group in one step: pick who's already here, type names for anyone new,
+// and (for siblings) the parent email they share.
+function NewGroupDialog({ students, onCreate }: { students: Student[]; onCreate: (group: NewGroup) => Promise<void> }) {
   const toast = useToast()
   const [name, setName] = useState('')
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [newNames, setNewNames] = useState<string[]>([])
+  const [parentEmail, setParentEmail] = useState('')
+  const [filter, setFilter] = useState('')
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const dirty = !!(name.trim() || picked.size || newNames.some((n) => n.trim()) || parentEmail.trim())
+  const shown = students.filter((st) => st.name.toLowerCase().includes(filter.trim().toLowerCase()))
+  const count = picked.size + newNames.filter((n) => n.trim()).length
+
+  function close(next: boolean) {
+    setOpen(next)
+    if (!next) { setName(''); setPicked(new Set()); setNewNames([]); setParentEmail(''); setFilter('') }
+  }
 
   async function submit() {
     if (!name.trim() || saving) return
     setSaving(true)
     try {
-      await onCreate(name.trim())
-      setName(''); setOpen(false)
+      await onCreate({
+        name: name.trim(),
+        studentIds: [...picked],
+        newStudents: newNames.filter((n) => n.trim()).map((n) => ({ name: n.trim() })),
+        parentEmails: parentEmail.trim() ? [parentEmail.trim()] : [],
+      })
+      toast(`Created ${name.trim()}`)
+      close(false)
     } catch (err) {
       toast((err as Error).message)
     } finally {
@@ -433,15 +534,52 @@ function NewGroupDialog({ onCreate }: { onCreate: (name: string) => Promise<void
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={close}>
       <DialogTrigger asChild><Button variant="secondary">New group</Button></DialogTrigger>
-      <DialogContent>
+      <DialogContent onInteractOutside={(e) => dirty && e.preventDefault()}>
         <DialogTitle>New group</DialogTitle>
-        <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <div className="row-end">
-          <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
-          <Button onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Create'}</Button>
-        </div>
+        <form className="dialog-form" onSubmit={(e) => { e.preventDefault(); void submit() }}>
+          <Field label="Name"><Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Haddad siblings, SAT Sunday group" /></Field>
+          <Field label={`Who's in it${count ? ` (${count})` : ''}`}>
+            <div className="member-picker">
+              {students.length > 8 && (
+                <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Find a student" />
+              )}
+              {students.length > 0 && (
+                <div className="member-picker-list">
+                  {shown.map((st) => (
+                    <label key={st.id} className="check-row">
+                      <input type="checkbox" checked={picked.has(st.id)} onChange={(e) => {
+                        const next = new Set(picked)
+                        if (e.target.checked) next.add(st.id); else next.delete(st.id)
+                        setPicked(next)
+                      }} />
+                      {st.name}
+                    </label>
+                  ))}
+                </div>
+              )}
+              {newNames.map((n, i) => (
+                <div key={i} className="email-row">
+                  <Input value={n} autoFocus placeholder="New student's name"
+                    onChange={(e) => setNewNames(newNames.map((x, j) => (j === i ? e.target.value : x)))} />
+                  <span />
+                  <Button variant="ghost" type="button" aria-label="Remove" onClick={() => setNewNames(newNames.filter((_, j) => j !== i))}>×</Button>
+                </div>
+              ))}
+              <Button variant="ghost" type="button" onClick={() => setNewNames([...newNames, ''])}>
+                + {students.length ? 'Someone new' : 'Add a student'}
+              </Button>
+            </div>
+          </Field>
+          <Field label="Parent email for all of them (optional)" hint="For siblings booked through one parent: their invites then land in this group by themselves.">
+            <Input type="email" inputMode="email" value={parentEmail} onChange={(e) => setParentEmail(e.target.value)} placeholder="parent@example.com" />
+          </Field>
+          <div className="row-end">
+            <DialogClose asChild><Button variant="ghost" type="button">Cancel</Button></DialogClose>
+            <Button type="submit" disabled={saving || !name.trim()}>{saving ? 'Creating…' : 'Create group'}</Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   )
@@ -453,7 +591,7 @@ function AddMemberSelect({
   const available = students.filter((s) => !excludeIds.includes(s.id))
   if (available.length === 0) return <span className="muted">Everyone's in.</span>
   return (
-    <Select onValueChange={onSelect}>
+    <Select value="" onValueChange={onSelect}>
       <SelectTrigger><SelectValue placeholder="Add student…" /></SelectTrigger>
       <SelectContent>
         {available.map((s) => (
@@ -472,7 +610,7 @@ function EmailList({ emails, onChange }: { emails: StudentEmail[]; onChange: (e:
     <div className="email-list">
       {emails.map((e, i) => (
         <div key={i} className="email-row">
-          <Input value={e.email} placeholder="name@example.com" onChange={(ev) => set(i, { email: ev.target.value })} />
+          <Input type="email" inputMode="email" value={e.email} placeholder="name@example.com" onChange={(ev) => set(i, { email: ev.target.value })} />
           <select value={e.role} onChange={(ev) => set(i, { role: ev.target.value as StudentEmail['role'] })}>
             <option value="student">Student</option>
             <option value="parent">Parent</option>

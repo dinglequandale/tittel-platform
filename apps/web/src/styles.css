@@ -281,3 +281,15 @@ html, body, #root {
 .advanced > summary { cursor: pointer; font-size: 13px; color: var(--ink-2); margin-bottom: 8px; }
 .left-out { max-height: 260px; overflow-y: auto; }
 .meeting-link code { min-width: 0; overflow-wrap: anywhere; }
+
+/* After the lesson (lessons/AfterLesson.tsx) and lesson notes on the portal. */
+.after-lesson .card-link { display: inline-flex; align-items: center; gap: 4px; }
+.result-block { display: flex; flex-direction: column; gap: 4px; }
+.result-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 13.5px; }
+.result-q { color: var(--ink-3); font-size: 12px; }
+.result-stem { min-width: 0; overflow: hidden; }
+.miss-list { display: flex; flex-direction: column; gap: 6px; }
+.miss-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: start; font-size: 13.5px; cursor: pointer; }
+.miss-row input { margin-top: 3px; }
+.miss-who { display: block; font-size: 12.5px; }
+.portal-notes { display: flex; flex-direction: column; gap: 6px; }

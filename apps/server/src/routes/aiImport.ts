@@ -3,7 +3,7 @@ import express from 'express'
 import Anthropic, { APIError } from '@anthropic-ai/sdk'
 import mammoth from 'mammoth'
 import { newId } from '@tittel/shared'
-import { pool } from '../db.ts'
+import { pool, orgQuery } from '../db.ts'
 
 export const aiImportRouter = Router()
 
@@ -20,8 +20,101 @@ function getClient(): Anthropic | null {
   return client
 }
 
-aiImportRouter.get('/ai-import/status', (_req, res) => {
-  res.json({ enabled: !!process.env.ANTHROPIC_API_KEY })
+// Claude is offered only when the server has a key AND the tutor hasn't turned
+// it off (Settings): every AI action is an explicit button, never automatic.
+async function aiOn(orgId: string): Promise<boolean> {
+  if (!process.env.ANTHROPIC_API_KEY) return false
+  const [o] = await orgQuery<{ ai: boolean | null }>(
+    orgId,
+    `select (settings->>'aiHelp')::boolean as ai from orgs where id = $1::text /* org_id */`,
+  )
+  return o?.ai !== false
+}
+
+aiImportRouter.get('/ai-import/status', async (req, res) => {
+  res.json({ enabled: await aiOn(req.auth!.orgId) })
+})
+
+// Drafts written for the tutor (follow-up problems, a parent update) use the
+// current Opus; a decline falls back on the server rather than failing.
+const AI_DRAFT_MODEL = 'claude-opus-5-5'
+
+async function draftWithClaude(opts: { system: string; user: string; schema?: object; effort: 'low' | 'medium'; maxTokens: number }): Promise<string> {
+  const anthropic = getClient()!
+  const message = await anthropic.beta.messages.create({
+    model: AI_DRAFT_MODEL,
+    max_tokens: opts.maxTokens,
+    betas: ['server-side-fallback-2026-06-01'],
+    fallbacks: [{ model: 'claude-opus-4-8' }],
+    system: opts.system,
+    output_config: { effort: opts.effort, ...(opts.schema ? { format: { type: 'json_schema', schema: opts.schema } } : {}) },
+    messages: [{ role: 'user', content: opts.user }],
+  } as never) as Anthropic.Beta.BetaMessage
+  if (message.stop_reason === 'refusal') throw Object.assign(new Error('Claude declined to draft this.'), { status: 502 })
+  if (message.stop_reason === 'max_tokens') throw Object.assign(new Error('The draft ran too long. Try fewer problems.'), { status: 502 })
+  const text = message.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')?.text
+  if (!text) throw Object.assign(new Error('Claude returned nothing. Try again.'), { status: 502 })
+  return text
+}
+
+const SIMILAR_PROMPT = `You write practice problems for a math tutor's student. You get problems the student got wrong.
+
+For each one, write new problems that practise the same skill at the same difficulty: different numbers or context, same method. Keep the format of the original (multiple choice stays multiple choice with the same number of choices; a numeric answer stays numeric).
+
+- Math in KaTeX: inline $...$, display $$...$$.
+- Work every answer out yourself and double-check it; set answerConfidence to "found" only when you are certain, otherwise "inferred".
+- For "mc", set choices (ids A, B, C, ...) and correct (the id). For "numeric" or "text", set correct to the answer.
+- Use "frq" only for open-ended questions that need shown work.
+- Output only the title and problems.`
+
+// More practice like the misses (optional, Claude). Comes back as a draft the
+// tutor checks before anything is given, like a worksheet import.
+aiImportRouter.post('/ai/similar', async (req, res) => {
+  if (!(await aiOn(req.auth!.orgId))) return res.status(404).json({ error: 'not available' })
+  const problems = Array.isArray(req.body?.problems) ? req.body.problems.slice(0, 10) : []
+  const perProblem = Math.min(3, Math.max(1, Number(req.body?.perProblem) || 2))
+  if (!problems.length) return res.status(400).json({ error: 'pick at least one problem' })
+  const list = problems.map((p: { stem?: unknown; correct?: unknown; choices?: { id: string; content: string }[] }, i: number) => [
+    `Problem ${i + 1}: ${String(p.stem ?? '')}`,
+    ...(Array.isArray(p.choices) ? p.choices.map((c) => `${c.id}) ${c.content}`) : []),
+    p.correct ? `Answer: ${String(p.correct)}` : '',
+  ].filter(Boolean).join('\n')).join('\n\n')
+  try {
+    const text = await draftWithClaude({
+      system: SIMILAR_PROMPT,
+      user: `Write ${perProblem} new problem${perProblem === 1 ? '' : 's'} for each of these. Title the set "Practice: ${String(req.body?.topic ?? 'follow-up').slice(0, 80)}".
+
+${list}`,
+      schema: DRAFT_SCHEMA,
+      effort: 'medium',
+      maxTokens: 16000,
+    })
+    res.json({ draft: JSON.parse(text) as Draft })
+  } catch (err) {
+    if (err instanceof APIError) return res.status(502).json({ error: `Claude couldn't draft them: ${err.message}` })
+    throw err
+  }
+})
+
+const SUMMARY_PROMPT = `You draft a short lesson update from a private tutor to a student's parents, in the tutor's voice.
+
+- Use only the facts given. Never invent topics, scores, or impressions.
+- 60 to 120 words, plain text, no headings or bullet points, no sign-off (the tutor adds their own).
+- Warm and specific: what was covered, how it went if the notes say so, and the homework with its due date.
+- Use the student's first name.`
+
+// The parent update, written up from the lesson's facts (optional, Claude).
+aiImportRouter.post('/ai/parent-update', async (req, res) => {
+  if (!(await aiOn(req.auth!.orgId))) return res.status(404).json({ error: 'not available' })
+  const facts = typeof req.body?.facts === 'string' ? req.body.facts.slice(0, 6000) : ''
+  if (!facts.trim()) return res.status(400).json({ error: 'nothing to write from yet' })
+  try {
+    const text = await draftWithClaude({ system: SUMMARY_PROMPT, user: facts, effort: 'low', maxTokens: 2000 })
+    res.json({ text: text.trim() })
+  } catch (err) {
+    if (err instanceof APIError) return res.status(502).json({ error: `Claude couldn't draft it: ${err.message}` })
+    throw err
+  }
 })
 
 const DRAFT_SCHEMA = {
@@ -127,7 +220,7 @@ async function extractContentBlock(
 // from the global express.json() so this is the only parser that sees it.
 aiImportRouter.post('/ai-import', express.json({ limit: '40mb' }), async (req, res) => {
   const anthropic = getClient()
-  if (!anthropic) return res.status(503).json({ error: 'AI import is not configured' })
+  if (!anthropic || !(await aiOn(req.auth!.orgId))) return res.status(503).json({ error: 'AI import is not configured' })
 
   const { filename, mimeType, dataBase64, hint } = req.body ?? {}
   if (typeof filename !== 'string' || typeof mimeType !== 'string' || typeof dataBase64 !== 'string') {

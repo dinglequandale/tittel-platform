@@ -16,12 +16,14 @@ export function SettingsPage() {
   const [saved, setSaved] = useState('')
   const [saving, setSaving] = useState(false)
   const [linkSource, setLinkSource] = useState<'invite' | 'own'>('invite')
+  const [ai, setAi] = useState<{ available: boolean; on: boolean }>({ available: false, on: true })
 
   useEffect(() => {
     apiFetch('/api/tutor/org')
       .then((o) => {
         setOrgName(o.name); setMeetingUrl(o.defaultMeetingUrl); setSaved(o.defaultMeetingUrl)
         setLinkSource(o.meetingLinkSource === 'own' ? 'own' : 'invite')
+        setAi({ available: !!o.aiAvailable, on: o.aiHelp !== false })
       })
       .catch(() => {})
   }, [])
@@ -33,6 +35,16 @@ export function SettingsPage() {
       await apiFetch('/api/tutor/org', { method: 'PATCH', body: JSON.stringify({ meetingLinkSource: next }) })
     } catch (err) {
       setLinkSource(prev)
+      toast((err as Error).message)
+    }
+  }
+
+  async function saveAi(on: boolean) {
+    setAi((a) => ({ ...a, on }))
+    try {
+      await apiFetch('/api/tutor/org', { method: 'PATCH', body: JSON.stringify({ aiHelp: on }) })
+    } catch (err) {
+      setAi((a) => ({ ...a, on: !on }))
       toast((err as Error).message)
     }
   }
@@ -90,6 +102,20 @@ export function SettingsPage() {
       </div>
 
       <CalendarCard />
+
+      {ai.available && (
+        <div className="surface-card settings-card">
+          <div className="card-title">Claude</div>
+          <label className="check-row">
+            <input type="checkbox" checked={ai.on} onChange={(e) => saveAi(e.target.checked)} />
+            Offer to draft things with Claude
+          </label>
+          <p className="muted">
+            Reading worksheets into questions, more practice like what was missed, and writing up parent updates. Always a
+            button you press, and you check everything before it goes out. Off hides these everywhere.
+          </p>
+        </div>
+      )}
 
       <div className="surface-card" style={{ padding: 22, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>

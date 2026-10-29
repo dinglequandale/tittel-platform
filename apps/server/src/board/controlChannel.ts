@@ -12,6 +12,7 @@ import {
   type Player,
 } from '@tittel/shared'
 import type { ControlClient, Room } from './rooms.ts'
+import { recordBoardAnswer } from '../lib/lessonRecord.ts'
 
 // Ported near-verbatim from the legacy whiteboard's server/index.ts
 // (handleControl + its helpers) — PLAN.md §2.1 calls this "solid,
@@ -399,6 +400,12 @@ export function handleControl(ws: WebSocket, room: Room, role: 'host' | 'guest')
         existing.name = name
         existing.latest = msg.value
         existing.latestCorrect = correct
+      }
+
+      // Kept for after the lesson (lib/lessonRecord.ts). A failed write never disturbs the class.
+      if (room.persistent) {
+        void recordBoardAnswer(room.id, { qid, name, answer: msg.value, correct, elapsedMs: Date.now() - seenAt })
+          .catch((err) => console.warn('[board] answer not kept:', (err as Error).message))
       }
 
       const ack: { type: 'quiz-ack'; qid: string; correct?: boolean } = { type: 'quiz-ack', qid }

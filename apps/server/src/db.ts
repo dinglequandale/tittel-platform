@@ -91,3 +91,18 @@ export async function fileQuery<T extends QueryResultRow = QueryResultRow>(
   const { rows } = await pool.query<T>(sql, [fileToken, ...params])
   return rows
 }
+
+// Live boards are keyed by their id, the guest access model for teaching
+// surfaces (routes/board.ts). Writes made from inside a board (answers to its
+// questions) scope through it: the SQL marks its board key with board_id.
+export async function boardQuery<T extends QueryResultRow = QueryResultRow>(
+  boardId: string,
+  sql: string,
+  params: unknown[] = [],
+): Promise<T[]> {
+  if (!/board_id/i.test(sql)) {
+    throw new Error('boardQuery: SQL must reference board_id — refusing to run an unscoped board query')
+  }
+  const { rows } = await pool.query<T>(sql, [boardId, ...params])
+  return rows
+}

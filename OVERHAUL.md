@@ -380,6 +380,21 @@ time goes to teaching on it (from O2), recruiting partners, and the two licence 
 - **O3 The weekly loop.** Session persistence, the session summary (AI draft + edit + link/email),
   assign-follow-up, the lesson composer, draft-review-lesson.
   *Accept:* the recorded demo loop on prod; Konrad sends real summaries to his families.
+  **Status (2026-10-29):** built, with every step working without AI (Konrad: some tutors find AI
+  follow-ups off-putting, others want them). *Session record:* answers to a lesson plan's
+  answer boxes go to `quiz_events` (`lib/lessonRecord.ts`, called from the board's control
+  channel; student = the 1:1 board's student, or the group member by first name). End lesson
+  saves the lesson's board pages as a PDF (`lessonNotesPdf`) and calls `POST
+  /sessions/:id/end`; the PDF shows as "Board notes" on the lesson and the student's portal.
+  *After the lesson* (lesson page, once started or over): board results and last time's
+  homework misses, then "Practise them as homework" (the missed problems again, due at the next
+  lesson) or "Go over them next lesson" (a Review page first on the next lesson's plan).
+  *Parent update:* a template from the lesson's facts. *Claude, optional:* "More like these"
+  (new practice from the misses, checked before giving) and "Write it up with Claude" for the
+  update; both only when the server has a key and the tutor's Settings → Claude switch is on.
+  Not built: participants list, the lesson composer beyond paste-a-plan, the recorded demo.
+  The board-file changes (`controlChannel.ts` record call, `BoardCanvas.tsx` finishLesson,
+  `exportPdf.ts` split) were made while the board session was offline; review on return.
 - **O4 Student surfaces.** White-label, portal, neutral runner (mobile), review score moment, name
   gate, `Scramble`, SAT-style skin with **GRAPH-SPEC G2–G3** (our calculator in SAT mode, plus
   the Scientific calculator).

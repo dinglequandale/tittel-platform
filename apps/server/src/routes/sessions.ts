@@ -211,7 +211,7 @@ sessionsRouter.get('/sessions/:id', async (req, res) => {
 })
 
 // The next lesson with the same student or group: homework's default due date.
-async function nextLessonAfter(
+export async function nextLessonAfter(
   orgId: string,
   lessonId: string,
   lesson: { scheduled_at: string; student_id: string | null; group_id: string | null },

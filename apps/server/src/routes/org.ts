@@ -14,11 +14,15 @@ orgRouter.get('/org', async (req, res) => {
     name: org?.name ?? '',
     defaultMeetingUrl: typeof org?.settings?.defaultMeetingUrl === 'string' ? org.settings.defaultMeetingUrl : '',
     meetingLinkSource: org?.settings?.meetingLinkSource === 'own' ? 'own' : 'invite',
+    // Offering Claude drafts is the tutor's choice; some tutors don't want AI at all.
+    aiHelp: org?.settings?.aiHelp !== false,
+    aiAvailable: !!process.env.ANTHROPIC_API_KEY,
   })
 })
 
 orgRouter.patch('/org', async (req, res) => {
-  const { defaultMeetingUrl, meetingLinkSource } = req.body ?? {}
+  const { defaultMeetingUrl, meetingLinkSource, aiHelp } = req.body ?? {}
+  if (aiHelp !== undefined && typeof aiHelp !== 'boolean') return res.status(400).json({ error: 'aiHelp must be true or false' })
   if (meetingLinkSource !== undefined && meetingLinkSource !== 'invite' && meetingLinkSource !== 'own') {
     return res.status(400).json({ error: "meetingLinkSource must be 'invite' or 'own'" })
   }
@@ -32,6 +36,13 @@ orgRouter.patch('/org', async (req, res) => {
       req.auth!.orgId,
       `update orgs set settings = jsonb_set(settings, '{meetingLinkSource}', to_jsonb($2::text)) where id = $1::text /* org_id */`,
       [meetingLinkSource],
+    )
+  }
+  if (aiHelp !== undefined) {
+    await orgQuery(
+      req.auth!.orgId,
+      `update orgs set settings = jsonb_set(settings, '{aiHelp}', to_jsonb($2::boolean)) where id = $1::text /* org_id */`,
+      [aiHelp],
     )
   }
   if (defaultMeetingUrl !== undefined) {

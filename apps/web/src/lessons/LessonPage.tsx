@@ -16,6 +16,8 @@ import {
 import { PlanSlot } from './PlanSlot.tsx'
 import { HomeworkSlot } from './HomeworkSlot.tsx'
 import { ParentUpdateDialog, lessonContacts, recipientsOf, portalLink, firstName } from './ParentUpdate.tsx'
+import { AfterLesson, useLessonResults } from './AfterLesson.tsx'
+import { fileUrl } from '../lib/files.ts'
 
 function localDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -38,7 +40,10 @@ export function LessonPage() {
   const [confirmStop, setConfirmStop] = useState(false)
   const [updating, setUpdating] = useState(false)
   const { session } = useSession()
+  const [aiEnabled, setAiEnabled] = useState(false)
+  const { results, reload: reloadResults } = useLessonResults(lessonId!)
   useHashScroll(!!lesson)
+  useEffect(() => { apiFetch('/api/tutor/ai-import/status').then((r) => setAiEnabled(!!r.enabled)).catch(() => {}) }, [])
 
   async function reload() {
     try {
@@ -63,6 +68,7 @@ export function LessonPage() {
   if (!lesson) return <PageLoading />
 
   const started = lesson.status === 'live' || !!lesson.board_id
+  const over = lessonEnd(lesson).getTime() <= Date.now()
 
   return (
     <div className="screen screen-narrow-wide">
@@ -109,6 +115,10 @@ export function LessonPage() {
 
       <div className="lesson-grid">
         <div className="lesson-col">
+          {(started || over) && lesson.status !== 'cancelled' && results && (
+            <AfterLesson lesson={lesson} results={results} aiEnabled={aiEnabled}
+              onChanged={async () => { await Promise.all([reload(), reloadResults()]) }} />
+          )}
           <PlanSlot lesson={lesson} onChange={patch} />
           <HomeworkSlot lesson={lesson} onChanged={reload} />
         </div>
@@ -122,30 +132,53 @@ export function LessonPage() {
         </div>
       </div>
 
-      {updating && (
-        <ParentUpdateDialog onClose={() => setUpdating(false)} load={async () => {
-          const people = await lessonContacts(lesson)
-          const hw = lesson.homework[lesson.homework.length - 1]
-          const names = people.map((p) => firstName(p.name))
-          const who = names.length ? names.join(' and ') : lessonWho(lesson)
-          const tutor = session?.user.email?.split('@')[0] ?? ''
-          const lines = [
-            'Hi,',
-            '',
-            `A quick update on ${who}'s lesson on ${shortDate(lesson.scheduled_at)}.`,
-            '',
-            lesson.notes ? `What we covered: ${lesson.notes.trim()}` : lesson.plan_title ? `What we covered: ${lesson.plan_title}` : 'What we covered: ',
-          ]
-          if (hw) lines.push('', `Homework: ${hw.title}${hw.dueAt ? `, due ${dueLabel(hw.dueAt)}` : ''}.`)
-          if (lesson.last_homework) lines.push(`Last homework: ${lesson.last_homework.score}/${lesson.last_homework.total}.`)
-          if (people.length) {
-            lines.push('', people.length === 1 ? `${names[0]}'s homework and lessons are here: ${portalLink(people[0].portal_token)}`
-              : `Their homework and lessons:\n${people.map((p) => `${firstName(p.name)}: ${portalLink(p.portal_token)}`).join('\n')}`)
+      {updating && (() => {
+        // The update is drafted from what the app knows; with Claude on, it can
+        // also be written up from the same facts, never from anything else.
+        const hw = lesson.homework[lesson.homework.length - 1]
+        const tutor = session?.user.email?.split('@')[0] ?? ''
+        const sign = tutor ? tutor.charAt(0).toUpperCase() + tutor.slice(1) : ''
+        async function facts() {
+          const ps = await lessonContacts(lesson!)
+          const names = ps.map((p) => firstName(p.name))
+          const who = names.length ? names.join(' and ') : lessonWho(lesson!)
+          const board = results?.board ?? []
+          const right = board.reduce((n, q) => n + q.right.length, 0)
+          const total = board.reduce((n, q) => n + q.right.length + q.wrong.length, 0)
+          const lastHw = results?.homework.find((h) => h.handedIn > 0)
+          return {
+            ps, names, who,
+            lines: [
+              lesson!.notes ? `What we covered: ${lesson!.notes.trim()}` : lesson!.plan_title ? `What we covered: ${lesson!.plan_title}` : 'What we covered: ',
+              ...(total ? [`On the board: ${right} of ${total} answers right.`] : []),
+              ...(lastHw ? [`Last homework (${lastHw.title}): ${lastHw.misses.length ? `${lastHw.misses.length} to go over` : 'all right'}.`] : []),
+              ...(hw ? [`Homework: ${hw.title}${hw.dueAt ? `, due ${dueLabel(hw.dueAt)}` : ''}.`] : []),
+            ],
           }
-          lines.push('', 'Best,', tutor ? tutor.charAt(0).toUpperCase() + tutor.slice(1) : '')
-          return { to: recipientsOf(people), subject: `${who}: lesson on ${shortDate(lesson.scheduled_at)}`, body: lines.join('\n') }
-        }} />
-      )}
+        }
+        const links = (ps: { name: string; portal_token: string }[], names: string[]) => [
+          ...(results?.boardPdf ? [`Notes from the board: ${window.location.origin}${fileUrl(results.boardPdf)}`] : []),
+          ...(ps.length === 1 ? [`${names[0]}'s homework and lessons are here: ${portalLink(ps[0].portal_token)}`]
+            : ps.length ? [`Their homework and lessons:
+${ps.map((p) => `${firstName(p.name)}: ${portalLink(p.portal_token)}`).join('\n')}`] : []),
+        ]
+        return (
+          <ParentUpdateDialog onClose={() => setUpdating(false)}
+            load={async () => {
+              const f = await facts()
+              const body = ['Hi,', '', `A quick update on ${f.who}'s lesson on ${shortDate(lesson.scheduled_at)}.`, '', ...f.lines, '', ...links(f.ps, f.names), '', 'Best,', sign]
+              return { to: recipientsOf(f.ps), subject: `${f.who}: lesson on ${shortDate(lesson.scheduled_at)}`, body: body.join('\n') }
+            }}
+            draftWithAi={aiEnabled ? async () => {
+              const f = await facts()
+              const { text } = await apiFetch('/api/tutor/ai/parent-update', {
+                method: 'POST',
+                body: JSON.stringify({ facts: [`Student${f.names.length > 1 ? 's' : ''}: ${f.who}`, `Lesson: ${shortDate(lesson.scheduled_at)}`, ...f.lines].join('\n') }),
+              })
+              return ['Hi,', '', text, '', ...links(f.ps, f.names), '', 'Best,', sign].join('\n')
+            } : undefined} />
+        )
+      })()}
       {rescheduling && (
         <MoveDialog lesson={lesson} onClose={() => setRescheduling(false)}
           onSave={async (scheduledAt, durationMin) => { await patch({ scheduledAt, durationMin }); setRescheduling(false) }} />

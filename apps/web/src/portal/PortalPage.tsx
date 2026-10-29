@@ -3,7 +3,8 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { BRAND_NAME } from '@tittel/shared'
 import { Button } from '@tittel/ui'
 import { apiFetch, linkErrorMessage } from '../lib/api.ts'
-import { dayLabel, timeLabel, isJoinable, lessonEnd, dueLabel } from '../lessons/lessons.ts'
+import { dayLabel, timeLabel, isJoinable, lessonEnd, dueLabel, shortDate } from '../lessons/lessons.ts'
+import { fileUrl } from '../lib/files.ts'
 
 interface Assignment {
   assignment_id: string
@@ -31,6 +32,7 @@ export function PortalPage() {
   const navigate = useNavigate()
   const [studentName, setStudentName] = useState('')
   const [lessons, setLessons] = useState<PortalLesson[]>([])
+  const [notes, setNotes] = useState<{ id: string; scheduled_at: string; group_name: string | null; board_pdf: string }[]>([])
   const [assignments, setAssignments] = useState<Assignment[] | null>(null)
   const [error, setError] = useState('')
   const [, setTick] = useState(0)
@@ -38,7 +40,7 @@ export function PortalPage() {
   useEffect(() => {
     if (!studentToken) return
     apiFetch(`/api/portal/${studentToken}`)
-      .then((d) => { setStudentName(d.studentName); setLessons(d.lessons ?? []); setAssignments(d.assignments) })
+      .then((d) => { setStudentName(d.studentName); setLessons(d.lessons ?? []); setNotes(d.notes ?? []); setAssignments(d.assignments) })
       .catch((e) => setError(linkErrorMessage(e)))
     // Join lights up 15 minutes before; re-check each minute.
     const t = window.setInterval(() => setTick((n) => n + 1), 60_000)
@@ -129,6 +131,19 @@ export function PortalPage() {
           </div>
         )}
       </section>
+
+      {notes.length > 0 && (
+        <section className="portal-section">
+          <h2 className="portal-section-title">Notes from your lessons</h2>
+          <div className="editor-card portal-notes">
+            {notes.map((n) => (
+              <a key={n.id} href={fileUrl(n.board_pdf)} target="_blank" rel="noopener noreferrer">
+                {shortDate(n.scheduled_at)}{n.group_name ? ` · ${n.group_name}` : ''} — the board
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
     </main>
   )
 }

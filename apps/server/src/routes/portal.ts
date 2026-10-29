@@ -41,6 +41,19 @@ portalRouter.get('/:token', async (req, res) => {
   // occurrences appear here.
   await materializeSeries(student.org_id)
   const lessons = await studentQuery(req.params.token, `${STUDENT_LESSONS} order by se.scheduled_at limit 10`)
+  // Past lessons with the board saved as notes (O3), newest first.
+  const notes = await studentQuery(
+    req.params.token,
+    `select se.id, se.scheduled_at, g.name as group_name, se.pdf_storage_key as board_pdf
+       from students st
+       join sessions se on se.org_id = st.org_id
+                       and (se.student_id = st.id
+                            or se.group_id in (select gm.group_id from group_members gm where gm.student_id = st.id))
+       left join groups g on g.id = se.group_id
+      where st.portal_token = $1 and st.archived_at is null and se.pdf_storage_key is not null
+        and se.scheduled_at > now() - interval '120 days'
+      order by se.scheduled_at desc limit 12`,
+  )
 
   const assignments = await studentQuery(
     req.params.token,
@@ -70,7 +83,7 @@ portalRouter.get('/:token', async (req, res) => {
       order by asg.created_at desc`,
   )
 
-  res.json({ studentName: student.name, lessons, assignments })
+  res.json({ studentName: student.name, lessons, notes, assignments })
 })
 
 // Join a lesson from the portal: the board the tutor teaches on (created on

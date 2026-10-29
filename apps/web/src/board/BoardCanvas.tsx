@@ -37,7 +37,9 @@ import { setupRightClickPan } from './rightClickPan.ts'
 import type { ControlChannel } from './controlChannel.ts'
 import { Calculator } from './Calculator.tsx'
 import { Timer, type TimerWireState } from './Timer.tsx'
-import { exportBoardToPdf } from './exportPdf.ts'
+import { exportBoardToPdf, lessonNotesPdf } from './exportPdf.ts'
+import { apiFetch } from '../lib/api.ts'
+import { uploadFile } from '../lib/files.ts'
 import { useLessons } from './lesson/useLessons.ts'
 import { LessonPicker } from './lesson/LessonPicker.tsx'
 import { makeAnswerOverlay } from './quiz/AnswerOverlay.tsx'
@@ -369,6 +371,30 @@ export function BoardCanvas({
   // In-app, not window.confirm (blocked in an unfocused tab, and unstyled).
   const [confirmEnd, setConfirmEnd] = useState(false)
 
+  // Ending a lesson keeps its board as the student's notes and records the end
+  // (OVERHAUL O3, routes/followUp.ts). Leaving matters more than the notes: a
+  // failed or slow export (15 s) just ends without them.
+  async function finishLesson() {
+    const sessionId = lessons.sessionId
+    if (!sessionId || !lessonHref) return navigate('/app')
+    setPdfStatus('Saving the board as notes…')
+    let boardPdf: string | undefined
+    try {
+      const ed = editorRef.current
+      const blob = ed
+        ? await Promise.race([lessonNotesPdf(ed, sessionId), new Promise<null>((r) => setTimeout(() => r(null), 15_000))])
+        : null
+      if (blob) boardPdf = (await uploadFile(blob, 'Lesson notes.pdf')).token
+    } catch {
+      /* end without notes */
+    }
+    await apiFetch(`/api/tutor/sessions/${encodeURIComponent(sessionId)}/end`, {
+      method: 'POST',
+      body: JSON.stringify(boardPdf ? { boardPdf } : {}),
+    }).catch(() => undefined)
+    navigate(lessonHref)
+  }
+
   const components = useMemo<TLComponents>(() => {
     if (isHost) {
       const c: TLComponents = { MainMenu: HostMainMenu, InFrontOfTheCanvas: AnswerOverlay, TopPanel: BoardTopPanel }
@@ -516,7 +542,7 @@ export function BoardCanvas({
             : 'Students can stay on the board until they close it.'
         }
         confirmLabel={lessonHref ? 'End lesson' : 'Leave'}
-        onConfirm={() => navigate(lessonHref ?? '/app')}
+        onConfirm={() => void finishLesson()}
       />
 
       {isHost && statsOpen && (

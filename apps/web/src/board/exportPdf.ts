@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf'
-import type { Editor } from 'tldraw'
+import type { Editor, TLPage } from 'tldraw'
+import { lessonRefOf } from './lesson/load.ts'
 
 // Exports the whole board — every page — to a multi-page PDF so students can keep
 // exactly what was worked on after the ephemeral room is gone. tldraw's export is
@@ -19,7 +20,29 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 export async function exportBoardToPdf(editor: Editor, filename = 'whiteboard.pdf'): Promise<number> {
+  const { pdf, exported } = await pagesToPdf(editor, editor.getPages())
+  if (!pdf) throw new Error('Nothing to export yet — the board is empty.')
+  pdf.save(filename)
+  return exported
+}
+
+/**
+ * The pages a lesson worked on, as a PDF kept as the student's notes
+ * (OVERHAUL O3): from the lesson's first plan page to the end of the board
+ * (scratch pages added during the lesson come after it), or just the current
+ * page when the lesson had no plan. Null when those pages are empty.
+ */
+export async function lessonNotesPdf(editor: Editor, sessionId: string): Promise<Blob | null> {
   const pages = editor.getPages()
+  const first = pages.findIndex((p) => {
+    const ref = lessonRefOf(p.meta)
+    return ref?.kind === 'session' && ref.id === sessionId
+  })
+  const { pdf } = await pagesToPdf(editor, first >= 0 ? pages.slice(first) : [editor.getCurrentPage()])
+  return pdf ? pdf.output('blob') : null
+}
+
+async function pagesToPdf(editor: Editor, pages: TLPage[]): Promise<{ pdf: jsPDF | null; exported: number }> {
   let pdf: jsPDF | null = null
   let exported = 0
 
@@ -49,7 +72,5 @@ export async function exportBoardToPdf(editor: Editor, filename = 'whiteboard.pd
     exported++
   }
 
-  if (!pdf) throw new Error('Nothing to export yet — the board is empty.')
-  pdf.save(filename)
-  return exported
+  return { pdf, exported }
 }

@@ -22,17 +22,20 @@ export const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name
  * is sent by the app.
  */
 export function ParentUpdateDialog({
-  load, onClose,
+  load, onClose, draftWithAi,
 }: {
   /** Builds the draft once its data is fetched: who it goes to and what it says. */
   load: () => Promise<{ to: string[]; subject: string; body: string }>
   onClose: () => void
+  /** When Claude is on: the same facts written up as prose, replacing the message. */
+  draftWithAi?: () => Promise<string>
 }) {
   const toast = useToast()
   const [to, setTo] = useState('')
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [drafting, setDrafting] = useState(false)
 
   useEffect(() => {
     load().then((d) => { setTo(d.to.join(', ')); setSubject(d.subject); setBody(d.body) }).catch((e) => setError((e as Error).message))
@@ -53,6 +56,12 @@ export function ParentUpdateDialog({
             </Field>
             <Field label="Subject"><Input value={subject} onChange={(e) => setSubject(e.target.value)} /></Field>
             <Field label="Message"><textarea className="input" rows={10} value={body ?? ''} onChange={(e) => setBody(e.target.value)} /></Field>
+            {draftWithAi && (
+              <Button variant="ghost" disabled={drafting} onClick={async () => {
+                setDrafting(true); setError('')
+                try { setBody(await draftWithAi()) } catch (e) { setError((e as Error).message) } finally { setDrafting(false) }
+              }}>{drafting ? 'Claude is writing…' : 'Write it up with Claude'}</Button>
+            )}
             <p className="muted">Opens in your own email app to send. Or copy it into a text.</p>
             <div className="row-end">
               <DialogClose asChild><Button variant="ghost">Close</Button></DialogClose>

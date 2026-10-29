@@ -20,6 +20,7 @@ import { sessionsRouter } from './routes/sessions.ts'
 import { orgRouter } from './routes/org.ts'
 import { calendarRouter } from './routes/calendar.ts'
 import { filesRouter, publicFilesRouter } from './routes/files.ts'
+import { followUpRouter } from './routes/followUp.ts'
 
 // The configured Express app — defined separately from the listen() bootstrap
 // (src/index.ts) so it can also be imported elsewhere (e.g. tests) without
@@ -69,6 +70,7 @@ app.use('/api/tutor', requireTutor, sessionsRouter)
 app.use('/api/tutor', requireTutor, orgRouter)
 app.use('/api/tutor', requireTutor, calendarRouter)
 app.use('/api/tutor', requireTutor, filesRouter)
+app.use('/api/tutor', requireTutor, followUpRouter)
 // Uploaded files by their token: plan pages on boards, worksheets on portals.
 app.use('/api/files', publicFilesRouter)
 

@@ -19,6 +19,7 @@ import { aiImportRouter } from './routes/aiImport.ts'
 import { sessionsRouter } from './routes/sessions.ts'
 import { orgRouter } from './routes/org.ts'
 import { calendarRouter } from './routes/calendar.ts'
+import { filesRouter, publicFilesRouter } from './routes/files.ts'
 
 // The configured Express app — defined separately from the listen() bootstrap
 // (src/index.ts) so it can also be imported elsewhere (e.g. tests) without
@@ -67,6 +68,9 @@ app.use('/api/tutor', requireTutor, aiImportRouter)
 app.use('/api/tutor', requireTutor, sessionsRouter)
 app.use('/api/tutor', requireTutor, orgRouter)
 app.use('/api/tutor', requireTutor, calendarRouter)
+app.use('/api/tutor', requireTutor, filesRouter)
+// Uploaded files by their token: plan pages on boards, worksheets on portals.
+app.use('/api/files', publicFilesRouter)
 
 // Phase 2 — student-facing magic-link surfaces (no Supabase auth; the token
 // itself is the access control — see attemptQuery/studentQuery in db.ts).

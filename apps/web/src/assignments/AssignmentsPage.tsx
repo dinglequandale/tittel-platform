@@ -6,6 +6,7 @@ import {
 } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
+import { shortDate } from '../lessons/lessons.ts'
 
 function attemptUrl(token: string): string {
   return `${window.location.origin}/hw/${token}`
@@ -111,7 +112,7 @@ export function AssignmentsPage() {
       {assignments === null ? (
         <PageLoading />
       ) : assignments.length === 0 ? (
-        <EmptyState title="No assignments yet" description="Assign a problem set to one or more students." />
+        <EmptyState title="No homework yet" description="Give homework from a lesson, or set a one-off here." />
       ) : (
         <div className="surface-card">
           {assignments.map((a) => {
@@ -120,12 +121,12 @@ export function AssignmentsPage() {
               <div key={a.id} className="data-row" style={{ gap: 20 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
-                    {a.title || 'Untitled'}
+                    {a.title || a.set_title}
                   </div>
                   <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>
                     {a.set_title} · {a.assigned} student{a.assigned === 1 ? '' : 's'}
                     {' · '}{a.time_limit_sec ? `${Math.round(a.time_limit_sec / 60)} min` : 'Untimed'}
-                    {a.due_at ? ` · Due ${new Date(a.due_at).toLocaleDateString()}` : ''}
+                    {a.due_at ? ` · Due ${shortDate(a.due_at)}` : ''}
                   </div>
                 </div>
                 <div style={{ width: 160 }}>
@@ -147,7 +148,7 @@ export function AssignmentsPage() {
 
       {analyticsFor && analytics && (
         <div className="editor-card" style={{ marginTop: '1.5rem' }}>
-          <strong>{analytics.title || 'Untitled'} — {analytics.setTitle}</strong>
+          <strong>{analytics.title || analytics.setTitle}</strong>
           <p className="muted">
             {analytics.submitted} / {analytics.assigned} submitted
             {analytics.frqCount > 0 && ` · ${analytics.frqCount} free-response question${analytics.frqCount === 1 ? '' : 's'} not auto-graded`}
@@ -221,7 +222,7 @@ function NewAssignmentDialog({
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [setId, setSetId] = useState('')
-  const [untimed, setUntimed] = useState(false)
+  const [untimed, setUntimed] = useState(true)
   const [minutes, setMinutes] = useState('15')
   const [dueAt, setDueAt] = useState('')
   const [selected, setSelected] = useState<string[]>([])
@@ -257,17 +258,22 @@ function NewAssignmentDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button>New assignment</Button></DialogTrigger>
+      <DialogTrigger asChild><Button>New homework</Button></DialogTrigger>
       <DialogContent>
-        <DialogTitle>New assignment</DialogTitle>
+        <DialogTitle>New homework</DialogTitle>
+        <p className="muted">For homework that isn't tied to a lesson. Homework given from a lesson is due at the next one.</p>
         <Field label="Title (optional)"><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
         <Field label="Problem set">
-          <Select value={setId} onValueChange={setSetId}>
-            <SelectTrigger><SelectValue placeholder="Choose a set…" /></SelectTrigger>
-            <SelectContent>
-              {sets.map((s) => <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          {sets.length === 0 ? (
+            <p className="muted">No problem sets yet. Give homework from a lesson (drop a worksheet or paste problems), or make a set in Library → Problem sets.</p>
+          ) : (
+            <Select value={setId} onValueChange={setSetId}>
+              <SelectTrigger><SelectValue placeholder="Choose a set…" /></SelectTrigger>
+              <SelectContent>
+                {sets.map((s) => <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
         </Field>
         <div className="form-row">
           <Field label="Timing">

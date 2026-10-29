@@ -224,3 +224,60 @@ html, body, #root {
   .stu-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; padding: 10px 14px; }
   .stu-row > :nth-child(2), .stu-row > :nth-child(4) { display: none; }
 }
+
+/* Global search (shell/GlobalSearch.tsx). */
+.shell-search { position: relative; }
+.shell-search input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; color: var(--ink); outline: none; }
+.shell-search input::placeholder { color: var(--ink-3); }
+.shell-search-kbd { font-family: var(--font-body); font-size: 10.5px; color: var(--ink-3); border: 1px solid var(--line); border-radius: 5px; padding: 0 4px; }
+.search-results {
+  position: absolute; top: calc(100% + 6px); left: 0; width: 340px; z-index: 50;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-2);
+  padding: 4px; display: flex; flex-direction: column;
+}
+.search-hit { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; border: 0; background: transparent; padding: 8px 10px; border-radius: 8px; cursor: pointer; font: inherit; }
+.search-hit[data-active='true'], .search-hit:hover { background: var(--surface-2); }
+.search-hit-label { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.search-hit-sub { font-size: 12px; color: var(--ink-3); }
+.search-empty { padding: 10px; font-size: 13px; color: var(--ink-3); }
+
+/* Drop zones, paste dialogs, worksheet choice (lesson page). */
+.drop-zone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-align: center;
+  border: 1.5px dashed var(--line); border-radius: 12px; padding: 18px 14px; cursor: pointer; font-size: 13.5px;
+  transition: border-color var(--duration-micro) var(--ease), background-color var(--duration-micro) var(--ease);
+}
+.drop-zone:hover, .drop-zone[data-over='true'] { border-color: var(--accent); background: var(--accent-wash); }
+.drop-zone[data-busy='true'] { cursor: progress; }
+.drop-zone:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.dialog-content.dialog-wide { width: min(720px, 94vw); }
+.choice-list { display: flex; flex-direction: column; gap: 8px; }
+.choice-card {
+  display: flex; flex-direction: column; gap: 2px; text-align: left; font: inherit; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--surface);
+}
+.choice-card:hover { border-color: var(--accent); background: var(--accent-wash); }
+.slot-state { font-size: 12px; }
+.prev-notes { background: var(--surface-2); border-radius: 10px; padding: 8px 12px; }
+.prev-notes p { margin: 2px 0 0; white-space: pre-wrap; font-size: 13.5px; }
+.inline-link { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; }
+
+/* Homework review and paper homework. */
+.review-comment { display: flex; flex-direction: column; gap: 8px; }
+.review-comment p { margin: 0; white-space: pre-wrap; }
+.work-photos { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.work-photos img { width: 140px; height: 180px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); }
+.work-photo { position: relative; }
+.work-photo .badge-x { position: absolute; top: 4px; right: 4px; background: var(--surface); border-radius: 50%; width: 22px; height: 22px; }
+.paper-work { display: flex; flex-direction: column; gap: 8px; margin-top: 1rem; }
+.paper-work .btn { align-self: flex-start; cursor: pointer; }
+
+/* Student record. */
+.covered-row { align-items: flex-start; }
+.covered-notes { white-space: pre-wrap; font-size: 13.5px; }
+.hours-family { padding: 8px 0; border-bottom: 1px solid var(--surface-2); }
+.hours-family:last-child { border-bottom: 0; }
+.advanced { border-top: 1px solid var(--line); padding-top: 10px; }
+.advanced > summary { cursor: pointer; font-size: 13px; color: var(--ink-2); margin-bottom: 8px; }
+.left-out { max-height: 260px; overflow-y: auto; }
+.meeting-link code { min-width: 0; overflow-wrap: anywhere; }

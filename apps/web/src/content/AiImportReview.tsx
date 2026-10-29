@@ -25,7 +25,7 @@ const TYPE_LABEL: Record<DraftProblem['type'], string> = {
   multi: 'Multi-select',
   numeric: 'Numeric',
   text: 'Text',
-  frq: 'Free response',
+  frq: 'Written answer (you mark it)',
 }
 
 function answerText(p: DraftProblem): string {
@@ -34,12 +34,14 @@ function answerText(p: DraftProblem): string {
 }
 
 export function AiImportReview({
-  draft, filename, onCommitted, onDiscard,
+  draft, filename, onCommitted, onDiscard, confirmLabel,
 }: {
   draft: AiImportDraft
   filename: string
   onCommitted: (setId: string) => void
   onDiscard: () => void
+  /** What saving does here; the library default is adding the set to the bank. */
+  confirmLabel?: string
 }) {
   const toast = useToast()
   const [title, setTitle] = useState(draft.title)
@@ -77,7 +79,7 @@ export function AiImportReview({
         method: 'POST',
         body: JSON.stringify({ title: title.trim(), problems, filename }),
       })
-      toast('Added to bank')
+      if (!confirmLabel) toast('Added to bank')
       onCommitted(result.setId)
     } catch (err) {
       setError((err as Error).message)
@@ -89,10 +91,10 @@ export function AiImportReview({
   return (
     <div>
       <div className="page-toolbar">
-        <Field label="Set title"><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
+        <Field label="Name"><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
       </div>
       <p className="muted">
-        {problems.length} problems · {found} answers found
+        {problems.length} problem{problems.length === 1 ? '' : 's'} · {found} answer{found === 1 ? '' : 's'} found
         {inferred > 0 && ` · ${inferred} inferred`}
         {missing > 0 && ` · ${missing} missing`}
       </p>
@@ -114,7 +116,7 @@ export function AiImportReview({
               </ul>
             )}
             {p.type !== 'frq' && (
-              <Field label={p.type === 'multi' ? 'Correct choice ids (comma-separated)' : 'Correct answer'}>
+              <Field label={p.type === 'multi' ? 'Correct letters (comma-separated)' : p.type === 'mc' ? 'Correct letter' : 'Correct answer'}>
                 <Input
                   value={answerText(p)}
                   onChange={(e) => setAnswerText(i, e.target.value)}
@@ -129,7 +131,7 @@ export function AiImportReview({
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
         <Button variant="ghost" onClick={onDiscard}>Discard</Button>
         <Button onClick={commit} disabled={committing || !title.trim() || problems.length === 0}>
-          {committing ? 'Adding…' : 'Add to bank'}
+          {committing ? 'Saving…' : confirmLabel ?? 'Add to bank'}
         </Button>
       </div>
     </div>

@@ -11,16 +11,9 @@ import { RichText } from '../lib/Math.tsx'
 import { AiImportReview } from './AiImportReview.tsx'
 import type { AiImportDraft } from './AiImportReview.tsx'
 import type { Problem, ProblemSetDetail, ProblemSetSummary } from './types.ts'
-
-async function fileToBase64(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  let binary = ''
-  const chunkSize = 0x8000
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
-  }
-  return btoa(binary)
-}
+import { fileToBase64 } from '../lib/files.ts'
+import { draftFromText } from '../lessons/composer.ts'
+import { PasteDialog } from '../lessons/Drop.tsx'
 
 export function SetsTab() {
   const toast = useToast()
@@ -32,6 +25,7 @@ export function SetsTab() {
   const [archiveConfirm, setArchiveConfirm] = useState(false)
   const [aiEnabled, setAiEnabled] = useState(false)
   const [aiDraft, setAiDraft] = useState<{ draft: AiImportDraft; filename: string } | null>(null)
+  const [pasting, setPasting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function reload() {
@@ -160,7 +154,7 @@ export function SetsTab() {
             <strong>{detail.title}</strong>
             <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
               {availableToAdd.length > 0 && (
-                <Select onValueChange={addProblem}>
+                <Select value="" onValueChange={addProblem}>
                   <SelectTrigger><SelectValue placeholder="Add problem from bank…" /></SelectTrigger>
                   <SelectContent>
                     {availableToAdd.map((p) => (
@@ -176,7 +170,11 @@ export function SetsTab() {
           </div>
           <p className="muted">Changes here apply to homework you assign from now on. Already-assigned homework keeps its questions.</p>
           {detail.problems.length === 0 ? (
-            <p className="muted">No problems in this set yet.</p>
+            <p className="muted">
+              {availableToAdd.length > 0
+                ? 'No problems yet. Add them from your bank with “Add problem from bank…” above.'
+                : 'No problems yet, and your bank is empty. Make problems in the Problem bank tab, or go back and use “Type or paste a set”.'}
+            </p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {detail.problems.map((p, i) => (
@@ -214,18 +212,37 @@ export function SetsTab() {
           enabled={aiEnabled}
           onImported={(draft, filename) => setAiDraft({ draft, filename })}
         />
+        <Button variant="secondary" onClick={() => setPasting(true)}>Type or paste a set</Button>
         <NewSetDialog onCreate={createSet} />
         <input ref={fileRef} type="file" accept="application/json" style={{ display: 'none' }}
           onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])} />
         <Button variant="ghost" onClick={() => fileRef.current?.click()} disabled={importing}>
-          {importing ? 'Importing…' : 'Import JSON'}
+          {importing ? 'Importing…' : 'Import file (.json)'}
         </Button>
       </div>
+      {pasting && (
+        <PasteDialog
+          title="Type or paste a problem set"
+          nameLabel="Set name"
+          defaultName=""
+          placeholder={'1. Factor $x^2+5x+6$.\n2. Solve $2x+3=11$.\n\nAnswers:\n1. (x+2)(x+3)\n2. 4'}
+          hint={'Numbered problems, or one per paragraph. Answers under each ("Answer: 4") or in an "Answers" list at the end. Lettered lines are choices.'}
+          describe={(text) => { const n = draftFromText(text, '').problems.length; return `${n} problem${n === 1 ? '' : 's'}.` }}
+          confirmLabel="Check them"
+          onClose={() => setPasting(false)}
+          onUse={(text, name) => {
+            const d = draftFromText(text, name || 'New set')
+            if (!d.problems.length) throw new Error('No problems found yet.')
+            setPasting(false)
+            setAiDraft({ draft: d, filename: 'typed' })
+          }}
+        />
+      )}
       {error && <p className="field-error">{error}</p>}
       {sets === null ? (
         <PageLoading />
       ) : sets.length === 0 ? (
-        <EmptyState title="No problem sets yet" description="Generate one from a lesson plan or worksheet, or assemble one from the bank." />
+        <EmptyState title="No problem sets yet" description="Type or paste one (from ChatGPT or your notes), or assemble one from the bank." />
       ) : (
         <div className="card-grid-3">
           {sets.map((s) => (
@@ -234,7 +251,7 @@ export function SetsTab() {
                 <div className="entity-card-icon" style={{ background: 'var(--surface-2)', color: 'var(--ink-2)', marginBottom: 0 }}>
                   <FileText size={17} strokeWidth={1.8} />
                 </div>
-                <span className="badge">{s.template}</span>
+                {s.template === 'sat' && <span className="badge">SAT style</span>}
               </div>
               <div className="entity-card-title">{s.title}</div>
               <div className="entity-card-meta"><span>{s.problem_count} problems</span></div>
@@ -273,13 +290,8 @@ export function AiImportDialog({ enabled, onImported }: { enabled: boolean; onIm
     }
   }
 
-  if (!enabled) {
-    return (
-      <Button variant="primary" disabled title="Set ANTHROPIC_API_KEY on the server to turn this on">
-        <Sparkles size={16} strokeWidth={1.75} /> Generate from document
-      </Button>
-    )
-  }
+  // Not offered at all when the server has no Claude access.
+  if (!enabled) return null
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -288,11 +300,11 @@ export function AiImportDialog({ enabled, onImported }: { enabled: boolean; onIm
       </DialogTrigger>
       <DialogContent>
         <DialogTitle>Generate a set from a document</DialogTitle>
-        <p className="muted">Upload a lesson plan or worksheet (PDF, DOCX, or text) — Claude extracts the problems for you to review before anything is saved.</p>
+        <p className="muted">Upload a worksheet (PDF, photo, Word or text). Claude reads out the problems and answers for you to check before anything is saved.</p>
         <Field label="Hint (optional)">
           <Input value={hint} onChange={(e) => setHint(e.target.value)} placeholder="e.g. SAT math, answers are on the last page" />
         </Field>
-        <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md" style={{ display: 'none' }}
+        <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md,image/png,image/jpeg,image/webp" style={{ display: 'none' }}
           onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
         {importing && <p className="muted">Reading your document…</p>}
         {error && <p className="field-error">{error}</p>}

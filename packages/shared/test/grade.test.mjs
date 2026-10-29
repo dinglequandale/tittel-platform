@@ -66,6 +66,21 @@ check("numeric: '1/0' vs key '8' -> false (division by zero)", gradeResponse(num
 check("numeric: '9' vs key '8' -> false", gradeResponse(numeric('8'), '9') === false)
 check("numeric: null answer -> false", gradeResponse(numeric('8'), null) === false)
 
+// ---- what students naturally write around an answer ---------------------------
+check("numeric: 'x=4' vs key '4' -> true", gradeResponse(numeric('4'), 'x=4') === true)
+check("numeric: 'x = -2.5' vs key '-5/2' -> true", gradeResponse(numeric('-5/2'), 'x = -2.5') === true)
+check("numeric: '$12' vs key '12' -> true", gradeResponse(numeric('12'), '$12') === true)
+check("numeric: '1,000' vs key '1000' -> true", gradeResponse(numeric('1000'), '1,000') === true)
+check("numeric: '4.' vs key '4' -> true", gradeResponse(numeric('4'), '4.') === true)
+check("numeric: 'x=5' vs key '4' -> false", gradeResponse(numeric('4'), 'x=5') === false)
+check("text: 'y=2x+1' key keeps its '=' -> true", gradeResponse(text('y=2x+1'), 'y = 2x + 1') === true)
+check("text: '2x+1' vs key 'y=2x+1' -> false", gradeResponse(text('y=2x+1'), '2x+1') === false)
+check("text: factors in either order -> true", gradeResponse(text('(x+2)(x+3)'), '(x+3)(x+2)') === true)
+check("text: factors with spaces -> true", gradeResponse(text('(x+2)(x+3)'), '( x + 3 )( x + 2 )') === true)
+check("text: squared factor order -> true", gradeResponse(text('(x-1)(x+2)^2'), '(x+2)^2(x-1)') === true)
+check("text: different factors -> false", gradeResponse(text('(x+2)(x+3)'), '(x+2)(x-3)') === false)
+check("text: a single bracket is not reordered -> false", gradeResponse(text('(x+2)'), '(x+3)') === false)
+
 // ---- text ---------------------------------------------------------------------
 check("text: case-insensitive exact match", gradeResponse(text('Paris'), 'paris') === true)
 check("text: accept[] literal alternate", gradeResponse(text('NYC', ['New York City']), 'new york city') === true)

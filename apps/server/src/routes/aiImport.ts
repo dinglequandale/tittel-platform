@@ -99,9 +99,17 @@ async function extractContentBlock(
   filename: string,
   mimeType: string,
   dataBase64: string,
-): Promise<{ type: 'document'; source: { type: 'base64'; media_type: 'application/pdf'; data: string } } | { type: 'text'; text: string }> {
+): Promise<
+  | { type: 'document'; source: { type: 'base64'; media_type: 'application/pdf'; data: string } }
+  | { type: 'image'; source: { type: 'base64'; media_type: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; data: string } }
+  | { type: 'text'; text: string }
+> {
   if (mimeType === 'application/pdf' || filename.toLowerCase().endsWith('.pdf')) {
     return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: dataBase64 } }
+  }
+  // A photo of a worksheet.
+  if (/^image\/(png|jpeg|webp|gif)$/.test(mimeType)) {
+    return { type: 'image', source: { type: 'base64', media_type: mimeType as 'image/png', data: dataBase64 } }
   }
   if (isDocxMime(mimeType, filename)) {
     const buffer = Buffer.from(dataBase64, 'base64')

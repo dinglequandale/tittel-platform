@@ -131,6 +131,102 @@ studentsRouter.post('/students', async (req, res) => {
   res.status(201).json(bulk ? { students: created } : { student: created[0] })
 })
 
+// Archived students, to find and bring back.
+studentsRouter.get('/students/archived', async (req, res) => {
+  const rows = await orgQuery(
+    req.auth!.orgId,
+    `select s.id, s.name, s.archived_at from students s where s.org_id = $1 and s.archived_at is not null order by s.name`,
+  )
+  res.json({ students: rows })
+})
+
+studentsRouter.post('/students/:id/restore', async (req, res) => {
+  const rows = await orgQuery(
+    req.auth!.orgId,
+    `update students set archived_at = null where org_id = $1 and id = $2 and archived_at is not null returning id`,
+    [req.params.id],
+  )
+  if (!rows[0]) return res.status(404).json({ error: 'not found' })
+  rematchCalendar(req.auth!.orgId)
+  res.json({ ok: true })
+})
+
+// One student's record: contacts, groups, lessons (what was covered, from
+// each lesson's notes), and every piece of homework with how it went.
+studentsRouter.get('/students/:id', async (req, res) => {
+  const orgId = req.auth!.orgId
+  const [student] = await orgQuery(
+    orgId,
+    `select s.id, s.name, ${EMAILS}, s.portal_token, s.notes, s.meeting_url, s.created_at, s.archived_at
+       from students s where s.org_id = $1 and s.id = $2`,
+    [req.params.id],
+  )
+  if (!student) return res.status(404).json({ error: 'not found' })
+  const [groups, lessons, homework] = await Promise.all([
+    orgQuery(
+      orgId,
+      `select g.id, g.name from groups g join group_members gm on gm.group_id = g.id
+        where g.org_id = $1 and gm.student_id = $2 and g.archived_at is null order by g.name`,
+      [req.params.id],
+    ),
+    orgQuery(
+      orgId,
+      `select se.id, se.scheduled_at, se.duration_min, se.status, se.notes, se.group_id, g.name as group_name,
+              pl.title as plan_title
+         from sessions se
+         left join groups g on g.id = se.group_id
+         left join lessons pl on pl.id = se.plan_id
+        where se.org_id = $1
+          and (se.student_id = $2 or se.group_id in (select gm.group_id from group_members gm where gm.student_id = $2))
+          and se.scheduled_at > now() - interval '365 days' and se.scheduled_at < now() + interval '35 days'
+        order by se.scheduled_at desc`,
+      [req.params.id],
+    ),
+    orgQuery(
+      orgId,
+      `select a.id, coalesce(a.title, ps.title) as title, a.due_at, a.created_at, a.materials,
+              at.status, at.attempt_token, at.submitted_at, at.tutor_comment,
+              (select count(*)::int from responses r where r.attempt_id = at.id and r.is_correct) as score,
+              (select count(*)::int from assignment_problems ap join problems p on p.id = ap.problem_id
+                where ap.assignment_id = a.id
+                  and (p.type != 'frq' or exists (select 1 from responses r where r.attempt_id = at.id and r.problem_id = p.id and r.is_correct is not null))) as total
+         from attempts at
+         join assignments a on a.id = at.assignment_id
+         join problem_sets ps on ps.id = a.set_id
+        where at.org_id = $1 and at.student_id = $2 and a.archived_at is null
+        order by a.created_at desc limit 200`,
+      [req.params.id],
+    ),
+  ])
+  res.json({ student: { ...student, groups }, lessons, homework })
+})
+
+// Lessons taught per student in a period (default: this calendar month), for
+// invoicing. A group lesson counts for each member. Lessons still ahead in
+// the period are counted apart, so a month in progress reads clearly.
+studentsRouter.get('/hours', async (req, res) => {
+  const now = new Date()
+  const from = typeof req.query.from === 'string' && !isNaN(Date.parse(req.query.from)) ? new Date(req.query.from) : new Date(now.getFullYear(), now.getMonth(), 1)
+  const to = typeof req.query.to === 'string' && !isNaN(Date.parse(req.query.to)) ? new Date(req.query.to) : new Date(from.getFullYear(), from.getMonth() + 1, 1)
+  const rows = await orgQuery(
+    req.auth!.orgId,
+    `select s.id, s.name, ${EMAILS},
+            count(se.id) filter (where se.scheduled_at < now())::int as lessons,
+            coalesce(sum(coalesce(se.duration_min, 60)) filter (where se.scheduled_at < now()), 0)::int as minutes,
+            count(se.id) filter (where se.scheduled_at < now() and se.group_id is not null)::int as group_lessons,
+            count(se.id) filter (where se.scheduled_at >= now())::int as upcoming,
+            coalesce(sum(coalesce(se.duration_min, 60)) filter (where se.scheduled_at >= now()), 0)::int as upcoming_minutes
+       from students s
+       join sessions se on se.org_id = s.org_id
+        and (se.student_id = s.id or se.group_id in (select gm.group_id from group_members gm where gm.student_id = s.id))
+      where s.org_id = $1 and se.status != 'cancelled' and se.scheduled_at >= $2 and se.scheduled_at < $3
+      group by s.id
+      order by s.name`,
+    [from.toISOString(), to.toISOString()],
+  )
+  res.json({ from: from.toISOString(), to: to.toISOString(), students: rows })
+})
+
 studentsRouter.patch('/students/:id', async (req, res) => {
   const { name, notes, meetingUrl } = req.body ?? {}
   // `emails`, when present, replaces the student's whole address list.

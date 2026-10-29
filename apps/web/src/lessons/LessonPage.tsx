@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { CalendarDays, ChevronLeft, Play, Repeat } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ExternalLink, Mail, Play, Repeat } from 'lucide-react'
 import {
   Button, Field, Input, PageLoading, ConfirmDialog, CopyButton,
   Dialog, DialogContent, DialogTitle, DialogClose,
@@ -8,13 +8,14 @@ import {
 } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
-import { AiImportDialog } from '../content/SetsTab.tsx'
-import { AiImportReview } from '../content/AiImportReview.tsx'
-import type { AiImportDraft } from '../content/AiImportReview.tsx'
-import type { LessonSummary, ProblemSetSummary } from '../content/types.ts'
+import { useSession } from '../lib/useSession.ts'
+import { useHashScroll } from '../lib/useHashScroll.ts'
 import {
-  type Lesson, lessonWho, lessonEnd, timeLabel, shortDate, seriesLabel, startLesson, scoreTone,
+  type Lesson, lessonWho, lessonEnd, timeLabel, shortDate, seriesLabel, startLesson, scoreTone, canOpenBoard, dueLabel,
 } from './lessons.ts'
+import { PlanSlot } from './PlanSlot.tsx'
+import { HomeworkSlot } from './HomeworkSlot.tsx'
+import { ParentUpdateDialog, lessonContacts, recipientsOf, portalLink, firstName } from './ParentUpdate.tsx'
 
 function localDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -35,6 +36,9 @@ export function LessonPage() {
   const [rescheduling, setRescheduling] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [confirmStop, setConfirmStop] = useState(false)
+  const [updating, setUpdating] = useState(false)
+  const { session } = useSession()
+  useHashScroll(!!lesson)
 
   async function reload() {
     try {
@@ -58,7 +62,7 @@ export function LessonPage() {
   if (error) return <div className="screen"><p className="field-error">{error}</p></div>
   if (!lesson) return <PageLoading />
 
-  const over = lessonEnd(lesson).getTime() <= Date.now()
+  const started = lesson.status === 'live' || !!lesson.board_id
 
   return (
     <div className="screen screen-narrow-wide">
@@ -75,15 +79,27 @@ export function LessonPage() {
             <p className="lesson-series"><Repeat size={13} strokeWidth={2} /> {seriesLabel(lesson.series, lesson.scheduled_at)}</p>
           )}
           {lesson.from_calendar && (
-            <p className="lesson-series"><CalendarDays size={13} strokeWidth={2} /> From your Google Calendar. Move or cancel it there.</p>
+            <p className="lesson-series">
+              <CalendarDays size={13} strokeWidth={2} />
+              {lesson.skipped ? 'Skipped this week (still in your Google Calendar).' : 'From your Google Calendar.'}
+              {lesson.calendar_event_url && (
+                <a href={lesson.calendar_event_url} target="_blank" rel="noopener noreferrer" className="inline-link">
+                  Move or cancel it there <ExternalLink size={12} strokeWidth={2} />
+                </a>
+              )}
+            </p>
           )}
         </div>
         <div className="toolbar-actions">
-          {lesson.status !== 'cancelled' && !over && (
+          {canOpenBoard(lesson) && (
             <Button onClick={() => startLesson(lesson, navigate).catch((err) => toast((err as Error).message))}>
-              <Play size={14} strokeWidth={2.2} /> Start lesson
+              <Play size={14} strokeWidth={2.2} /> {started ? 'Open board' : 'Start lesson'}
             </Button>
           )}
+          <Button variant="secondary" onClick={() => setUpdating(true)}><Mail size={14} strokeWidth={2} /> Update parents</Button>
+          {lesson.from_calendar && (lesson.skipped
+            ? <Button variant="ghost" onClick={() => patch({ skipped: false })}>Undo skip</Button>
+            : <Button variant="ghost" onClick={() => patch({ skipped: true })}>Skip this week</Button>)}
           {!lesson.from_calendar && <Button variant="secondary" onClick={() => setRescheduling(true)}>Move</Button>}
           {!lesson.from_calendar && (lesson.status === 'cancelled'
             ? <Button variant="ghost" onClick={() => patch({ status: 'scheduled' })}>Restore</Button>
@@ -106,6 +122,30 @@ export function LessonPage() {
         </div>
       </div>
 
+      {updating && (
+        <ParentUpdateDialog onClose={() => setUpdating(false)} load={async () => {
+          const people = await lessonContacts(lesson)
+          const hw = lesson.homework[lesson.homework.length - 1]
+          const names = people.map((p) => firstName(p.name))
+          const who = names.length ? names.join(' and ') : lessonWho(lesson)
+          const tutor = session?.user.email?.split('@')[0] ?? ''
+          const lines = [
+            'Hi,',
+            '',
+            `A quick update on ${who}'s lesson on ${shortDate(lesson.scheduled_at)}.`,
+            '',
+            lesson.notes ? `What we covered: ${lesson.notes.trim()}` : lesson.plan_title ? `What we covered: ${lesson.plan_title}` : 'What we covered: ',
+          ]
+          if (hw) lines.push('', `Homework: ${hw.title}${hw.dueAt ? `, due ${dueLabel(hw.dueAt)}` : ''}.`)
+          if (lesson.last_homework) lines.push(`Last homework: ${lesson.last_homework.score}/${lesson.last_homework.total}.`)
+          if (people.length) {
+            lines.push('', people.length === 1 ? `${names[0]}'s homework and lessons are here: ${portalLink(people[0].portal_token)}`
+              : `Their homework and lessons:\n${people.map((p) => `${firstName(p.name)}: ${portalLink(p.portal_token)}`).join('\n')}`)
+          }
+          lines.push('', 'Best,', tutor ? tutor.charAt(0).toUpperCase() + tutor.slice(1) : '')
+          return { to: recipientsOf(people), subject: `${who}: lesson on ${shortDate(lesson.scheduled_at)}`, body: lines.join('\n') }
+        }} />
+      )}
       {rescheduling && (
         <MoveDialog lesson={lesson} onClose={() => setRescheduling(false)}
           onSave={async (scheduledAt, durationMin) => { await patch({ scheduledAt, durationMin }); setRescheduling(false) }} />
@@ -134,157 +174,6 @@ export function LessonPage() {
         }}
       />
     </div>
-  )
-}
-
-function PlanSlot({ lesson, onChange }: { lesson: Lesson; onChange: (body: Record<string, unknown>) => Promise<void> }) {
-  const toast = useToast()
-  const [plans, setPlans] = useState<LessonSummary[] | null>(null)
-  const [importing, setImporting] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    apiFetch('/api/tutor/lessons').then((r) => setPlans(r.lessons)).catch(() => setPlans([]))
-  }, [lesson.plan_id])
-
-  async function importFile(file: File) {
-    setImporting(true)
-    try {
-      const json = JSON.parse(await file.text())
-      const { lesson: plan } = await apiFetch('/api/tutor/lessons/import', { method: 'POST', body: JSON.stringify(json) })
-      await onChange({ planId: plan.id })
-    } catch (err) {
-      toast((err as Error).message)
-    } finally {
-      setImporting(false)
-      if (fileRef.current) fileRef.current.value = ''
-    }
-  }
-
-  return (
-    <section className="surface-card slot">
-      <div className="slot-head">
-        <span className="card-title-lg">Plan</span>
-        {lesson.plan_id && <Button variant="ghost" onClick={() => onChange({ planId: null })}>Remove</Button>}
-      </div>
-      {lesson.plan_id ? (
-        <p className="slot-value">{lesson.plan_title}<span className="muted"> · opens on the board when you start</span></p>
-      ) : (
-        <>
-          <p className="muted">What you'll teach. It's loaded onto the board when you start the lesson.</p>
-          <div className="slot-actions">
-            {plans && plans.length > 0 && (
-              <Select onValueChange={(planId) => onChange({ planId })}>
-                <SelectTrigger><SelectValue placeholder="Pick from your library…" /></SelectTrigger>
-                <SelectContent>
-                  {plans.map((p) => <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            )}
-            <input ref={fileRef} type="file" accept="application/json" hidden
-              onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])} />
-            <Button variant="secondary" onClick={() => fileRef.current?.click()} disabled={importing}>
-              {importing ? 'Importing…' : 'Import a plan file'}
-            </Button>
-          </div>
-          <p className="muted slot-note">Dropping in a PDF arrives with the board update.</p>
-        </>
-      )}
-    </section>
-  )
-}
-
-function HomeworkSlot({ lesson, onChanged }: { lesson: Lesson; onChanged: () => Promise<void> }) {
-  const toast = useToast()
-  const [sets, setSets] = useState<ProblemSetSummary[]>([])
-  const [aiEnabled, setAiEnabled] = useState(false)
-  const [aiDraft, setAiDraft] = useState<{ draft: AiImportDraft; filename: string } | null>(null)
-  const [giving, setGiving] = useState(false)
-  const [removeTarget, setRemoveTarget] = useState<string | null>(null)
-
-  useEffect(() => {
-    apiFetch('/api/tutor/problem-sets').then((r) => setSets(r.problemSets)).catch(() => {})
-    apiFetch('/api/tutor/ai-import/status').then((r) => setAiEnabled(!!r.enabled)).catch(() => {})
-  }, [])
-
-  async function give(setId: string) {
-    setGiving(true)
-    try {
-      await apiFetch(`/api/tutor/sessions/${lesson.id}/homework`, { method: 'POST', body: JSON.stringify({ setId }) })
-      await onChanged()
-      toast(lesson.student_name ? `On ${lesson.student_name}'s portal now` : 'On every group member’s portal now')
-    } catch (err) {
-      toast((err as Error).message)
-    } finally {
-      setGiving(false)
-    }
-  }
-
-  async function remove(assignmentId: string) {
-    try {
-      await apiFetch(`/api/tutor/assignments/${assignmentId}`, { method: 'DELETE' })
-      await onChanged()
-    } catch (err) {
-      toast((err as Error).message)
-    }
-  }
-
-  if (aiDraft) {
-    return (
-      <section className="surface-card slot">
-        <AiImportReview
-          draft={aiDraft.draft}
-          filename={aiDraft.filename}
-          onDiscard={() => setAiDraft(null)}
-          onCommitted={(setId) => { setAiDraft(null); void give(setId) }}
-        />
-      </section>
-    )
-  }
-
-  const usable = sets.filter((s) => s.problem_count > 0)
-  const due = lesson.next_lesson_at
-    ? `due at the next lesson, ${shortDate(lesson.next_lesson_at)}`
-    : 'no due date (no next lesson yet)'
-
-  return (
-    <section className="surface-card slot">
-      <div className="slot-head"><span className="card-title-lg">Homework</span></div>
-      {lesson.homework.map((h) => (
-        <div key={h.id} className="list-row">
-          <div>
-            <div className="list-row-title">{h.title}</div>
-            <div className="list-row-sub">
-              {h.dueAt ? `Due ${shortDate(h.dueAt)}` : 'No due date'} · {h.submitted}/{h.assigned} done
-            </div>
-          </div>
-          <Button variant="ghost" onClick={() => setRemoveTarget(h.id)}>Remove</Button>
-        </div>
-      ))}
-      {lesson.homework.length === 0 && (
-        <p className="muted">It goes straight to {lesson.student_name ? `${lesson.student_name}'s` : 'each member’s'} portal, {due}.</p>
-      )}
-      <div className="slot-actions">
-        <AiImportDialog enabled={aiEnabled} onImported={(draft, filename) => setAiDraft({ draft, filename })} />
-        {usable.length > 0 && (
-          // value="" keeps the picker an action: it resets to its placeholder after each pick.
-          <Select value="" onValueChange={give} disabled={giving}>
-            <SelectTrigger><SelectValue placeholder={lesson.homework.length ? 'Add another set…' : 'Pick a problem set…'} /></SelectTrigger>
-            <SelectContent>
-              {usable.map((s) => <SelectItem key={s.id} value={s.id}>{s.title} ({s.problem_count})</SelectItem>)}
-            </SelectContent>
-          </Select>
-        )}
-      </div>
-      <ConfirmDialog
-        open={!!removeTarget}
-        onOpenChange={(open) => !open && setRemoveTarget(null)}
-        title="Remove this homework?"
-        description="It comes off the student's portal."
-        confirmLabel="Remove"
-        onConfirm={() => removeTarget && remove(removeTarget)}
-      />
-    </section>
   )
 }
 
@@ -336,12 +225,42 @@ function LastHomeworkSlot({ lesson }: { lesson: Lesson }) {
 
 function NotesSlot({ lesson, onSave }: { lesson: Lesson; onSave: (notes: string | null) => Promise<void> }) {
   const [value, setValue] = useState(lesson.notes ?? '')
+  const [state, setState] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const saved = useRef(lesson.notes ?? '')
+  const timer = useRef<number>()
+
+  async function save(next: string) {
+    window.clearTimeout(timer.current)
+    if (next === saved.current) return
+    setState('saving')
+    saved.current = next
+    await onSave(next || null)
+    setState('saved')
+  }
+  // Saves a moment after typing stops, and on leaving the box.
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
   return (
     <section className="surface-card slot">
-      <div className="slot-head"><span className="card-title-lg">Notes</span></div>
-      <textarea className="input" rows={4} value={value} placeholder="For you: what to cover, how it went…"
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={() => { if (value !== (lesson.notes ?? '')) void onSave(value || null) }} />
+      <div className="slot-head">
+        <span className="card-title-lg">Notes</span>
+        <span className="muted slot-state">{state === 'saving' ? 'Saving…' : state === 'saved' ? 'Saved' : ''}</span>
+      </div>
+      {lesson.prev_notes && lesson.prev_at && (
+        <div className="prev-notes">
+          <div className="list-row-sub">Last time, {shortDate(lesson.prev_at)}</div>
+          <p>{lesson.prev_notes}</p>
+        </div>
+      )}
+      <textarea className="input" rows={6} value={value} placeholder="What you covered, how it went, what's next. Only you see these."
+        onChange={(e) => {
+          setValue(e.target.value)
+          setState('idle')
+          window.clearTimeout(timer.current)
+          const next = e.target.value
+          timer.current = window.setTimeout(() => void save(next), 1000)
+        }}
+        onBlur={() => void save(value)} />
     </section>
   )
 }

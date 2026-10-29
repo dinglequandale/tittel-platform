@@ -379,3 +379,30 @@ select id, org_id, lower(trim(parent_email)), 'parent' from students where paren
 on conflict do nothing;
 update students set email = null where email is not null;
 update students set parent_email = null where parent_email is not null;
+
+-- Uploaded files kept in the database, so they survive restarts (unlike live
+-- board assets): worksheets, PDF pages turned into plan pages, and students'
+-- photos of their work. file_token is the unguessable key that /api/files/:token
+-- serves by (fileQuery in db.ts), the same magic-link model as portals.
+create table if not exists files (
+  id           text primary key,
+  org_id       text not null references orgs(id) on delete cascade,
+  file_token   text not null unique,
+  name         text,
+  content_type text not null,
+  size         int not null,
+  bytes        bytea not null,
+  created_at   timestamptz not null default now()
+);
+create index if not exists files_org_idx on files(org_id);
+
+-- Paper homework: the worksheet files a student works from, the photos they
+-- hand in, and the tutor's comment and own marks on an attempt.
+alter table assignments add column if not exists materials jsonb not null default '[]';
+alter table attempts add column if not exists work_files jsonb not null default '[]';
+alter table attempts add column if not exists tutor_comment text;
+alter table responses add column if not exists tutor_marked boolean not null default false;
+
+-- A calendar lesson the tutor skipped in the app for one week; the sync keeps
+-- it cancelled instead of restoring it from the calendar.
+alter table sessions add column if not exists skipped boolean not null default false;

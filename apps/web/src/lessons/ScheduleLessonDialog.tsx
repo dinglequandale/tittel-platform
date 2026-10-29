@@ -12,6 +12,18 @@ function localDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+/** The next free-looking slot: the coming whole hour, or 4 pm tomorrow when it's late. */
+function nextSlot(): { date: string; time: string } {
+  const d = new Date()
+  d.setMinutes(0, 0, 0)
+  d.setHours(d.getHours() + 1)
+  if (d.getHours() >= 21 || d.getHours() < 8) {
+    if (d.getHours() >= 21) d.setDate(d.getDate() + 1)
+    d.setHours(16)
+  }
+  return { date: localDate(d), time: `${String(d.getHours()).padStart(2, '0')}:00` }
+}
+
 // Schedules a lesson (optionally every week) and goes straight to it, since
 // the next thing a tutor does with a new lesson is prepare it.
 export function ScheduleLessonDialog({
@@ -38,6 +50,9 @@ export function ScheduleLessonDialog({
     if (!open) return
     setWho(defaultWho ?? '')
     setError('')
+    const slot = nextSlot()
+    setDate(slot.date)
+    setTime(slot.time)
     Promise.all([apiFetch('/api/tutor/students'), apiFetch('/api/tutor/groups')])
       .then(([s, g]) => { setStudents(s.students); setGroups(g.groups) })
       .catch((err) => setError((err as Error).message))

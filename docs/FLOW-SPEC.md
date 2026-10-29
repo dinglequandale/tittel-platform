@@ -378,3 +378,55 @@ and saw invites stay unmatched after creating the right students. Changes:
   `newStudents`). Everything is checked before anyone is created.
 - Group members count as scheduled (their next lesson can be the group's), and the Students
   table fits a phone (group and board columns drop off below 720 px).
+
+## 10. As built: the rest of the usability pass (2026-10-29)
+
+From the tutor-persona walkthrough (§9.3), everything outside the board. The board items went
+to the board session and landed in `c9a753f`: the dock no longer covers tldraw's tools, a
+"Lesson page" link and "End lesson" lead back to `/app/lessons/:id`, "Free rein" became
+"Students: following you / roaming", and the empty Answers panel explains itself.
+
+**Prep from what tutors already have.** Research and the walkthrough agree: tutors teach from
+existing material (PDFs, textbook pages, past papers, ChatGPT output), not a form.
+- *Plan:* drop a PDF or photos on the lesson. pdf.js renders each PDF page in the browser
+  (print intent, so a background tab doesn't stall it) and the plan is one image block per
+  board page (`maxWidth` 900, `spacingAfter` 40). Or write or paste text: "---" starts a
+  board page, "# " is a heading, "Answer: …" adds an answer box (letter = multiple choice).
+  `lessons/composer.ts`.
+- *Homework:* drop a worksheet. It's done **on paper** (the student sees it, hands in photos,
+  the tutor marks it), or, with Claude enabled, read into auto-graded questions with the
+  worksheet still attached. Or paste problems: numbered or paragraph problems, "Answer: …" or
+  an "Answers" list, lettered choices; anything without an answer is a written answer the
+  tutor marks. Pasted text goes through the same review step as Claude's drafts.
+- Files live in Postgres (`files`, served by `file_token` at `/api/files/:token`, PDFs and
+  images only, sandboxed images). Paper homework is an archived one-question set so it stays
+  out of the library; `assignments.materials` lists the worksheet, `attempts.work_files` the
+  photos (shrunk to 2000 px on the phone).
+- The Claude key is the server's, never a tutor's; without it the AI options are simply not
+  shown. Worksheet photos can be read too.
+
+**Lesson day.** Start (or "Open board") stays until three hours after a lesson ends. Notes show
+last lesson's notes on top, save as you type, and say "Saved". "Update parents" drafts an
+email from the lesson (covered, homework and due date, portal link) to the parents' addresses,
+opened in the tutor's own mail app or copied; nothing is sent by the app.
+
+**Homework review.** Grading accepts "x = 4" for 4, "$12", "1,000", a trailing full stop, and
+factors in either order. Signed-in tutors on a review mark each answer Right/Wrong (overrides
+the grade; marks written answers, which then count in the score) and leave a comment the
+student sees. Choices show their content, not just a letter.
+
+**Records.** `/app/students/:id`: contacts, homework with status (overdue, score, handed in),
+what each past lesson covered (its notes), what's coming up, the portal link, and a parent
+update. Insights → Hours: lessons and hours per student for a month, grouped by shared parent
+address (a family), group lessons counted for each child, with a CSV.
+
+**Calendar.** Calendar lessons link to their Google event ("Move or cancel it there") and can be
+skipped for one week in the app (`sessions.skipped`; a sync keeps it cancelled). Settings lists
+the events the filters left out, with "It's a lesson" to send one to the inbox.
+
+**Polish.** Working search (Ctrl/⌘ K) over students, groups and lessons; New ▸ Homework asks
+who and opens their lesson's Homework card; menu dialogs no longer leave the menu behind;
+`#calendar`/`#homework` links scroll; Students has an Archived view with Restore and a confirm
+before taking someone out of a group; new lessons default to the next whole hour; plain words
+in the problem editor; one-off homework is untimed by default; dates read "today", "tomorrow"
+or "Wed, Nov 4".

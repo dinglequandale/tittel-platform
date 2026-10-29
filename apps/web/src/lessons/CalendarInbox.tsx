@@ -29,7 +29,11 @@ export interface CalendarStatus {
   connected: boolean
   feed?: string
   filters?: CalendarFilters
-  lastSync?: { at: string; ok: boolean; error?: string; imported: number; filtered: number; unmatched: UnmatchedSeries[] }
+  lastSync?: {
+    at: string; ok: boolean; error?: string; imported: number; filtered: number; unmatched: UnmatchedSeries[]
+    /** The series the filters left out (up to 50), to count one in by hand. */
+    left_out?: { uid: string; title: string; next: string }[]
+  }
 }
 
 // "Who is this?" for calendar events the importer couldn't place by email

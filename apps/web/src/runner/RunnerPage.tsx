@@ -3,6 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Button, Dialog, DialogContent, DialogTitle, DialogClose } from '@tittel/ui'
 import { apiFetch, linkErrorMessage } from '../lib/api.ts'
 import { RichText } from '../lib/Math.tsx'
+import { fileUrl, type StoredFile } from '../lib/files.ts'
+import { dueLabel } from '../lessons/lessons.ts'
 
 interface RChoice { id: string; content: string }
 interface RProblem {
@@ -22,8 +24,84 @@ interface AttemptPayload {
   timeLimitSec: number | null
   dueAt: string | null
   remainingSec: number | null
+  materials: StoredFile[]
+  workFiles: StoredFile[]
   problems: RProblem[]
   responses: SavedResponse[]
+}
+
+/** A phone photo shrunk to a sensible size before it goes up: quicker on mobile data, and plenty to read. */
+async function shrinkPhoto(file: File): Promise<Blob> {
+  try {
+    const bmp = await createImageBitmap(file)
+    const scale = Math.min(1, 2000 / Math.max(bmp.width, bmp.height))
+    if (scale === 1 && file.size < 3_000_000) return file
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(bmp.width * scale)
+    canvas.height = Math.round(bmp.height * scale)
+    canvas.getContext('2d')!.drawImage(bmp, 0, 0, canvas.width, canvas.height)
+    return await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b ?? file), 'image/jpeg', 0.85))
+  } catch {
+    return file
+  }
+}
+
+/**
+ * The worksheet to work from, and photos of work done on paper. Shown for
+ * any homework with a worksheet or a written answer.
+ */
+function PaperWork({ token, materials, workFiles, onChange }: {
+  token: string
+  materials: StoredFile[]
+  workFiles: StoredFile[]
+  onChange: (files: StoredFile[]) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  async function add(files: FileList) {
+    setBusy(true); setError('')
+    try {
+      for (const f of [...files]) {
+        const blob = await shrinkPhoto(f)
+        const r = await apiFetch(`/api/attempt/${token}/work?name=${encodeURIComponent(f.name)}`, {
+          method: 'POST', headers: { 'content-type': blob.type || 'image/jpeg' }, body: blob,
+        })
+        onChange(r.workFiles)
+      }
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function remove(fileToken: string) {
+    const r = await apiFetch(`/api/attempt/${token}/work/${fileToken}`, { method: 'DELETE' })
+    onChange(r.workFiles)
+  }
+  return (
+    <div className="editor-card paper-work">
+      {materials.length > 0 && (
+        <p>Worksheet: {materials.map((m, i) => <span key={m.token}>{i > 0 && ', '}<a href={fileUrl(m.token)} target="_blank" rel="noopener noreferrer">{m.name}</a></span>)}</p>
+      )}
+      <div className="list-row-title">Photos of your work</div>
+      {workFiles.length > 0 && (
+        <div className="work-photos">
+          {workFiles.map((f) => (
+            <div key={f.token} className="work-photo">
+              <img src={fileUrl(f.token)} alt={f.name} />
+              <button className="badge-x" aria-label={`Remove ${f.name}`} onClick={() => remove(f.token)}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <label className="btn btn-secondary" aria-disabled={busy}>
+        {busy ? 'Uploading…' : workFiles.length ? 'Add another photo' : 'Take or add a photo'}
+        <input type="file" accept="image/*" capture="environment" multiple hidden disabled={busy}
+          onChange={(e) => { if (e.target.files?.length) void add(e.target.files); e.target.value = '' }} />
+      </label>
+      {error && <p className="field-error">{error}</p>}
+    </div>
+  )
 }
 
 function mmss(total: number): string {
@@ -234,11 +312,11 @@ export function RunnerPage() {
     return (
       <main className="page">
         <div className="page-card" style={{ textAlign: 'center', gap: '0.75rem' }}>
-          <h1 style={{ fontFamily: 'var(--font-display)' }}>{data.assignmentTitle || 'Assignment'}</h1>
+          <h1 style={{ fontFamily: 'var(--font-display)' }}>{data.assignmentTitle || 'Homework'}</h1>
           <p className="muted">{data.studentName}</p>
           <p className="muted">
             {minutes ? `${minutes} minutes · ` : ''}{data.problems.length} questions
-            {data.dueAt && ` · due ${new Date(data.dueAt).toLocaleDateString()}`}
+            {data.dueAt && ` · due ${dueLabel(data.dueAt)}`}
           </p>
           <Button onClick={begin} disabled={starting} style={{ alignSelf: 'center' }}>{starting ? 'Starting…' : 'Begin'}</Button>
         </div>
@@ -260,8 +338,11 @@ export function RunnerPage() {
   }
   const isAnswered = (q: RProblem) => {
     const a = answers[q.id]
+    // A written answer can be photos of the work instead of typed text.
+    if (q.type === 'frq' && data.workFiles.length) return true
     return a != null && a !== '' && !(Array.isArray(a) && a.length === 0)
   }
+  const paper = data.materials.length > 0 || problems.some((q) => q.type === 'frq')
   const answeredCount = problems.filter(isAnswered).length
   const unansweredCount = problems.length - answeredCount
   const lowTime = remaining !== null && remaining < 60
@@ -290,9 +371,14 @@ export function RunnerPage() {
   return (
     <div className="page">
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <strong>{data.assignmentTitle || 'Assignment'}</strong>
+        <strong>{data.assignmentTitle || 'Homework'}</strong>
         {remaining !== null && <span className={lowTime ? 'badge badge-incorrect' : 'badge'}>{mmss(remaining)}</span>}
       </header>
+
+      {paper && attemptToken && (
+        <PaperWork token={attemptToken} materials={data.materials} workFiles={data.workFiles}
+          onChange={(workFiles) => setData((d) => (d ? { ...d, workFiles } : d))} />
+      )}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginTop: '1rem' }}>
         {problems.map((q, i) => (
@@ -330,6 +416,7 @@ export function RunnerPage() {
               const selected = isMulti ? Array.isArray(current) && current.includes(c.id) : current === c.id
               return (
                 <button key={c.id} className="btn btn-secondary" style={{ justifyContent: 'flex-start', outline: selected ? '2px solid var(--accent)' : 'none' }}
+                  aria-label={`Choice ${c.id}: ${c.content.replace(/\$/g, '')}`} aria-pressed={selected}
                   onClick={() => {
                     if (isMulti) {
                       const cur = Array.isArray(current) ? current as string[] : []
@@ -345,11 +432,12 @@ export function RunnerPage() {
             })}
           </div>
         ) : p.type === 'frq' ? (
-          <textarea className="input" rows={4} style={{ marginTop: '1rem' }}
+          <textarea className="input" rows={4} style={{ marginTop: '1rem' }} aria-label="Your answer"
+            placeholder={data.workFiles.length ? 'Anything to add? (optional)' : 'Your answer, or add photos of your work above'}
             value={typeof answers[p.id] === 'string' ? (answers[p.id] as string) : ''}
             onChange={(e) => setAnswer(e.target.value)} />
         ) : (
-          <input className="input" style={{ marginTop: '1rem' }} placeholder="Your answer"
+          <input className="input" style={{ marginTop: '1rem' }} placeholder="Your answer" aria-label="Your answer"
             value={typeof answers[p.id] === 'string' ? (answers[p.id] as string) : ''}
             onChange={(e) => setAnswer(e.target.value)} />
         )}

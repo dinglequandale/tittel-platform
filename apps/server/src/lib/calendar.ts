@@ -168,6 +168,19 @@ export function calendarOwnerOf(feedUrl: string): string | null {
   }
 }
 
+/**
+ * A link that opens a lesson's event in Google Calendar, where the tutor moves
+ * or cancels it (for a recurring one, the series). Google's event id is the
+ * iCal UID without "@google.com"; the link carries it with the calendar's
+ * address, base64-encoded. Null for events Google didn't make.
+ */
+export function googleEventUrl(calendarUid: string, owner: string | null): string | null {
+  const uid = calendarUid.split('|')[0]
+  if (!owner || !uid.endsWith('@google.com')) return null
+  const eid = Buffer.from(`${uid.slice(0, -'@google.com'.length)} ${owner}`).toString('base64').replace(/=+$/, '')
+  return `https://www.google.com/calendar/event?eid=${eid}`
+}
+
 /** Room and resource calendars are attendees, but never people. */
 function isPerson(addr: string): boolean {
   return !/@resource\.calendar\.google\.com$/i.test(addr)

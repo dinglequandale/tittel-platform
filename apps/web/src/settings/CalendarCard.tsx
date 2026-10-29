@@ -3,6 +3,8 @@ import { Button, ConfirmDialog, Field, Input } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
 import type { CalendarFilters, CalendarStatus } from '../lessons/CalendarInbox.tsx'
+import { dayLabel, timeLabel } from '../lessons/lessons.ts'
+import { useHashScroll } from '../lib/useHashScroll.ts'
 
 // Connect Google Calendar through its secret iCal address (FLOW-SPEC §3 B):
 // read-only, no Google sign-in, no app verification. The address is a
@@ -14,6 +16,8 @@ export function CalendarCard() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirmDisconnect, setConfirmDisconnect] = useState(false)
+  const [showLeftOut, setShowLeftOut] = useState(false)
+  useHashScroll(status !== null)
 
   useEffect(() => {
     apiFetch('/api/tutor/calendar').then(setStatus).catch(() => setStatus({ connected: false }))
@@ -62,7 +66,26 @@ export function CalendarCard() {
                 ? `Last synced ${new Date(sync.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} · ${sync.imported} lesson${sync.imported === 1 ? '' : 's'}`
                   + (sync.filtered ? ` · ${sync.filtered} other event${sync.filtered === 1 ? '' : 's'} left out` : '')
                 : `Couldn't sync: ${sync.error}`}
+              {sync.ok && !!sync.left_out?.length && (
+                <> · <button className="link-button" onClick={() => setShowLeftOut(!showLeftOut)}>{showLeftOut ? 'Hide them' : 'See them'}</button></>
+              )}
             </p>
+          )}
+          {showLeftOut && sync?.left_out && (
+            <div className="surface-card card-pad-x left-out">
+              {sync.left_out.map((e) => (
+                <div key={e.uid} className="list-row">
+                  <div>
+                    <div className="list-row-title">{e.title || 'Untitled event'}</div>
+                    <div className="list-row-sub">{dayLabel(e.next)}, {timeLabel(e.next)}</div>
+                  </div>
+                  <Button variant="ghost" disabled={busy} onClick={async () => {
+                    const s = await call('POST', '/api/tutor/calendar/links', { uid: e.uid, include: true })
+                    if (s) toast(`${e.title || 'It'} is in your inbox on This week, to say who it's with`)
+                  }}>It's a lesson</Button>
+                </div>
+              ))}
+            </div>
           )}
           {status.filters && (
             <FiltersEditor filters={status.filters} busy={busy}

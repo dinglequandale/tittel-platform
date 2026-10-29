@@ -58,10 +58,39 @@ export interface GradableProblem {
   accept?: string[] | null
 }
 
+/**
+ * What a student naturally writes around an answer: "x = 4" for 4, "$12" for
+ * 12, "1,000" for 1000, a trailing full stop. Stripped only when the key
+ * itself doesn't contain them, so an answer like "y=2x+1" still has to match
+ * as written.
+ */
+export function relaxAnswer(raw: string, key: string): string {
+  let s = raw.trim()
+  if (!key.includes('=')) s = s.replace(/^[a-zA-Z]\s*=\s*/, '')
+  if (!key.includes('$')) s = s.replace(/^\$\s*/, '')
+  if (/^-?[\d,]+(\.\d+)?$/.test(s) && !key.includes(',')) s = s.replace(/,(?=\d{3}\b)/g, '')
+  return s.replace(/\.$/, '')
+}
+
+/** "(x+2)(x+3)" → its factors in a fixed order, so "(x+3)(x+2)" compares equal; null if it isn't a product of brackets. */
+function factorsOf(s: string): string | null {
+  const parts = s.match(/\([^()]+\)(\^\d+)?/g)
+  if (!parts || parts.length < 2 || parts.join('') !== s) return null
+  return [...parts].sort().join('')
+}
+
+function same(v: string, k: string): boolean {
+  if (v === k) return true
+  // normalizeAnswer strips one outer pair of brackets, so "(x+2)(x+3)" arrives as "x+2)(x+3".
+  const factors = (s: string) => factorsOf(s) ?? factorsOf(`(${s})`)
+  const fv = factors(v)
+  return fv !== null && fv === factors(k)
+}
+
 function literalMatch(value: string, key: string, accept: string[] | null | undefined): boolean {
-  const v = normalizeAnswer(value).toLowerCase()
-  if (v === normalizeAnswer(key).toLowerCase()) return true
-  return (accept ?? []).some((a) => v === normalizeAnswer(a).toLowerCase())
+  const v = normalizeAnswer(relaxAnswer(value, key)).toLowerCase()
+  if (same(v, normalizeAnswer(key).toLowerCase())) return true
+  return (accept ?? []).some((a) => same(v, normalizeAnswer(a).toLowerCase()))
 }
 
 /**
@@ -98,7 +127,7 @@ export function gradeResponse(problem: GradableProblem, answer: unknown): boolea
   // within a 0.1% relative tolerance (SAT grid-in truncated-decimal
   // convention — see normalizeAnswer/parseGridNumber doc comments).
   if (literalMatch(answer, problem.correct, problem.accept)) return true
-  const v = parseGridNumber(normalizeAnswer(answer))
+  const v = parseGridNumber(normalizeAnswer(relaxAnswer(answer, problem.correct)))
   const k = parseGridNumber(normalizeAnswer(problem.correct))
   if (v === null || k === null) return false
   return Math.abs(v - k) <= 1e-3 * Math.max(1, Math.abs(k))

@@ -6,6 +6,7 @@ import { RequireAuth } from './shell/RequireAuth.tsx'
 import { AppShell } from './shell/AppShell.tsx'
 import { Home } from './shell/Home.tsx'
 import { StudentsPage } from './students/StudentsPage.tsx'
+import { StudentPage } from './students/StudentPage.tsx'
 import { ContentPage } from './content/ContentPage.tsx'
 import { PortalPage } from './portal/PortalPage.tsx'
 import { RunnerPage } from './runner/RunnerPage.tsx'
@@ -34,6 +35,7 @@ export function Router() {
           <Route index element={<Home />} />
           <Route path="lessons/:lessonId" element={<LessonPage />} />
           <Route path="students" element={<StudentsPage />} />
+          <Route path="students/:studentId" element={<StudentPage />} />
           <Route path="library" element={<ContentPage />} />
           <Route path="insights" element={<InsightsPage />} />
           <Route path="settings" element={<SettingsPage />} />

@@ -77,3 +77,17 @@ export async function attemptQuery<T extends QueryResultRow = QueryResultRow>(
   const { rows } = await pool.query<T>(sql, [attemptToken, ...params])
   return rows
 }
+
+// Uploaded files (worksheets, plan pages, photos of work) are served by their
+// own unguessable token, the same model as the portal and attempt links.
+export async function fileQuery<T extends QueryResultRow = QueryResultRow>(
+  fileToken: string,
+  sql: string,
+  params: unknown[] = [],
+): Promise<T[]> {
+  if (!/file_token/i.test(sql)) {
+    throw new Error('fileQuery: SQL must reference file_token — refusing to run an unscoped file query')
+  }
+  const { rows } = await pool.query<T>(sql, [fileToken, ...params])
+  return rows
+}

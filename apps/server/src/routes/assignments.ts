@@ -7,7 +7,7 @@ export const assignmentsRouter = Router()
 assignmentsRouter.get('/assignments', async (req, res) => {
   const rows = await orgQuery(
     req.auth!.orgId,
-    `select a.id, a.title, a.time_limit_sec, a.due_at, a.created_at,
+    `select a.id, coalesce(a.title, ps.title) as title, a.time_limit_sec, a.due_at, a.created_at,
             ps.title as set_title,
             (select count(*)::int from assignment_student x where x.assignment_id = a.id) as assigned,
             (select count(*)::int from attempts x where x.assignment_id = a.id
@@ -31,6 +31,8 @@ export interface NewAssignment {
   dueAt?: string | null
   studentIds: string[]
   sessionId?: string
+  /** Worksheet files (already checked to be this org's) the student works from. */
+  materials?: { token: string; name: string; type: string }[]
 }
 export type CreateAssignmentResult =
   | { assignmentId: string; links: { studentId: string; studentName: string; attemptToken: string }[] }
@@ -39,7 +41,7 @@ export type CreateAssignmentResult =
 export async function createAssignment(
   orgId: string,
   userId: string,
-  { setId, title, timeLimitSec, dueAt, studentIds, sessionId }: NewAssignment,
+  { setId, title, timeLimitSec, dueAt, studentIds, sessionId, materials }: NewAssignment,
 ): Promise<CreateAssignmentResult> {
   const [set] = await orgQuery<{ id: string; problem_count: number }>(
     orgId,
@@ -56,14 +58,15 @@ export async function createAssignment(
 
     const assignmentId = newId()
     await client.query(
-      `insert into assignments (id, org_id, set_id, title, time_limit_sec, due_at, created_by, session_id)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      `insert into assignments (id, org_id, set_id, title, time_limit_sec, due_at, created_by, session_id, materials)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         assignmentId, orgId, setId, title || null,
         timeLimitSec ? Math.max(1, Math.floor(Number(timeLimitSec))) : null,
         dueAt || null,
         userId,
         sessionId ?? null,
+        JSON.stringify(materials ?? []),
       ],
     )
 
@@ -234,4 +237,38 @@ assignmentsRouter.get('/assignments/:id/analytics', async (req, res) => {
     perProblem,
     perStudent,
   })
+})
+
+// The tutor's say on handed-in homework: a comment the student sees on their
+// review, and a mark that overrides the auto-grade (or grades a free response).
+assignmentsRouter.patch('/attempts/:token', async (req, res) => {
+  const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim().slice(0, 4000) || null : null
+  const rows = await orgQuery(
+    req.auth!.orgId,
+    `update attempts set tutor_comment = $3 where org_id = $1 and attempt_token = $2 returning id`,
+    [req.params.token, comment],
+  )
+  if (!rows[0]) return res.status(404).json({ error: 'not found' })
+  res.json({ ok: true })
+})
+
+assignmentsRouter.patch('/attempts/:token/responses/:problemId', async (req, res) => {
+  const isCorrect = req.body?.isCorrect
+  if (typeof isCorrect !== 'boolean' && isCorrect !== null) return res.status(400).json({ error: 'isCorrect must be true, false or null' })
+  const [at] = await orgQuery<{ id: string }>(
+    req.auth!.orgId,
+    `select at.id from attempts at
+       join assignment_problems ap on ap.assignment_id = at.assignment_id and ap.problem_id = $3
+      where at.org_id = $1 and at.attempt_token = $2 and at.status in ('submitted', 'expired')`,
+    [req.params.token, req.params.problemId],
+  )
+  if (!at) return res.status(404).json({ error: 'not found, or not handed in yet' })
+  await orgQuery(
+    req.auth!.orgId,
+    `insert into responses (id, attempt_id, problem_id, answer, is_correct, tutor_marked)
+     select $4, at.id, $3, null, $5, true from attempts at where at.org_id = $1 and at.attempt_token = $2
+     on conflict (attempt_id, problem_id) do update set is_correct = $5, tutor_marked = true`,
+    [req.params.token, req.params.problemId, newId(), isCorrect],
+  )
+  res.json({ ok: true })
 })

@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { CalendarDays, Users, BookOpen, BarChart3, Settings, Search, Plus } from 'lucide-react'
+import { CalendarDays, Users, BookOpen, BarChart3, Settings, Plus } from 'lucide-react'
 import { Shell, Wordmark, Qed, Menu, MenuTrigger, MenuContent, MenuItem } from '@tittel/ui'
 import { BRAND_NAME } from '@tittel/shared'
 import { supabase } from '../lib/supabase.ts'
 import { useSession } from '../lib/useSession.ts'
 import { AppToastProvider } from '../lib/toast.tsx'
 import { ScheduleLessonDialog } from '../lessons/ScheduleLessonDialog.tsx'
+import { HomeworkForDialog } from '../lessons/HomeworkForDialog.tsx'
+import { GlobalSearch } from './GlobalSearch.tsx'
 
 // Five places, organised around the tutor's week rather than the database
 // (FLOW-SPEC §2.6): lessons are the hub; Library and Insights are where you
@@ -24,6 +26,10 @@ export function AppShell() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const [scheduling, setScheduling] = useState(false)
+  const [givingHomework, setGivingHomework] = useState(false)
+  // Opening a dialog from a menu item waits a tick, so the menu has closed
+  // first instead of lingering behind the dialog.
+  const later = (fn: () => void) => () => window.setTimeout(fn, 0)
 
   // Most-specific match wins the topbar title (reverse so nested paths beat '/app').
   const current = [...NAV]
@@ -70,10 +76,7 @@ export function AppShell() {
           <>
             <span className="shell-topbar-title">{title}<Qed /></span>
             <div className="shell-topbar-actions">
-              <div className="shell-search">
-                <Search size={15} strokeWidth={1.9} />
-                <span>Search students, lessons…</span>
-              </div>
+              <GlobalSearch />
               <Menu>
                 <MenuTrigger asChild>
                   <button className="shell-new-btn">
@@ -82,9 +85,9 @@ export function AppShell() {
                   </button>
                 </MenuTrigger>
                 <MenuContent>
-                  <MenuItem onSelect={() => setScheduling(true)}>Lesson</MenuItem>
+                  <MenuItem onSelect={later(() => setScheduling(true))}>Lesson</MenuItem>
                   <MenuItem onSelect={() => navigate('/app/students?new=1')}>Student</MenuItem>
-                  <MenuItem onSelect={() => navigate('/app/insights?tab=homework')}>Homework</MenuItem>
+                  <MenuItem onSelect={later(() => setGivingHomework(true))}>Homework</MenuItem>
                   <MenuItem onSelect={() => window.open('/try', '_blank', 'noopener')}>Quick board</MenuItem>
                 </MenuContent>
               </Menu>
@@ -95,6 +98,7 @@ export function AppShell() {
         <Outlet />
       </Shell>
       <ScheduleLessonDialog open={scheduling} onOpenChange={setScheduling} />
+      <HomeworkForDialog open={givingHomework} onOpenChange={setGivingHomework} />
     </AppToastProvider>
   )
 }

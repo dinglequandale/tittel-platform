@@ -1,7 +1,9 @@
 import { Router } from 'express'
+import express from 'express'
 import { newId } from '@tittel/shared'
 import { gradeResponse } from '@tittel/shared'
 import { attemptQuery, pool } from '../db.ts'
+import { checkUpload, storeFile, MAX_FILE_BYTES, type StoredFile } from './files.ts'
 
 export const attemptRouter = Router()
 
@@ -14,15 +16,22 @@ interface AttemptRow {
   assignment_id: string
   assignment_title: string | null
   student_name: string
+  org_id: string
+  /** The worksheet the student works from (paper homework), and the photos they hand in. */
+  materials: StoredFile[]
+  work_files: StoredFile[]
+  tutor_comment: string | null
 }
 
 async function loadAttempt(token: string): Promise<AttemptRow | undefined> {
   const rows = await attemptQuery<AttemptRow>(
     token,
     `select a.id, a.status, a.started_at, asg.time_limit_sec, asg.due_at, a.assignment_id,
-            asg.title as assignment_title, s.name as student_name
+            coalesce(asg.title, ps.title) as assignment_title, s.name as student_name, a.org_id,
+            asg.materials, a.work_files, a.tutor_comment
        from attempts a
        join assignments asg on asg.id = a.assignment_id
+       join problem_sets ps on ps.id = asg.set_id
        join students s on s.id = a.student_id
       where a.attempt_token = $1 and asg.archived_at is null`,
   )
@@ -103,9 +112,47 @@ attemptRouter.get('/:token', async (req, res) => {
     timeLimitSec: at.time_limit_sec,
     dueAt: at.due_at,
     remainingSec: remaining === null ? null : Math.max(0, Math.floor(remaining)),
+    materials: at.materials,
+    workFiles: at.work_files,
     problems,
     responses,
   })
+})
+
+// Photos of work done on paper: one image per request, kept with the attempt.
+// Allowed until the tutor has commented, so a forgotten page can still go in.
+attemptRouter.post('/:token/work', express.raw({ type: () => true, limit: MAX_FILE_BYTES + 1024 }), async (req, res) => {
+  const at = await loadAttempt(req.params.token)
+  if (!at) return res.status(404).json({ error: 'not found' })
+  const contentType = req.header('content-type') ?? ''
+  if (!contentType.startsWith('image/')) return res.status(415).json({ error: 'send a photo (PNG, JPEG, WebP)' })
+  const bad = checkUpload(contentType, req.body)
+  if (bad) return res.status(413).json({ error: bad })
+  if (at.work_files.length >= 20) return res.status(400).json({ error: 'up to 20 photos' })
+  const name = typeof req.query.name === 'string' && req.query.name.trim() ? req.query.name.trim() : 'work.jpg'
+  const file = await storeFile(at.org_id, name, contentType, req.body as Buffer)
+  const rows = await attemptQuery<{ work_files: StoredFile[] }>(
+    req.params.token,
+    `update attempts set work_files = work_files || $2::jsonb,
+                         status = case when status = 'pending' then 'active' else status end,
+                         started_at = coalesce(started_at, now())
+      where attempt_token = $1 returning work_files`,
+    [JSON.stringify([file])],
+  )
+  res.status(201).json({ workFiles: rows[0].work_files })
+})
+
+attemptRouter.delete('/:token/work/:fileToken', async (req, res) => {
+  const at = await loadAttempt(req.params.token)
+  if (!at) return res.status(404).json({ error: 'not found' })
+  const rows = await attemptQuery<{ work_files: StoredFile[] }>(
+    req.params.token,
+    `update attempts set work_files = coalesce((select jsonb_agg(f) from jsonb_array_elements(work_files) f
+                                                 where f->>'token' != $2), '[]')
+      where attempt_token = $1 returning work_files`,
+    [req.params.fileToken],
+  )
+  res.json({ workFiles: rows[0].work_files })
 })
 
 // Explicit start: flips pending -> active. Only the student clicking
@@ -185,14 +232,16 @@ attemptRouter.get('/:token/review', async (req, res) => {
     [at.assignment_id],
   )
   const { rows: responses } = await pool.query(
-    `select problem_id, answer, is_correct, marked_for_review, time_spent_ms
+    `select problem_id, answer, is_correct, marked_for_review, time_spent_ms, tutor_marked
        from responses where attempt_id = $1`,
     [at.id],
   )
   // frq problems are never auto-graded (gradeResponse returns null for
   // them) — excluding them from `total` keeps 100% achievable and honest
   // rather than silently counting ungraded work against the score.
-  const frqCount = problems.filter((p) => p.type === 'frq').length
+  // A free response counts once the tutor has marked it.
+  const marked = new Set(responses.filter((r) => r.is_correct !== null).map((r) => r.problem_id))
+  const frqCount = problems.filter((p) => p.type === 'frq' && !marked.has(p.id)).length
   res.json({
     studentName: at.student_name,
     assignmentTitle: at.assignment_title,
@@ -200,6 +249,9 @@ attemptRouter.get('/:token/review', async (req, res) => {
     score: responses.filter((r) => r.is_correct).length,
     total: problems.length - frqCount,
     frqCount,
+    materials: at.materials,
+    workFiles: at.work_files,
+    tutorComment: at.tutor_comment,
     problems,
     responses,
   })

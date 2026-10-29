@@ -76,6 +76,8 @@ interface SyncStatus {
   imported: number
   /** Event series in the window the tutor's filters left out. */
   filtered: number
+  /** Those series (up to 50), so the tutor can see them and count one in. */
+  left_out?: { uid: string; title: string; next: string }[]
   unmatched: UnmatchedSeries[]
 }
 
@@ -165,6 +167,7 @@ async function runSync(orgId: string, tutorEmail: string): Promise<SyncStatus> {
 type Existing = {
   id: string; calendar_uid: string; scheduled_at: Date; duration_min: number | null
   calendar_meeting_url: string | null; student_id: string | null; group_id: string | null; status: string
+  skipped: boolean
 }
 
 /**
@@ -203,7 +206,7 @@ async function applyFeed(orgId: string): Promise<SyncStatus> {
     ),
     orgQuery<Existing>(
       orgId,
-      `select id, calendar_uid, scheduled_at, duration_min, calendar_meeting_url, student_id, group_id, status
+      `select id, calendar_uid, scheduled_at, duration_min, calendar_meeting_url, student_id, group_id, status, skipped
          from sessions where org_id = $1 and calendar_uid is not null`,
     ),
     // Lessons scheduled in the app that a calendar event may turn out to be.
@@ -231,6 +234,7 @@ async function applyFeed(orgId: string): Promise<SyncStatus> {
   const seen: string[] = []
   const unmatched = new Map<string, UnmatchedSeries>()
   const filteredOut = new Set<string>()
+  const leftOut: { uid: string; title: string; next: string }[] = []
   const adopted = new Set<string>()
   const updates: unknown[][] = []
   const inserts: { id: string; key: string; at: string; dur: number; url: string | null; sid: string | null; gid: string | null }[] = []
@@ -240,6 +244,9 @@ async function applyFeed(orgId: string): Promise<SyncStatus> {
     // A series the tutor linked by hand always counts; everything else has
     // to look like a lesson first (Settings → Google Calendar).
     if (!ctx.links.has(occ.uid) && !passesFilters(occ, filters, tutorEmails)) {
+      if (!filteredOut.has(occ.uid) && !occ.cancelled && occ.end.getTime() > Date.now() && leftOut.length < 50) {
+        leftOut.push({ uid: occ.uid, title: occ.title, next: occ.start.toISOString() })
+      }
       filteredOut.add(occ.uid)
       continue
     }
@@ -265,7 +272,8 @@ async function applyFeed(orgId: string): Promise<SyncStatus> {
     if (row) {
       // The calendar owns time, length, who and cancelled (a live lesson
       // stays live); plan, homework, notes and the meeting override are the tutor's.
-      const status = occ.cancelled ? 'cancelled' : row.status === 'live' ? 'live' : 'scheduled'
+      // A week the tutor skipped in the app stays cancelled.
+      const status = occ.cancelled || row.skipped ? 'cancelled' : row.status === 'live' ? 'live' : 'scheduled'
       if (new Date(row.scheduled_at).getTime() !== occ.start.getTime() || row.duration_min !== dur
         || row.calendar_meeting_url !== occ.meetingUrl || row.student_id !== studentId
         || row.group_id !== groupId || row.status !== status) {
@@ -333,7 +341,7 @@ async function applyFeed(orgId: string): Promise<SyncStatus> {
     [to.toISOString(), seen],
   )
 
-  return { at, ok: true, imported, filtered: filteredOut.size, unmatched: [...unmatched.values()] }
+  return { at, ok: true, imported, filtered: filteredOut.size, left_out: leftOut, unmatched: [...unmatched.values()] }
 }
 
 function maskFeed(raw: string): string {
@@ -406,11 +414,13 @@ calendarRouter.post('/calendar/sync', async (req, res) => {
 calendarRouter.post('/calendar/links', async (req, res) => {
   const orgId = req.auth!.orgId
   const { uid, ignore, newStudent, newGroup } = req.body ?? {}
+  // `include`: count a series the filters left out; it then goes through the inbox like any other.
+  const include = !!req.body?.include && !ignore
   let studentId: string | null = typeof req.body?.studentId === 'string' ? req.body.studentId : null
   let groupId: string | null = typeof req.body?.groupId === 'string' ? req.body.groupId : null
   if (typeof uid !== 'string' || !uid) return res.status(400).json({ error: 'uid is required' })
 
-  if (!ignore) {
+  if (!ignore && !include) {
     const targets = [studentId, groupId, newStudent, newGroup].filter(Boolean).length
     if (targets !== 1) return res.status(400).json({ error: 'say who it is with: one student, group, new student or new group' })
   }
@@ -420,7 +430,7 @@ calendarRouter.post('/calendar/links', async (req, res) => {
   const emailSets = new Map<string, StudentEmail[]>()
   let memberIds: string[] = []
 
-  if (!ignore) {
+  if (!ignore && !include) {
     // Check everything before creating anyone, so a bad answer leaves nothing behind.
     const newIds: unknown[] = Array.isArray(newGroup?.studentIds) ? newGroup.studentIds : []
     for (const e of rawEmails) {

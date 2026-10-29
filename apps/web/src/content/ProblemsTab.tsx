@@ -9,11 +9,19 @@ import { RichText } from '../lib/Math.tsx'
 import type { Problem, Tag, Choice, FigureDraft } from './types.ts'
 
 const TYPES: Problem['type'][] = ['mc', 'multi', 'numeric', 'text', 'frq']
+const TYPE_LABEL: Record<Problem['type'], string> = {
+  mc: 'Multiple choice',
+  multi: 'Pick all that apply',
+  numeric: 'Number',
+  text: 'Short answer',
+  frq: 'Written answer (you mark it)',
+}
 
-function blankDraft(): Draft {
+// A new problem keeps the type of the last one: tutors make several alike.
+function blankDraft(type: Problem['type'] = 'mc'): Draft {
   return {
     id: null,
-    type: 'mc',
+    type,
     stemLatex: '',
     choices: [{ id: 'A', content: '' }, { id: 'B', content: '' }],
     correctText: '',
@@ -87,7 +95,7 @@ export function ProblemsTab() {
 
   function newProblem() {
     setSelectedId(null)
-    setDraft(blankDraft())
+    setDraft((d) => blankDraft(d.type))
     setError('')
   }
 
@@ -209,7 +217,7 @@ export function ProblemsTab() {
             <Select value={draft.type} onValueChange={(v) => setDraft((d) => ({ ...d, type: v as Problem['type'] }))}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                {TYPES.map((t) => <SelectItem key={t} value={t}>{TYPE_LABEL[t]}</SelectItem>)}
               </SelectContent>
             </Select>
           </Field>
@@ -221,7 +229,7 @@ export function ProblemsTab() {
           </Field>
         </div>
 
-        <Field label="Stem (LaTeX / $math$ / ![figId])">
+        <Field label="Question" hint="Math between $ signs, e.g. $x^2+1$.">
           <textarea className="input" rows={3} value={draft.stemLatex}
             onChange={(e) => setDraft((d) => ({ ...d, stemLatex: e.target.value }))} />
         </Field>
@@ -251,23 +259,29 @@ export function ProblemsTab() {
           </Field>
         )}
 
-        <Field label={draft.type === 'mc' ? 'Correct choice id' : draft.type === 'multi' ? 'Correct choice ids (comma-separated)' : 'Correct answer'}>
-          <Input value={draft.correctText} onChange={(e) => setDraft((d) => ({ ...d, correctText: e.target.value }))} />
-        </Field>
-        <Field label="Accepted equivalent answers (comma-separated, optional)">
-          <Input value={draft.acceptText} onChange={(e) => setDraft((d) => ({ ...d, acceptText: e.target.value }))} />
-        </Field>
+        {draft.type !== 'frq' && (
+          <>
+            <Field label={draft.type === 'mc' ? 'Correct letter' : draft.type === 'multi' ? 'Correct letters (comma-separated)' : 'Correct answer'}>
+              <Input value={draft.correctText} onChange={(e) => setDraft((d) => ({ ...d, correctText: e.target.value }))} />
+            </Field>
+            <Field label="Also accept (comma-separated, optional)" hint="Other ways of writing the same answer. “x = 4” already counts for 4.">
+              <Input value={draft.acceptText} onChange={(e) => setDraft((d) => ({ ...d, acceptText: e.target.value }))} />
+            </Field>
+          </>
+        )}
         <Field label="Explanation (optional)">
           <textarea className="input" rows={2} value={draft.explanationLatex}
             onChange={(e) => setDraft((d) => ({ ...d, explanationLatex: e.target.value }))} />
         </Field>
 
-        <Field label="Figures (TikZ, optional)">
+        <details className="advanced">
+        <summary>Diagrams (drawn with TikZ code)</summary>
+        <Field label="Diagrams">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {draft.figures.map((f, i) => (
               <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', border: '1px solid var(--line)', borderRadius: 'var(--radius-control)', padding: '0.5rem' }}>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <Input placeholder="figure id (referenced as ![id])" value={f.id}
+                  <Input placeholder="name, put it in the question as ![name]" value={f.id}
                     onChange={(e) => setDraft((d) => {
                       const figures = [...d.figures]; figures[i] = { ...figures[i], id: e.target.value, svg: undefined }
                       return { ...d, figures }
@@ -291,10 +305,11 @@ export function ProblemsTab() {
               </div>
             ))}
             <Button variant="ghost" onClick={() => setDraft((d) => ({ ...d, figures: [...d.figures, { id: `fig${d.figures.length + 1}`, latex: '' }] }))}>
-              Add figure
+              Add diagram
             </Button>
           </div>
         </Field>
+        </details>
 
         <Field label="Tags">
           <div className="tag-pill-row">

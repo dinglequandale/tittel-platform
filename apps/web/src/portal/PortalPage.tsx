@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { BRAND_NAME } from '@tittel/shared'
 import { Button } from '@tittel/ui'
 import { apiFetch, linkErrorMessage } from '../lib/api.ts'
-import { dayLabel, timeLabel, isJoinable, lessonEnd } from '../lessons/lessons.ts'
+import { dayLabel, timeLabel, isJoinable, lessonEnd, dueLabel } from '../lessons/lessons.ts'
 
 interface Assignment {
   assignment_id: string
@@ -15,6 +15,7 @@ interface Assignment {
   status: 'pending' | 'active' | 'submitted' | 'expired'
   total: number
   score: number
+  commented: boolean
 }
 
 interface PortalLesson {
@@ -79,7 +80,7 @@ export function PortalPage() {
   return (
     <main className="page">
       <div className="page-brand">{BRAND_NAME}</div>
-      <h1 style={{ fontFamily: 'var(--font-display)' }}>Hi, {studentName}</h1>
+      <h1 style={{ fontFamily: 'var(--font-display)' }}>Hi, {studentName.split(' ')[0]}</h1>
 
       {lessons.length > 0 && (
         <section className="portal-section">
@@ -113,9 +114,10 @@ export function PortalPage() {
                 <div className="muted">
                   {a.status === 'pending' && 'Not started'}
                   {a.status === 'active' && 'In progress'}
-                  {(a.status === 'submitted' || a.status === 'expired') && `Score: ${a.score} / ${a.total}`}
+                  {(a.status === 'submitted' || a.status === 'expired') && (a.total ? `Score: ${a.score} / ${a.total}` : 'Handed in')}
                   {a.status === 'expired' && ' · time expired'}
-                  {a.due_at && ` · due ${new Date(a.due_at).toLocaleDateString()}`}
+                  {a.due_at && a.status !== 'submitted' && ` · due ${dueLabel(a.due_at)}`}
+                  {a.commented && ' · your tutor left a comment'}
                 </div>
                 {a.attempt_token && (
                   <Link to={a.status === 'submitted' || a.status === 'expired' ? `/review/${a.attempt_token}` : `/hw/${a.attempt_token}`}>

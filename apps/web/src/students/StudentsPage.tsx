@@ -48,7 +48,9 @@ export function StudentsPage() {
   const [editing, setEditing] = useState<Student | null>(null)
   const [archiveTarget, setArchiveTarget] = useState<Student | null>(null)
   const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null)
-  const [filter, setFilter] = useState<'all' | 'unscheduled'>('all')
+  const [filter, setFilter] = useState<'all' | 'unscheduled' | 'archived'>('all')
+  const [archived, setArchived] = useState<{ id: string; name: string }[] | null>(null)
+  const [removeMemberTarget, setRemoveMemberTarget] = useState<{ group: Group; member: { id: string; name: string } } | null>(null)
   const [scheduleFor, setScheduleFor] = useState<string | null>(null)
   const [params, setParams] = useSearchParams()
 
@@ -125,9 +127,27 @@ export function StudentsPage() {
     await reload()
   }
 
+  async function loadArchived() {
+    try {
+      setArchived((await apiFetch('/api/tutor/students/archived')).students)
+    } catch (err) {
+      toast((err as Error).message)
+    }
+  }
+
+  async function restoreStudent(id: string) {
+    try {
+      await apiFetch(`/api/tutor/students/${id}/restore`, { method: 'POST', body: '{}' })
+      await Promise.all([reload(), loadArchived()])
+    } catch (err) {
+      toast((err as Error).message)
+    }
+  }
+
   async function archiveStudent(id: string) {
     try {
       await apiFetch(`/api/tutor/students/${id}`, { method: 'DELETE' })
+      setArchived(null)
       await reload()
     } catch (err) {
       toast((err as Error).message)
@@ -179,6 +199,9 @@ export function StudentsPage() {
           <button className="filter-pill" data-active={filter === 'unscheduled'} onClick={() => setFilter('unscheduled')}>
             No lesson scheduled ({unscheduled.length})
           </button>
+          <button className="filter-pill" data-active={filter === 'archived'} onClick={() => { setFilter('archived'); void loadArchived() }}>
+            Archived
+          </button>
         </div>
         <div className="toolbar-actions">
           <NewGroupDialog students={students ?? []} onCreate={createGroup} />
@@ -189,7 +212,20 @@ export function StudentsPage() {
 
       {error && <p className="field-error">{error}</p>}
 
-      {students === null ? (
+      {filter === 'archived' ? (
+        archived === null ? <PageLoading /> : archived.length === 0 ? (
+          <p className="muted">No archived students.</p>
+        ) : (
+          <div className="surface-card card-pad-x">
+            {archived.map((s) => (
+              <div key={s.id} className="list-row">
+                <div className="list-row-title">{s.name}</div>
+                <Button variant="ghost" onClick={() => restoreStudent(s.id)}>Restore</Button>
+              </div>
+            ))}
+          </div>
+        )
+      ) : students === null ? (
         <PageLoading />
       ) : students.length === 0 ? (
         <EmptyState title="No students yet" description="Add your first student to get started." />
@@ -202,7 +238,7 @@ export function StudentsPage() {
             <div key={s.id} className="stu-row">
               <div className="data-row-name">
                 <span className="avatar-sq" data-c={paletteFor(s.id)}>{s.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}</span>
-                <span>{s.name}</span>
+                <Link to={`/app/students/${s.id}`} className="card-link">{s.name}</Link>
               </div>
               <span style={{ color: 'var(--ink-2)' }}>{groupOf.get(s.id) || <span className="muted">—</span>}</span>
               <CopyButton text={portalUrl(s.portal_token)} />
@@ -256,7 +292,7 @@ export function StudentsPage() {
                     {m.name}{' '}
                     <button
                       className="badge-x"
-                      onClick={() => removeMember(g.id, m.id)}
+                      onClick={() => setRemoveMemberTarget({ group: g, member: m })}
                       aria-label={`Remove ${m.name}`}
                       style={{ marginLeft: 4 }}
                     >
@@ -294,10 +330,19 @@ export function StudentsPage() {
         defaultWho={scheduleFor ?? undefined} />
 
       <ConfirmDialog
+        open={!!removeMemberTarget}
+        onOpenChange={(open) => !open && setRemoveMemberTarget(null)}
+        title={`Take ${removeMemberTarget?.member.name} out of ${removeMemberTarget?.group.name}?`}
+        description="They stay in your students; they just won't be in this group's lessons."
+        confirmLabel="Take out"
+        onConfirm={() => removeMemberTarget && removeMember(removeMemberTarget.group.id, removeMemberTarget.member.id)}
+      />
+
+      <ConfirmDialog
         open={!!archiveTarget}
         onOpenChange={(open) => !open && setArchiveTarget(null)}
         title={`Archive ${archiveTarget?.name}?`}
-        description="Students lose access to their portal link once archived."
+        description="Their portal link stops working. You can restore them from Archived."
         confirmLabel="Archive"
         onConfirm={() => archiveTarget && archiveStudent(archiveTarget.id)}
       />

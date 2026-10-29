@@ -37,6 +37,13 @@ export interface Lesson {
   meeting_url: string | null
   /** Imported from Google Calendar: its time and status are edited there. */
   from_calendar: boolean
+  /** A calendar lesson skipped in the app for this week. */
+  skipped: boolean
+  /** Where to move or cancel a calendar lesson (lesson page only). */
+  calendar_event_url?: string | null
+  /** The last earlier lesson's notes with the same student or group. */
+  prev_notes: string | null
+  prev_at: string | null
   series: { weekday: number; startTime: string; tz: string } | null
   homework: LessonHomework[]
   last_homework: LastHomework | null
@@ -80,6 +87,17 @@ export function seriesLabel(s: NonNullable<Lesson['series']>, scheduledAt: strin
 export function scoreTone(score: number, total: number): 'correct' | 'warning' | 'incorrect' {
   const pct = total ? score / total : 0
   return pct >= 0.8 ? 'correct' : pct >= 0.6 ? 'warning' : 'incorrect'
+}
+
+/** "today", "tomorrow", or "Wed, Nov 4": never a bare weekday that could mean this week or next. */
+export function dueLabel(iso: string): string {
+  const day = dayLabel(iso)
+  return day === 'Today' || day === 'Tomorrow' ? day.toLowerCase() : shortDate(iso)
+}
+
+/** A lesson can be started (or its board reopened) until three hours after it ends: lessons run late. */
+export function canOpenBoard(l: Pick<Lesson, 'scheduled_at' | 'duration_min' | 'status'>, now = Date.now()): boolean {
+  return l.status !== 'cancelled' && now < lessonEnd(l).getTime() + 3 * 3600_000
 }
 
 /** Start opens from 15 minutes before until the lesson ends. */

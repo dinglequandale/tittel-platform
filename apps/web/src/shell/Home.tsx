@@ -8,7 +8,7 @@ import { useToast } from '../lib/toast.tsx'
 import { ScheduleLessonDialog } from '../lessons/ScheduleLessonDialog.tsx'
 import { CalendarInbox, type CalendarStatus } from '../lessons/CalendarInbox.tsx'
 import {
-  type Lesson, lessonWho, lessonEnd, timeLabel, dayLabel, isJoinable, startLesson, scoreTone,
+  type Lesson, lessonWho, lessonEnd, timeLabel, dayLabel, isJoinable, startLesson, scoreTone, canOpenBoard, dueLabel,
 } from '../lessons/lessons.ts'
 
 interface Returned {
@@ -64,12 +64,13 @@ export function Home() {
       .catch(() => setLessons([]))
       .finally(() => apiFetch('/api/tutor/calendar').then(setCalendar).catch(() => {}))
     apiFetch('/api/tutor/attention').then((r) => { setReturned(r.returned); setOverdue(r.overdue) }).catch(() => {})
+    // Re-counted on every load: answering the calendar inbox can add students.
+    apiFetch('/api/tutor/students').then((r) => setStudentCount(r.students.length)).catch(() => setStudentCount(0))
+    apiFetch('/api/tutor/assignments').then((r) => setHomeworkCount(r.assignments.length)).catch(() => setHomeworkCount(0))
   }
 
   useEffect(() => {
     load()
-    apiFetch('/api/tutor/students').then((r) => setStudentCount(r.students.length)).catch(() => setStudentCount(0))
-    apiFetch('/api/tutor/assignments').then((r) => setHomeworkCount(r.assignments.length)).catch(() => setHomeworkCount(0))
     // Start buttons light up 15 minutes before a lesson; re-check each minute.
     const t = window.setInterval(() => setTick((n) => n + 1), 60_000)
     return () => window.clearInterval(t)
@@ -233,7 +234,7 @@ function PrepChips({ lesson }: { lesson: Lesson }) {
       </span>
       <span className="chip" data-done={!!hw}>
         {hw
-          ? <><Check size={12} strokeWidth={3} /> Homework{hw.dueAt ? ` · due ${new Date(hw.dueAt).toLocaleDateString(undefined, { weekday: 'short' })}` : ''}</>
+          ? <><Check size={12} strokeWidth={3} /> Homework{hw.dueAt ? ` · due ${dueLabel(hw.dueAt)}` : ''}</>
           : <><Plus size={12} strokeWidth={2.5} /> Homework</>}
       </span>
       {lesson.last_homework && (
@@ -248,6 +249,7 @@ function PrepChips({ lesson }: { lesson: Lesson }) {
 function LessonCard({ lesson, onStart, now }: { lesson: Lesson; onStart: (l: Lesson) => void; now: number }) {
   const over = lessonEnd(lesson).getTime() <= now
   const live = isJoinable(lesson, now)
+  const started = lesson.status === 'live' || !!lesson.board_id
   return (
     <div className="surface-card lesson-card" data-over={over}>
       <Link to={`/app/lessons/${lesson.id}`} className="lesson-card-main">
@@ -260,9 +262,10 @@ function LessonCard({ lesson, onStart, now }: { lesson: Lesson; onStart: (l: Les
         </div>
         <PrepChips lesson={lesson} />
       </Link>
-      {!over && (
+      {/* Lessons run late: Start (or reopening the board) stays until a while after the end. */}
+      {canOpenBoard(lesson, now) && (
         <Button variant={live ? 'primary' : 'secondary'} onClick={() => onStart(lesson)}>
-          <Play size={14} strokeWidth={2.2} /> Start
+          <Play size={14} strokeWidth={2.2} /> {started ? 'Open board' : over ? 'Start anyway' : 'Start'}
         </Button>
       )}
     </div>

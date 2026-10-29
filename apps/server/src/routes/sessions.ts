@@ -4,6 +4,8 @@ import { orgQuery } from '../db.ts'
 import { createAssignment } from './assignments.ts'
 import { getOrCreateStudentBoard, getOrCreateGroupBoard } from './students.ts'
 import { syncCalendarBriefly } from './calendar.ts'
+import { ownFiles } from './files.ts'
+import { googleEventUrl, calendarOwnerOf } from '../lib/calendar.ts'
 
 // Lessons (FLOW-SPEC §1–§4). Vocabulary: a UI "Lesson" is a `sessions` row —
 // one scheduled meeting with a student or a group. A UI "Plan" is a `lessons`
@@ -54,6 +56,8 @@ const LESSON_SELECT = `
                             o.settings->>'defaultMeetingUrl')
          end as meeting_url,
          se.calendar_uid is not null as from_calendar,
+         se.skipped,
+         prev.notes as prev_notes, prev.scheduled_at as prev_at,
          case when ls.id is not null and ls.archived_at is null
               then json_build_object('weekday', ls.weekday, 'startTime', to_char(ls.start_time, 'HH24:MI'), 'tz', ls.tz)
          end as series,
@@ -80,7 +84,7 @@ const LESSON_SELECT = `
                'doneAt', coalesce(at.submitted_at, at.started_at),
                'score', (select count(*)::int from responses r where r.attempt_id = at.id and r.is_correct),
                'total', (select count(*)::int from assignment_problems ap join problems p on p.id = ap.problem_id
-                          where ap.assignment_id = a.id and p.type != 'frq'),
+                          where ap.assignment_id = a.id and (p.type != 'frq' or exists (select 1 from responses r where r.attempt_id = at.id and r.problem_id = p.id and r.is_correct is not null))),
                'attemptToken', at.attempt_token
              ) as last_homework
         from attempts at
@@ -91,7 +95,16 @@ const LESSON_SELECT = `
          and coalesce(at.submitted_at, at.started_at) < coalesce(se.scheduled_at, now())
        order by coalesce(at.submitted_at, at.started_at) desc
        limit 1
-    ) lh on true`
+    ) lh on true
+    left join lateral (
+      -- The last lesson with the same student or group that has notes: what
+      -- was covered and how it went, shown when preparing this one.
+      select p.notes, p.scheduled_at from sessions p
+       where p.org_id = se.org_id and p.id != se.id and p.scheduled_at < se.scheduled_at
+         and p.notes is not null and p.notes != ''
+         and ((se.student_id is not null and p.student_id = se.student_id) or (se.group_id is not null and p.group_id = se.group_id))
+       order by p.scheduled_at desc limit 1
+    ) prev on true`
 
 function validTz(tz: unknown): tz is string {
   if (typeof tz !== 'string' || !tz) return false
@@ -185,7 +198,16 @@ sessionsRouter.get('/sessions/:id', async (req, res) => {
   )
   if (!lesson) return res.status(404).json({ error: 'not found' })
   const nextLessonAt = await nextLessonAfter(orgId, req.params.id, lesson)
-  res.json({ lesson: { ...lesson, next_lesson_at: nextLessonAt } })
+  // Calendar lessons link to their event, to move or cancel it in Google.
+  // The feed address is secret, so only the owner part leaves the server.
+  const [cal] = await orgQuery<{ calendar_uid: string | null; ics_url: string | null }>(
+    orgId,
+    `select se.calendar_uid, o.settings->>'icsUrl' as ics_url
+       from sessions se join orgs o on o.id = se.org_id where se.org_id = $1 and se.id = $2`,
+    [req.params.id],
+  )
+  const calendarEventUrl = cal?.calendar_uid && cal.ics_url ? googleEventUrl(cal.calendar_uid, calendarOwnerOf(cal.ics_url)) : null
+  res.json({ lesson: { ...lesson, next_lesson_at: nextLessonAt, calendar_event_url: calendarEventUrl } })
 })
 
 // The next lesson with the same student or group: homework's default due date.
@@ -207,7 +229,7 @@ async function nextLessonAfter(
 
 sessionsRouter.patch('/sessions/:id', async (req, res) => {
   const orgId = req.auth!.orgId
-  const { meetingUrl, planId, notes, status } = req.body ?? {}
+  const { meetingUrl, planId, notes, status, skipped } = req.body ?? {}
   const scheduledAt = req.body?.scheduledAt === undefined ? undefined : parseDate(req.body.scheduledAt)
   if (scheduledAt === null) return res.status(400).json({ error: 'scheduledAt must be a date' })
   const durationMin = req.body?.durationMin === undefined ? undefined : Math.round(Number(req.body.durationMin))
@@ -222,6 +244,19 @@ sessionsRouter.patch('/sessions/:id', async (req, res) => {
     // would be undone by the next sync.
     const [cal] = await orgQuery(orgId, `select 1 from sessions where org_id = $1 and id = $2 and calendar_uid is not null`, [req.params.id])
     if (cal) return res.status(409).json({ error: 'This lesson comes from your Google Calendar. Move or cancel it there.' })
+  }
+  if (skipped !== undefined) {
+    // Skip (or un-skip) one week of a calendar lesson without editing the
+    // calendar; the sync leaves it cancelled while skipped.
+    if (typeof skipped !== 'boolean') return res.status(400).json({ error: 'skipped must be true or false' })
+    const rows = await orgQuery(
+      orgId,
+      `update sessions set skipped = $3, status = case when $3 then 'cancelled' else 'scheduled' end
+        where org_id = $1 and id = $2 and calendar_uid is not null returning id`,
+      [req.params.id, skipped],
+    )
+    if (!rows[0]) return res.status(404).json({ error: 'only calendar lessons are skipped; cancel this one instead' })
+    return res.json({ ok: true })
   }
   if (typeof planId === 'string') {
     const [plan] = await orgQuery(orgId, `select id from lessons where org_id = $1 and id = $2 and archived_at is null`, [planId])
@@ -318,7 +353,31 @@ sessionsRouter.get('/sessions/:id/plan', async (req, res) => {
 // of the next lesson unless the tutor says otherwise (dueAt: null = no date).
 sessionsRouter.post('/sessions/:id/homework', async (req, res) => {
   const orgId = req.auth!.orgId
-  const { setId, timeLimitSec } = req.body ?? {}
+  const { timeLimitSec, paper } = req.body ?? {}
+  let setId: unknown = req.body?.setId
+  const materials = await ownFiles(orgId, req.body?.materials)
+  if (paper) {
+    // Paper homework: the student works from the uploaded worksheet and
+    // hands in photos. It's one free-response question the tutor marks,
+    // kept out of the library (archived) since it only makes sense here.
+    if (!materials.length) return res.status(400).json({ error: 'attach the worksheet' })
+    const title = typeof paper.title === 'string' && paper.title.trim() ? paper.title.trim().slice(0, 200) : materials[0].name
+    const problemId = newId()
+    setId = newId()
+    await orgQuery(
+      orgId,
+      `insert into problems (id, org_id, type, stem_latex, choices, correct, accept, source, archived_at)
+       values ($2, $1, 'frq', $3, '[]', 'null', '[]', 'paper', now())`,
+      [problemId, 'Do the worksheet on paper, then add photos of your work below.'],
+    )
+    await orgQuery(orgId, `insert into problem_sets (id, org_id, title, archived_at) values ($2, $1, $3, now())`, [setId, title])
+    await orgQuery(
+      orgId,
+      `insert into set_problems (set_id, problem_id, ordinal)
+       select $2, p.id, 0 from problems p where p.org_id = $1 and p.id = $3`,
+      [setId, problemId],
+    )
+  }
   if (typeof setId !== 'string') return res.status(400).json({ error: 'setId is required' })
   const [lesson] = await orgQuery<{ scheduled_at: string; student_id: string | null; group_id: string | null }>(
     orgId,
@@ -354,6 +413,7 @@ sessionsRouter.post('/sessions/:id/homework', async (req, res) => {
     dueAt,
     studentIds: students.map((s) => s.id),
     sessionId: req.params.id,
+    materials,
   })
   if ('error' in result) return res.status(result.status).json({ error: result.error })
   res.status(201).json({ ...result, dueAt })
@@ -374,7 +434,7 @@ sessionsRouter.get('/attention', async (req, res) => {
             coalesce(a.title, ps.title) as title, coalesce(at.submitted_at, at.started_at) as done_at,
             (select count(*)::int from responses r where r.attempt_id = at.id and r.is_correct) as score,
             (select count(*)::int from assignment_problems ap join problems p on p.id = ap.problem_id
-              where ap.assignment_id = a.id and p.type != 'frq') as total,
+              where ap.assignment_id = a.id and (p.type != 'frq' or exists (select 1 from responses r where r.attempt_id = at.id and r.problem_id = p.id and r.is_correct is not null))) as total,
             ${nextLesson} as next_lesson_id
        from attempts at
        join assignments a on a.id = at.assignment_id

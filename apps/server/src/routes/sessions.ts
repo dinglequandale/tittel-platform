@@ -5,7 +5,7 @@ import { createAssignment } from './assignments.ts'
 import { getOrCreateStudentBoard, getOrCreateGroupBoard } from './students.ts'
 import { syncCalendarBriefly } from './calendar.ts'
 import { ownFiles } from './files.ts'
-import { googleEventUrl, calendarOwnerOf } from '../lib/calendar.ts'
+import { googleEventUrl, calendarOwnerOf, providerOf } from '../lib/calendar.ts'
 
 // Lessons (FLOW-SPEC §1–§4). Vocabulary: a UI "Lesson" is a `sessions` row —
 // one scheduled meeting with a student or a group. A UI "Plan" is a `lessons`
@@ -198,16 +198,19 @@ sessionsRouter.get('/sessions/:id', async (req, res) => {
   )
   if (!lesson) return res.status(404).json({ error: 'not found' })
   const nextLessonAt = await nextLessonAfter(orgId, req.params.id, lesson)
-  // Calendar lessons link to their event, to move or cancel it in Google.
-  // The feed address is secret, so only the owner part leaves the server.
+  // Calendar lessons link to their event, to move or cancel it in Google
+  // (other calendars have no such link: the page says to do it there). The
+  // feed address is secret, so only the owner part and the provider leave the server.
   const [cal] = await orgQuery<{ calendar_uid: string | null; ics_url: string | null }>(
     orgId,
     `select se.calendar_uid, o.settings->>'icsUrl' as ics_url
        from sessions se join orgs o on o.id = se.org_id where se.org_id = $1 and se.id = $2`,
     [req.params.id],
   )
-  const calendarEventUrl = cal?.calendar_uid && cal.ics_url ? googleEventUrl(cal.calendar_uid, calendarOwnerOf(cal.ics_url)) : null
-  res.json({ lesson: { ...lesson, next_lesson_at: nextLessonAt, calendar_event_url: calendarEventUrl } })
+  const fromFeed = cal?.calendar_uid && cal.ics_url ? { uid: cal.calendar_uid, url: cal.ics_url } : null
+  const calendarProvider = fromFeed ? providerOf(new URL(fromFeed.url).hostname) : null
+  const calendarEventUrl = fromFeed && calendarProvider === 'google' ? googleEventUrl(fromFeed.uid, calendarOwnerOf(fromFeed.url)) : null
+  res.json({ lesson: { ...lesson, next_lesson_at: nextLessonAt, calendar_event_url: calendarEventUrl, calendar_provider: calendarProvider } })
 })
 
 // The next lesson with the same student or group: homework's default due date.
@@ -243,7 +246,7 @@ sessionsRouter.patch('/sessions/:id', async (req, res) => {
     // The calendar owns an imported lesson's time and status; an edit here
     // would be undone by the next sync.
     const [cal] = await orgQuery(orgId, `select 1 from sessions where org_id = $1 and id = $2 and calendar_uid is not null`, [req.params.id])
-    if (cal) return res.status(409).json({ error: 'This lesson comes from your Google Calendar. Move or cancel it there.' })
+    if (cal) return res.status(409).json({ error: 'This lesson comes from your calendar. Move or cancel it there.' })
   }
   if (skipped !== undefined) {
     // Skip (or un-skip) one week of a calendar lesson without editing the

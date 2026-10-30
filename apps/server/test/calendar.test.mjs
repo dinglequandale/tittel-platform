@@ -1,8 +1,12 @@
 // Calendar import (lib/calendar.ts): recurrence expansion and matching
-// against a synthetic Google-style feed. Run: node --import tsx test/calendar.test.mjs
+// against a synthetic Google-style feed, plus Outlook- and iCloud-style
+// fixtures (test/fixtures). Run: node --import tsx test/calendar.test.mjs
+import { readFileSync } from 'node:fs'
 import {
   expandFeed, matchOccurrence, passesFilters, normalizeFilters, calendarOwnerOf, DEFAULT_FILTERS,
+  providerOf, feedListsAttendees, lessonRules, feedOwnerOf, googleEventUrl,
 } from '../src/lib/calendar.ts'
+import { validFeedUrl } from '../src/routes/calendar.ts'
 
 let failures = 0
 function check(name, ok, got) {
@@ -175,6 +179,64 @@ check('normalizeFilters fills defaults and drops junk', JSON.stringify(normalize
 check('calendar owner from the secret address', calendarOwnerOf('https://calendar.google.com/calendar/ical/konrad.cal%40gmail.com/private-abc123/basic.ics') === 'konrad.cal@gmail.com')
 check('…including an address that differs from the sign-in one', matchOccurrence({ uid: 'u', title: 'x', attendees: ['konrad.cal@gmail.com'] },
   { ...ctx(), tutorEmails: me, students: [...students, { id: 'me2', name: 'Me', emails: ['konrad.cal@gmail.com'], parentEmails: [] }] }).kind === 'none')
+
+// Which hosts the server will fetch, and whose calendar each is.
+const host = (u) => validFeedUrl(u)?.hostname ?? null
+check('Google secret address accepted', providerOf(host('https://calendar.google.com/calendar/ical/a%40b.com/private-x/basic.ics') ?? '') === 'google')
+check('Outlook / Microsoft 365 hosts accepted', ['https://outlook.office365.com/owa/calendar/x/y/calendar.ics',
+  'https://outlook.office.com/owa/calendar/x/y/calendar.ics', 'https://OUTLOOK.LIVE.COM/owa/calendar/x/y/calendar.ics']
+  .every((u) => providerOf(host(u) ?? '') === 'outlook'))
+check('iCloud webcal:// is rewritten and accepted', providerOf(host('webcal://p23-caldav.icloud.com/published/2/abc') ?? '') === 'icloud')
+const rejected = ['https://icloud.com.evil.example/published/2/abc', 'https://evilicloud.com/x.ics', 'https://icloud.com/x.ics',
+  'https://p23-caldav.icloud.com@evil.example/x.ics', 'https://outlook.office365.com.evil.example/x.ics',
+  'https://evil.example/calendar.google.com/x.ics', 'https://localhost/x.ics', 'https://169.254.169.254/x.ics', 'file:///etc/passwd']
+check('look-alike and internal hosts rejected (suffix check, not substring)', rejected.every((u) => validFeedUrl(u) === null),
+  rejected.filter((u) => validFeedUrl(u) !== null))
+check('no owner in an Outlook or iCloud address', calendarOwnerOf('https://outlook.office365.com/owa/calendar/abc@pricetutoring.co.uk/def/calendar.ics') === null
+  && calendarOwnerOf('https://p23-caldav.icloud.com/published/2/abc') === null)
+
+// An Outlook published feed with no ATTENDEE lines (UK tutor, Teams and Zoom lessons).
+const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')
+const outlookText = fixture('outlook-no-attendees.ics')
+const outlook = expandFeed(outlookText, from, to)
+const byTitle = (list, t) => list.filter((o) => o.title === t)
+const oliver = byTitle(outlook, 'Oliver - GCSE Maths')
+check('outlook: Windows time zone, weekly series (4 Thursdays in Nov)', oliver.length === 4, oliver.map((o) => o.start.toISOString()))
+check('outlook: 5pm London after BST ends is 17:00Z', oliver[0]?.start.toISOString() === '2026-11-05T17:00:00.000Z', oliver[0]?.start)
+check('outlook: Teams link from a folded DESCRIPTION', !!oliver[0]?.meetingUrl?.startsWith('https://teams.microsoft.com/l/meetup-join/19%3ameeting_oliver'), oliver[0]?.meetingUrl)
+check('outlook: no attendees listed anywhere', !feedListsAttendees(outlookText) && outlook.every((o) => o.attendees.length === 0))
+check('google-style feed does list attendees', feedListsAttendees(feed))
+const hannah = 'hannah.price@pricetutoring.co.uk'
+check('outlook: owner is the organizer of most series', feedOwnerOf(outlook, 'hannah@gmail.com') === hannah, feedOwnerOf(outlook, 'hannah@gmail.com'))
+check('...not needed when the sign-in address organizes', feedOwnerOf(outlook, 'Hannah.Price@pricetutoring.co.uk') === null)
+check('...and none when no one clearly leads', feedOwnerOf([{ uid: 'a', organizer: 'x@e.com' }, { uid: 'b', organizer: 'y@e.com' }], 'me@e.com') === null)
+const hannahs = new Set(['hannah@gmail.com', hannah])
+const lessonsIn = (list, rules) => [...new Set(list.filter((o) => passesFilters(o, rules, hannahs)).map((o) => o.title))].sort()
+check('outlook: the default "someone is invited" rule alone would drop every event', lessonsIn(outlook, DEFAULT_FILTERS).length === 0)
+const outlookRules = lessonRules(DEFAULT_FILTERS, feedListsAttendees(outlookText))
+check('outlook: without attendee data that rule is skipped', outlookRules.requireGuest === false && outlookRules.requireVideoLink === true)
+check("outlook: lessons kept; the dentist (no link) and a colleague's meeting left out",
+  JSON.stringify(lessonsIn(outlook, outlookRules)) === JSON.stringify(['Oliver - GCSE Maths', 'Priya A-level Further Maths']), lessonsIn(outlook, outlookRules))
+check('outlook: title keywords still apply', JSON.stringify(lessonsIn(outlook, { ...outlookRules, keywords: ['GCSE'] })) === JSON.stringify(['Oliver - GCSE Maths']))
+const ukStudents = [{ id: 'oliver', name: 'Oliver Smith', emails: [], parentEmails: [] }]
+const oliverMatch = matchOccurrence(oliver[0], { links: new Map(), students: ukStudents, groups: [], tutorEmails: hannahs })
+check('outlook: no emails, so the inbox suggests by title', oliverMatch.kind === 'none' && oliverMatch.suggestion?.studentIds.join() === 'oliver', oliverMatch)
+check('outlook: no Google event link', googleEventUrl(oliver[0].key, hannah) === null)
+
+// An iCloud published calendar, which here does carry attendees.
+const icloudText = fixture('icloud.ics')
+const icloud = expandFeed(icloudText, from, to)
+const amelia = byTitle(icloud, 'Amelia - 11+ English')
+check('icloud: weekly series (4 Wednesdays in Nov)', amelia.length === 4 && amelia[0].start.toISOString() === '2026-11-04T16:00:00.000Z', amelia.map((o) => o.start.toISOString()))
+check('icloud: zoom link from LOCATION', amelia[0]?.meetingUrl === 'https://us05web.zoom.us/j/1112223334?pwd=amelia', amelia[0]?.meetingUrl)
+check('icloud: attendees listed, so the guest rule stays', feedListsAttendees(icloudText) && lessonRules(DEFAULT_FILTERS, true).requireGuest)
+const icloudOwner = feedOwnerOf(icloud, 'hannah@gmail.com')
+check('icloud: owner from ORGANIZER', icloudOwner === 'hannah.price@icloud.com', icloudOwner)
+const icloudMe = new Set(['hannah@gmail.com', icloudOwner])
+check('icloud: the lesson passes the defaults; the gym does not', JSON.stringify([...new Set(icloud.filter((o) => passesFilters(o, DEFAULT_FILTERS, icloudMe)).map((o) => o.title))]) === JSON.stringify(['Amelia - 11+ English']))
+const ameliaMatch = matchOccurrence(amelia[0], { links: new Map(), groups: [], tutorEmails: icloudMe,
+  students: [{ id: 'amelia', name: 'Amelia Jones', emails: [], parentEmails: ['sarah.jones@example.co.uk'] }] })
+check('icloud: parent email match', ameliaMatch.kind === 'student' && ameliaMatch.studentId === 'amelia', ameliaMatch)
 
 console.log(failures ? `\n${failures} calendar check(s) failed.` : '\nAll calendar checks passed.')
 process.exit(failures ? 1 : 0)

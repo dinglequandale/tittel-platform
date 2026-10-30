@@ -4,11 +4,12 @@ import { orgQuery } from '../db.ts'
 import { parseEmails, parseNewStudents, createStudents, addStudentEmails, type StudentEmail } from './students.ts'
 import {
   expandFeed, matchOccurrence, passesFilters, normalizeFilters, calendarOwnerOf, guestsOf,
-  type CalFilters, type CalLink, type CalOccurrence, type CalSuggestion,
+  providerOf, feedOwnerOf, feedListsAttendees, lessonRules,
+  type CalFilters, type CalProvider, type CalLink, type CalOccurrence, type CalSuggestion,
 } from '../lib/calendar.ts'
 
-// Google Calendar import (FLOW-SPEC §3 stage B). The tutor pastes their
-// calendar's secret iCal address once; opening the app syncs the next four
+// Calendar import (FLOW-SPEC §3 stage B, §9). The tutor pastes their
+// calendar's secret or published iCal address (Google, Outlook, iCloud) once; opening the app syncs the next four
 // weeks into lessons. Events the importer can't place by email go to an
 // inbox on Home, where one click links the whole series.
 export const calendarRouter = Router()
@@ -22,9 +23,9 @@ const MAX_FEED_BYTES = 5 * 1024 * 1024
 const ADOPT_WITHIN_SEC = 10 * 60
 
 // The feed URL is user-supplied and the server fetches it, so only known
-// calendar hosts (no redirects, size- and time-capped): never an internal
-// address. ICS_ALLOW_HOSTS widens the list (comma-separated) for testing.
-const ALLOWED_HOSTS = (process.env.ICS_ALLOW_HOSTS ?? 'calendar.google.com')
+// calendar hosts (providerOf; no redirects, size- and time-capped): never an
+// internal address. ICS_ALLOW_HOSTS widens the list (comma-separated) for testing.
+const EXTRA_HOSTS = (process.env.ICS_ALLOW_HOSTS ?? '')
   .split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
 
 export function validFeedUrl(raw: unknown): URL | null {
@@ -35,7 +36,7 @@ export function validFeedUrl(raw: unknown): URL | null {
   } catch {
     return null
   }
-  if (!ALLOWED_HOSTS.includes(url.hostname.toLowerCase())) return null
+  if (!providerOf(url.hostname) && !EXTRA_HOSTS.includes(url.hostname.toLowerCase())) return null
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && process.env.NODE_ENV !== 'production')) return null
   return url
 }
@@ -78,6 +79,8 @@ interface SyncStatus {
   filtered: number
   /** Those series (up to 50), so the tutor can see them and count one in. */
   left_out?: { uid: string; title: string; next: string }[]
+  /** The feed lists no invitees at all, so the "someone is invited" rule is skipped. */
+  no_attendees?: boolean
   unmatched: UnmatchedSeries[]
 }
 
@@ -87,7 +90,7 @@ const lastSync = new Map<string, SyncStatus>()
 const inFlight = new Map<string, Promise<SyncStatus>>()
 // The feed as last downloaded. Answering the inbox re-matches this copy
 // instead of downloading the calendar again, so the new lessons show at once.
-const lastFeed = new Map<string, { occurrences: CalOccurrence[]; tutorEmails: Set<string>; to: Date }>()
+const lastFeed = new Map<string, { occurrences: CalOccurrence[]; tutorEmails: Set<string>; listsAttendees: boolean; to: Date }>()
 
 async function calendarSettings(orgId: string): Promise<{ icsUrl: string | null; filters: CalFilters }> {
   const [org] = await orgQuery<{ ics_url: string | null; filters: unknown }>(
@@ -150,13 +153,17 @@ async function runSync(orgId: string, tutorEmail: string): Promise<SyncStatus> {
   const { icsUrl: raw } = await calendarSettings(orgId)
   const url = raw ? validFeedUrl(raw) : null
   if (!url) return { at, ok: false, error: 'no calendar connected', imported: 0, filtered: 0, unmatched: [] }
-  // The calendar's own address and the sign-in address are both the tutor.
-  const tutorEmails = new Set([tutorEmail.toLowerCase(), calendarOwnerOf(url.toString())].filter((e): e is string => !!e))
 
   const from = new Date(Date.now() - WINDOW_BACK_MS)
   const to = new Date(Date.now() + WINDOW_AHEAD_MS)
   try {
-    lastFeed.set(orgId, { occurrences: expandFeed(await fetchFeed(url), from, to), tutorEmails, to })
+    const text = await fetchFeed(url)
+    const occurrences = expandFeed(text, from, to)
+    // The calendar's own address and the sign-in address are both the tutor.
+    // Google's is in the secret address; other feeds only show it as ORGANIZER.
+    const owner = calendarOwnerOf(url.toString()) ?? feedOwnerOf(occurrences, tutorEmail)
+    const tutorEmails = new Set([tutorEmail.toLowerCase(), owner].filter((e): e is string => !!e))
+    lastFeed.set(orgId, { occurrences, tutorEmails, listsAttendees: feedListsAttendees(text), to })
   } catch (err) {
     // A failed fetch must never look like "every event was deleted".
     return { at, ok: false, error: (err as Error).message, imported: 0, filtered: 0, unmatched: [] }
@@ -179,10 +186,10 @@ type Existing = {
 async function applyFeed(orgId: string): Promise<SyncStatus> {
   const at = new Date().toISOString()
   const feed = lastFeed.get(orgId)!
-  const { tutorEmails, to } = feed
+  const { tutorEmails, listsAttendees, to } = feed
 
   // Independent reads, in parallel: each is a ~90 ms round trip.
-  const [{ filters }, students, groupRows, linkRows, existingRows, natives] = await Promise.all([
+  const [{ filters: saved }, students, groupRows, linkRows, existingRows, natives] = await Promise.all([
     calendarSettings(orgId),
     orgQuery<{ id: string; name: string; emails: string[]; parent_emails: string[] }>(
       orgId,
@@ -219,6 +226,7 @@ async function applyFeed(orgId: string): Promise<SyncStatus> {
     ),
   ])
   const existing = new Map(existingRows.map((r) => [r.calendar_uid, r]))
+  const filters = lessonRules(saved, listsAttendees)
 
   const ctx = {
     students: students.map((s) => ({ id: s.id, name: s.name, emails: s.emails, parentEmails: s.parent_emails })),
@@ -242,7 +250,7 @@ async function applyFeed(orgId: string): Promise<SyncStatus> {
 
   for (const occ of feed.occurrences) {
     // A series the tutor linked by hand always counts; everything else has
-    // to look like a lesson first (Settings → Google Calendar).
+    // to look like a lesson first (Settings → Calendar).
     if (!ctx.links.has(occ.uid) && !passesFilters(occ, filters, tutorEmails)) {
       if (!filteredOut.has(occ.uid) && !occ.cancelled && occ.end.getTime() > Date.now() && leftOut.length < 50) {
         leftOut.push({ uid: occ.uid, title: occ.title, next: occ.start.toISOString() })
@@ -341,7 +349,18 @@ async function applyFeed(orgId: string): Promise<SyncStatus> {
     [to.toISOString(), seen],
   )
 
-  return { at, ok: true, imported, filtered: filteredOut.size, left_out: leftOut, unmatched: [...unmatched.values()] }
+  return {
+    at, ok: true, imported, filtered: filteredOut.size, left_out: leftOut, unmatched: [...unmatched.values()],
+    ...(listsAttendees ? {} : { no_attendees: true }),
+  }
+}
+
+function feedProvider(raw: string): CalProvider | null {
+  try {
+    return providerOf(new URL(raw).hostname)
+  } catch {
+    return null
+  }
 }
 
 function maskFeed(raw: string): string {
@@ -357,7 +376,7 @@ async function status(orgId: string, tutorEmail: string, force = false) {
   const { icsUrl: raw, filters } = await calendarSettings(orgId)
   if (!raw) return { connected: false }
   const s = await syncCalendar(orgId, tutorEmail, force)
-  return { connected: true, feed: maskFeed(raw), filters, lastSync: s }
+  return { connected: true, feed: maskFeed(raw), provider: feedProvider(raw), filters, lastSync: s }
 }
 
 calendarRouter.get('/calendar', async (req, res) => {
@@ -369,7 +388,11 @@ calendarRouter.put('/calendar', async (req, res) => {
   const orgId = req.auth!.orgId
   const url = validFeedUrl(req.body?.icsUrl)
   if (!url) {
-    return res.status(400).json({ error: "That isn't a Google Calendar iCal address. It starts with https://calendar.google.com/calendar/ical/ and ends in .ics." })
+    return res.status(400).json({
+      error: "That isn't a calendar address we can read. Paste Google Calendar's secret iCal address (https://calendar.google.com/…), "
+        + "Outlook or Microsoft 365's published ICS link (https://outlook.office365.com/… or https://outlook.live.com/…), "
+        + 'or an iCloud public calendar link (webcal://….icloud.com/…).',
+    })
   }
   try {
     expandFeed(await fetchFeed(url), new Date(), new Date(Date.now() + WINDOW_AHEAD_MS))
@@ -513,14 +536,14 @@ calendarRouter.post('/calendar/links', async (req, res) => {
     // removes any lesson this series had already produced.
     void syncCalendar(orgId, req.auth!.email, true, false).catch(() => undefined)
     const { icsUrl, filters } = await calendarSettings(orgId)
-    return res.json({ connected: !!icsUrl, feed: icsUrl ? maskFeed(icsUrl) : undefined, filters, lastSync: lastSync.get(orgId) })
+    return res.json({ connected: !!icsUrl, feed: icsUrl ? maskFeed(icsUrl) : undefined, provider: icsUrl ? feedProvider(icsUrl) : undefined, filters, lastSync: lastSync.get(orgId) })
   }
   // Re-match the feed in memory (no download): this series' lessons, plus
   // any other series the newly saved emails now recognise, appear at once.
   const { icsUrl, filters } = await calendarSettings(orgId)
   const s = await syncCalendar(orgId, req.auth!.email, true, false)
   res.json({
-    connected: !!icsUrl, feed: icsUrl ? maskFeed(icsUrl) : undefined, filters, lastSync: s,
+    connected: !!icsUrl, feed: icsUrl ? maskFeed(icsUrl) : undefined, provider: icsUrl ? feedProvider(icsUrl) : undefined, filters, lastSync: s,
     linked: { studentId, groupId, lessons: (lastFeed.get(orgId)?.occurrences ?? []).filter((o) => o.uid === uid && !o.cancelled).length },
   })
 })

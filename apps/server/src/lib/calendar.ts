@@ -1,8 +1,25 @@
 import ICAL from 'ical.js'
 
-// Google Calendar import (FLOW-SPEC §3 stage B): parse a calendar's secret
-// iCal feed into lesson-shaped occurrences, and match each to a student or
-// group. Pure functions: routes/calendar.ts does the fetching and the DB.
+// Calendar import (FLOW-SPEC §3 stage B, §9): parse a calendar's secret or
+// published iCal feed (Google, Outlook / Microsoft 365, iCloud) into
+// lesson-shaped occurrences, and match each to a student or group. Pure
+// functions: routes/calendar.ts does the fetching and the DB.
+
+export type CalProvider = 'google' | 'outlook' | 'icloud'
+
+/**
+ * Whose calendar a feed host belongs to, or null for any other host. The
+ * server fetches the feed, so this is also the allowlist: exact hosts, and
+ * iCloud's numbered ones (p23-caldav.icloud.com) by a suffix check on the
+ * parsed hostname, never a substring of the URL.
+ */
+export function providerOf(hostname: string): CalProvider | null {
+  const h = hostname.toLowerCase()
+  if (h === 'calendar.google.com') return 'google'
+  if (h === 'outlook.office365.com' || h === 'outlook.office.com' || h === 'outlook.live.com') return 'outlook'
+  if (h.endsWith('.icloud.com')) return 'icloud'
+  return null
+}
 
 export interface CalOccurrence {
   /** The event series' iCal UID — what a tutor's "this is Maya" is remembered by. */
@@ -153,9 +170,40 @@ export function normalizeFilters(raw: unknown): CalFilters {
 }
 
 /**
+ * Outlook's and iCloud's published feeds may carry no ATTENDEE lines at all.
+ * Then "someone besides you is invited" would drop every event, so it's
+ * skipped: title keywords and the inbox do the sorting instead. Checked on
+ * the whole feed, not the window, so a quiet month on Google doesn't count.
+ */
+export function feedListsAttendees(text: string): boolean {
+  return /^ATTENDEE[;:]/im.test(text)
+}
+
+export function lessonRules(filters: CalFilters, listsAttendees: boolean): CalFilters {
+  return listsAttendees ? filters : { ...filters, requireGuest: false }
+}
+
+/**
+ * The tutor's address in a feed whose URL doesn't name it (Outlook, iCloud):
+ * the ORGANIZER of the most event series, since a tutor sends most of their
+ * lesson invites. Null when the sign-in address already organizes something
+ * (it's the tutor anyway), or when no one clearly leads.
+ */
+export function feedOwnerOf(occurrences: Pick<CalOccurrence, 'uid' | 'organizer'>[], signInEmail: string): string | null {
+  const series = new Map<string, string>()
+  for (const o of occurrences) if (o.organizer) series.set(o.uid, o.organizer)
+  const counts = new Map<string, number>()
+  for (const org of series.values()) counts.set(org, (counts.get(org) ?? 0) + 1)
+  if (counts.has(signInEmail.toLowerCase())) return null
+  const [first, second] = [...counts].sort((a, b) => b[1] - a[1])
+  return first && (!second || first[1] > second[1]) ? first[0] : null
+}
+
+/**
  * The email a Google calendar's secret address belongs to: it's the calendar
  * id in the path (…/calendar/ical/<id>/private-…/basic.ics). It can differ
- * from the address the tutor signs in with, and both are "the tutor".
+ * from the address the tutor signs in with, and both are "the tutor". Null
+ * for other providers' addresses, which don't carry it.
  */
 export function calendarOwnerOf(feedUrl: string): string | null {
   try {

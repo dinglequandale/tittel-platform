@@ -283,7 +283,7 @@ In dependency order:
    summary. Aha in under 10 minutes.
 
 Deferred until a design partner asks for it: the full visual lesson builder, org-level mastery
-matrix, Studio seats, dark mode, more games, and email notifications beyond summaries. (⌘K is
+matrix, Studio seats (designed in §9), dark mode, more games, and email notifications beyond summaries. (⌘K is
 scheduled for O6.)
 
 ## 5. Launch infrastructure
@@ -460,3 +460,346 @@ relitigate it without new evidence.
 | R11 | "Don't build billing before anyone pays. But don't skip learning what they'll pay." | A Stripe Payment Link for founding-year prepay (no code). Real billing only after ≥3 pay. |
 | R12 | "Will coral and dice look childish to a $150/hr SAT tutor?" | The base is stark editorial; the play is math-literate (Euler, Pythagoras, Penrose), not cartoons, and stays off tutor work surfaces. Validate with partners in O5; the tokens make toning it down a one-file change. |
 | R13 | "One Node process with in-memory rooms. Scale?" | Fine to hundreds of tutors on one paid instance. Sticky routing by board id is a later problem, noted and not built. |
+
+## 9. Multi-tutor workspaces and agencies (design, 2026-10-30)
+
+**Why:** a simulated trial found that a tutoring business with several tutors can't adopt Slate:
+one login is one workspace, and everyone in it sees and edits everything. Konrad may also pitch
+agencies or marketplaces (e.g. Wyzant) later; he called that "just a thought."
+**DECIDED (Konrad, 2026-10-30):** design multi-tutor workspaces now and build them later. The
+build stays behind §4's rule (Studio seats wait until a design partner asks). Everything below
+that is not marked DECIDED is a proposal.
+
+**What exists today.** `users.role` is `'owner'|'tutor'`, but nothing reads it: `auth.ts` passes
+it along and no route checks it. `orgs.plan` allows `'studio'`. PLAN §1.3 prices Studio at
+$79/mo for up to 5 seats, with "shared content library, per-tutor rosters." PLAN Phase 7 wanted
+"invite tutor by email, per-tutor content visibility default = org-shared." Every query is scoped
+by `org_id` only. `auth.ts` creates a fresh org for any sign-in it doesn't recognise, so an
+invited tutor would land in a workspace of their own today. Several settings that belong to a
+person live on the org (`orgs.settings`: `icsUrl`, `calendarFilters`, `meetingLinkSource`,
+`defaultMeetingUrl`, `demo`).
+
+Vocabulary: **workspace** = an `orgs` row (UI word). **Agency** = a workspace with more than one
+tutor. **Marketplace** = a third party (Wyzant-style) that owns the client relationship and
+would embed or integrate Slate.
+
+### 9.1 Roles
+
+Teaching is not a role. Anyone in a workspace can own students; most agency owners still teach.
+Roles only grant permissions.
+
+| | Owner | Admin | Tutor |
+|---|---|---|---|
+| Own students, groups, lessons, boards; teach; assign; follow up | yes | yes | yes |
+| See **other tutors'** students, lessons, homework, Insights | all | all | no (but see §9.2 for cover lessons and group classes) |
+| Reassign students between tutors; hand over a leaver | yes | yes | no |
+| Invite, change role, deactivate | everyone | tutors only | no |
+| Shared library: edit, archive, accept "share with team" | yes | yes | read and copy only |
+| Branding (name, logo, tutor display rule), contact policy (§9.5), Claude policy | yes | yes | no |
+| Billing, seats, plan, delete workspace, transfer ownership, full export | yes | no | no |
+| Own settings: display name, calendar feed, meeting link, Claude opt-out | yes | yes | yes |
+
+- Exactly one owner per workspace. Ownership is transferred, never shared, so Stripe and deletion
+  have one answer.
+- A solo workspace is an owner with no one else. Its UI stays exactly as it is today: no team
+  words, no "all tutors" filters.
+- **Proposal:** admins see everything read-write. A read-only "coordinator" role is the most
+  likely request after launch (scheduling staff who don't teach). Add it only when asked.
+- Schema: `users.role` check becomes `('owner','admin','tutor')`, plus `users.deactivated_at`
+  (soft; `assignments.created_by` and past lessons keep pointing at it) and `users.settings jsonb`
+  (§9.4).
+
+### 9.2 Students belong to a tutor
+
+- **Proposal:** `students.tutor_id` is the student's tutor (references `users.id`). New students
+  get the creator. Admins can create students for someone else.
+- **What a tutor sees** (one predicate, used everywhere):
+  own students ∪ members of groups they own ∪ students in lessons assigned to them.
+  The last two cover agency group classes (one tutor teaches a group drawn from several rosters)
+  and cover lessons (`sessions.tutor_id` differs from the student's tutor for one week). A cover
+  tutor sees that lesson, its plan, the student's last notes and homework, and nothing older.
+- **Students with two tutors** (math with Sam, English with Priya) are common in agencies.
+  **Proposal:** v1 keeps one owning tutor and models the second subject as the other tutor's
+  lessons/series, which the predicate already covers. A `student_tutors` join table is the
+  upgrade if partners need full co-ownership (open question 2).
+- **Admins see all of them:** This week, Students and Insights gain a tutor filter ("All tutors"
+  / a tutor / "Mine") for admins and owners. Insights → Hours groups by tutor too, which is the
+  agency's payroll input. We still don't do payroll (PLAN §1.1).
+- **Handover when a tutor leaves.** An admin deactivates the tutor, and the app requires a
+  decision for each of their students before it finishes (bulk "all to Priya" plus per-student
+  overrides). Reassigning a student moves `students.tutor_id`, their boards, their future lessons
+  and series, open homework (`assignments.tutor_id`), and the groups the leaver owned (to one
+  chosen tutor). **Past lessons keep their tutor**, so the record says who taught what.
+  - Student links do not change (§9.8). The portal's tutor name changes to the new tutor.
+  - `students.meeting_url` is usually the old tutor's Zoom room. Clear it on reassign and say
+    so in the dialog.
+  - The leaver's calendar feed is disconnected with today's Disconnect rules (FLOW-SPEC §9):
+    unprepared future imports go, prepared ones stay as ordinary lessons, now the new tutor's.
+  - Their personal library goes to the shared library by default, or to the receiving tutor
+    (open question 4).
+  - Deactivation frees the seat immediately. The user row stays, so `created_by` and history
+    resolve. Sign-in is refused with "Your access to <agency> has ended."
+- The same reassign dialog handles a student switching tutors without anyone leaving.
+
+### 9.3 The library: shared and personal
+
+Library tables: `problems`, `problem_sets`, `lessons` (plans). **Proposal:** each gains a
+nullable `tutor_id`. `null` = shared with the workspace; set = personal to that tutor.
+
+- **Tags stay workspace-wide.** One taxonomy is what makes agency-level mastery and "who needs
+  quadratics" possible. Tutors can add tags; admins merge and rename them.
+- **Default for new items: personal.** This reverses PLAN Phase 7's "default = org-shared" and is
+  open question 1. Reasoning: most library rows are made in passing (a PDF dropped on one lesson,
+  paste-a-plan, Claude imports), and sharing all of them by default buries the curated material
+  in drafts. The agency gets a curated shared library. Tutors get a scratch space.
+- **Copy:** "Copy to mine" on any shared item. A copied set references the same shared problems
+  (cheap, and an admin's typo fix still reaches everyone, as with `assignment_problems`).
+  Editing a shared problem from a personal set forks it (copy-on-write: a new personal problem
+  replaces it in that set only). A copied plan copies `lessons.doc` whole. `files` referenced by
+  `/api/files/<token>` are shared by token and never duplicated.
+- **Share:** "Share with team" on a personal item moves it to shared (`tutor_id = null`). An
+  agency setting can make that a request an admin approves instead.
+- Assignments already snapshot their problem list, so moving or archiving library items never
+  changes homework a student already has.
+- Paper homework is an archived one-question set (FLOW-SPEC §10), so it stays out of both
+  libraries. Give it the assigning tutor's `tutor_id` anyway so the scope rule (§9.7) holds.
+
+### 9.4 Calendars and meeting links per tutor
+
+Today these are org settings because the org was the tutor. **Proposal:** move the personal ones
+to `users.settings`: `icsUrl`, `calendarFilters`, `meetingLinkSource`, `defaultMeetingUrl`,
+`timezone`, `demo`, and a personal `aiHelp` opt-out. On the org stay: `name`, branding,
+`consentAt` (the agency attests), the Claude policy (an admin can switch it off for everyone),
+and the contact policy (§9.5).
+
+- **One feed per tutor.** Sync runs per user and matches against **the students that tutor can
+  see** (§9.2), not the whole workspace. An unmatched invite goes to that tutor's inbox. Only
+  admins get "It's another tutor's student" as an answer, which also offers a cover lesson.
+- **Agencies cc coordinators on invites.** Every staff address in the workspace (all users'
+  sign-in and calendar addresses) is excluded from matching, the same way "the tutor's own email
+  never matches" today. Otherwise an admin on every invite becomes a student.
+- **Keys change:** `calendar_links` primary key (org_id, uid) → (org_id, tutor_id, uid);
+  `sessions_org_calendar_uid` (org_id, calendar_uid) → (org_id, tutor_id, calendar_uid). An
+  admin invited to a tutor's lesson can then connect their own calendar without the two imports
+  colliding. **Proposal:** an admin's feed skips events that another tutor's feed already
+  imported, so one lesson never appears twice.
+- **Meeting link resolution** gains one step:
+  lesson → series → student → **the lesson's tutor's default** (was: the org's default).
+- **Agency week view:** admins see This week across all tutors, read from `sessions`. No new
+  sync.
+- Stage C (OAuth, auto Meet) is per user when it comes; nothing here blocks it.
+
+### 9.5 Parent-facing branding: the agency's name, the tutor's name
+
+R6 stands: student and parent surfaces lead with the tutor's business, not ours. For an agency,
+the business is the agency.
+
+| Surface | Solo (today, unchanged) | Agency (proposal) |
+|---|---|---|
+| Portal, runner, review, board name gate header | Workspace name | Agency name + logo |
+| Who teaches | (implied) | "Your tutor: Sam Lee" line on portal and lesson cards |
+| Parent update / session summary | Tutor's name | "Sam Lee · <Agency>" |
+| Footer | "made with Slate∎" | Same. Removable only in the white-label tier (§9.9) |
+
+- **Tutor display rule** (agency setting): full name, or first name + initial ("Sam L."). Some
+  agencies don't want parents able to find their tutors elsewhere.
+- **Contact policy** (agency setting): `tutor` (default; tutors see parent addresses and
+  "Update parents" opens their mail app, as today), `admin` (tutors don't see addresses; parent
+  updates go to an admin to send, or as a copy-link only), or `none` (marketplace mode, §9.9).
+  This is also a minimisation win under R7: fewer people see a minor's family contacts.
+- Brand assets live on the org (`orgs.settings.branding`: logo file token, optional accent from
+  the categorical palette). No custom fonts or colours beyond that before the white-label tier.
+
+### 9.6 Seat billing
+
+- PLAN §1.3's Studio ($79/mo, up to 5 seats) stays the hypothesis. **A seat = an active
+  (not deactivated) user of any role, owner included.** Pending invites don't count until
+  accepted. Deactivating frees the seat at once.
+- **Proposal for >5 tutors:** an "Agency" price per seat above 5 (number TBD, open question 5),
+  billed as a Stripe subscription quantity with proration. The seat gate lives in
+  `billing/gates.ts` as PLAN §11 intends: inviting past the limit is blocked with an upgrade
+  prompt. **Existing tutors and student links never lock over seats** (PLAN §11's guarantee
+  extends to seats).
+- Staging per R11: until Checkout exists (O6), a Studio founding year is a Payment Link and the
+  seat cap is set by hand on the org (`orgs.settings.seatLimit`). Quantity-based Checkout
+  comes after ≥3 Solo partners have paid.
+- Solo → Studio is a plan change, not a migration (§9.8). Studio → Solo is allowed only when one
+  active user remains.
+
+### 9.7 Tenancy: `tutor_id` alongside `org_id`
+
+Two boundaries, with different stakes:
+- **`org_id` separates customers.** A leak is a breach. `orgQuery` stays exactly as it is and
+  stays total.
+- **`tutor_id` separates colleagues in one customer.** A leak is an authorisation bug
+  (poaching, and minors' data seen by staff who don't need it). It still deserves a guard,
+  because ~170 `orgQuery` call sites across 14 route files will be converted and one forgotten
+  route shows every tutor everyone's students.
+
+**Tables that gain `tutor_id`** (the rows people list, filter and own):
+
+| Table | Meaning of `tutor_id` | Null allowed |
+|---|---|---|
+| `students` | owning tutor | no (after backfill) |
+| `groups` | owning tutor | no |
+| `lesson_series`, `sessions` | who teaches this slot / this lesson (cover = differs from the student's) | no |
+| `classes`, `boards` | owner; a student's board follows the student on handover | no |
+| `assignments` | whose homework it is (`created_by` stays the author) | no |
+| `calendar_links` | whose feed the answer belongs to | no |
+| `problems`, `problem_sets`, `lessons` | personal to | **yes: null = shared** |
+
+**Reached through a parent and not denormalised:** `student_emails`, `group_members`,
+`assignment_student`, `assignment_problems`, `attempts`, `responses`, `quiz_events`,
+`board_assets`, `set_problems`, `problem_tags`, `lesson_tags`. Their queries join to a scoped
+parent (attempts → assignments/students, quiz_events → sessions). `tags` and `files` stay
+workspace-wide (`files` is reached by token). **Token surfaces don't change:** `studentQuery`,
+`attemptQuery`, `fileQuery` and `boardQuery` are keyed by the link, and the link is the access.
+
+**Proposal for the guard** in `apps/server/src/db.ts`:
+1. A new `tutorQuery(scope, sql, params)`. `scope` = `{ orgId, tutorId }` from `req.auth`.
+   `tutorId` is the user's id for a tutor, or `null` when an owner/admin views "All tutors".
+   It passes `$1 = org_id`, `$2 = tutor_id` and refuses SQL that doesn't mention both `org_id`
+   and `tutor_id`. Idiom: `where s.org_id = $1 and ($2::text is null or s.tutor_id = $2)`,
+   or the §9.2 visibility predicate as one shared SQL fragment for student-shaped queries.
+2. **`orgQuery` becomes a tripwire** for the tables above: it throws if the SQL touches one of
+   them (`from|join|update|into` + a name from a `TUTOR_SCOPED` list) without mentioning
+   `tutor_id`, unless the caller passes `{ allTutors: true }`. Only routes that have checked
+   owner/admin pass it. The safe path is then the default, and a forgotten conversion fails
+   loudly in development instead of leaking quietly in production.
+3. **Writes** to those tables must set `tutor_id`. The same regex check covers `insert into`.
+4. **Known limit, true today too:** the regex proves the SQL *mentions* the column, not that it
+   *filters* on it. `routes/org.ts` satisfies `orgQuery` with a `/* org_id */` comment.
+   The backstop is a **two-tutor fixture in the smoke suite**: tutor A gets 404 or an empty
+   list on every tutor-scoped route when asked for B's ids. That test is the real enforcement.
+   Postgres RLS was considered: it needs a per-request `set_config` through the session pooler.
+   It's a later hardening option, not v1.
+5. Three raw `pool.query` calls outside `db.ts` exist today (`board/rooms.ts`, `index.ts`,
+   `routes/attempt.ts`), all keyed by board id or attempt. Re-check them in the same pass.
+
+### 9.8 Migration: solo → multi-tutor without breaking a student link
+
+**Every link a student or parent holds is keyed by its own token or id, never by org or
+tutor:** `/s/:portal_token`, `/hw/:attempt_token`, `/review/:attempt_token`, `/b/:boardId`,
+`/api/files/:file_token`, `report_token`. Adding tutors, reassigning students and changing roles
+therefore change no URL. Keep it that way: **never put an org or tutor id in a student-facing
+path** (embeds and custom domains in §9.9 included).
+
+Steps, all in `db/schema.sql`'s idempotent migration section and applied on boot as usual:
+1. `alter table … add column if not exists tutor_id text references users(id)` on each table in
+   §9.7; `users` gains `deactivated_at`, `settings`; the role check gains `'admin'`.
+2. Backfill: `update <t> set tutor_id = (the org's owner) where tutor_id is null`, for every
+   non-library table. Every org today has exactly one user, the owner, so this is exact.
+   Library rows backfill to **shared** (`null`): in a solo org nobody else sees them, and when
+   the owner invites the first tutor the invite dialog asks "Share your library (N items) with
+   the team, or keep it personal?" before sending.
+3. Copy the personal keys from `orgs.settings` into the owner's `users.settings`. Read the user
+   first and fall back to the org for one release, then stop reading the org keys.
+4. Swap the two calendar unique keys (§9.4). Today every row has the owner's `tutor_id`, so no
+   duplicates can exist.
+5. `set not null` on the non-library `tutor_id` columns only after the code that sets them on
+   insert has shipped. (Same deploy is fine: schema runs on boot before routes serve.)
+6. `auth.ts`: before bootstrapping a new org for an unknown sign-in, look for a pending invite
+   for that email and join that org instead. **This is the first line of code of the build.**
+
+**Merging two existing solo workspaces** (two Slate tutors forming an agency) is the hard case.
+Rows move by updating `org_id`. Tokens are globally unique, so nothing collides and no link
+changes. Class slugs are unique per org and get a suffix on collision. Tags merge by name.
+The absorbed org's Stripe subscription is cancelled and prorated. **Proposal:** an admin script
+run by us on request, not a UI, until it has happened twice.
+
+**One login, one workspace** (`users.supabase_uid unique`, `users.org_id not null`) is the model
+today. An email that already owns a solo workspace can't accept an invite to an agency without a
+merge. **Proposal:** v1 keeps the model and offers the merge. A `memberships` table (one login,
+several workspaces, a switcher) is needed once tutors work for an agency and keep their own
+practice, which is the normal case on marketplaces (§9.9, open question 6).
+
+### 9.9 Agencies and marketplaces: what an integration adds
+
+None of this is built before a named partner asks for it and has agreed to pay. Recorded so
+§9.1–9.8 don't paint us into a corner.
+
+**Embeddable or white-label student surfaces.**
+- Embed the portal, runner, review and board in the partner's app via iframe. Needs a
+  per-org `frame-ancestors` allowlist (CSP), cookie-free auth (already true: the token is the
+  access), and `postMessage` events (homework submitted, lesson ended) so their page can react.
+- Custom domain (`learn.agency.com`) via CNAME + TLS on Render. Real ops cost, so price it in.
+- White-label tier: the agency's logo and accent, "made with Slate∎" removed. This gives up the
+  referral loop (R6), so it is priced, never default.
+
+**API and webhooks for their own scheduling, payments and messaging.**
+- *Scheduling:* REST for students, lessons/series and homework, with `external_id` columns
+  (students, users, sessions) mapping to the partner's ids, and idempotency keys. Reuse the
+  calendar import's ownership split (FLOW-SPEC §9): **the partner owns time, who, and
+  cancellation; the tutor owns the plan, homework and notes.** Their lessons arrive the way
+  calendar lessons do, and 409 on move/cancel in our UI points to their app.
+- *Payments:* we still don't invoice parents (PLAN §1.1). Webhook `lesson.ended` carries the
+  actual start/end and attendance, which is what their billing needs. Hours (FLOW-SPEC §10)
+  becomes an API read.
+- *Messaging:* parent updates and summaries go out through their messaging, not the tutor's mail
+  app: a `summary.ready` webhook with the text and the summary link, and contact policy `none`
+  (§9.5).
+- Webhooks: HMAC-signed, retried with backoff, per-org endpoint and secret. Events:
+  `lesson.started|ended`, `homework.assigned|submitted|graded`, `summary.ready`,
+  `student.created`. API keys per org, scoped, revocable, shown once.
+
+**SSO.**
+- Agencies on Google Workspace: Google sign-in exists (O5). Add "only @agency.com may join."
+- Marketplaces: a signed launch token (JWT from the partner, short-lived) that signs a tutor
+  into their Slate workspace, LTI-style. OIDC/SAML only if an enterprise partner insists.
+- **Students still never get accounts** (PLAN §3, locked). A marketplace's student launch is a
+  signed redirect to that student's portal token.
+
+**Data ownership and export.**
+- Solo: the tutor is the data controller and we process for them (PLAN §12.2). Agency: the
+  agency is the controller, its tutors are staff, and the data stays when a tutor leaves.
+  Marketplace: the marketplace is the controller, and we sign its DPA as a processor.
+- Export: the owner's full JSON export (Settings, O6) covers the workspace. **Proposal:** a
+  tutor may export their personal library, never students, unless the agency allows it.
+  Deletion at contract end with a written confirmation.
+
+**The constraint that matters most: marketplaces keep the client relationship.** A Wyzant-style
+marketplace earns a commission on every hour. Such platforms typically forbid moving clients
+off-platform (verify the specific partner's terms before any pitch). In marketplace mode:
+- No parent or student contact details reach the tutor (contact policy `none`). Students arrive
+  as the partner's opaque id + first name, which also fits R7's minimisation.
+- No direct channel: "Update parents" and the session summary go only through the partner's
+  messaging. Calendar import from a tutor's personal Google is off; lessons come from the
+  partner's API.
+- Branding is the marketplace's; the tutor's own business name never appears. Tutor display
+  rule = first name + initial.
+- A tutor's own solo workspace and their marketplace work must stay separate (memberships,
+  §9.8): a student never moves from one to the other through our product.
+
+### 9.10 Build order (after a design partner asks; sizes rough)
+
+| Phase | Contents | Size |
+|---|---|---|
+| **M1 Seats** | Roles (`admin`), invites table + invite link/email, `auth.ts` joins invites instead of bootstrapping, Settings → Team (invite, role, deactivate), `tutor_id` columns + backfill, personal settings to `users.settings`. Visibility unchanged (everyone sees everything, which suits a two-person studio). | ~3–4 days |
+| **M2 Scoped visibility** | `tutorQuery`, the `orgQuery` tripwire, the §9.2 predicate, converting the ~170 call sites, admin "All tutors / tutor / Mine" filters, the two-tutor smoke fixture | ~4–5 days |
+| **M3 Handover + library** | Reassign dialog (bulk + per student), deactivate flow, cover lessons, personal/shared library, copy, share, copy-on-write problems | ~3–4 days |
+| **M4 Calendars per tutor** | Per-user feeds, new unique keys, staff-address exclusion, admin week view, meeting-link step | ~2 days |
+| **M5 Branding + billing** | Agency name/logo + tutor line on student surfaces, tutor display rule, contact policy, seat gate; quantity Checkout once O6 Checkout exists | ~2–3 days |
+| **M6 Integration** | Only with a signed partner: API keys + REST, webhooks, `external_id`s, embeds + CSP, custom domain, launch-token SSO, `memberships`, DPA | ~2–4 weeks, scoped to that partner |
+
+M1–M5 is about three weeks for a Studio that works for agencies of up to ~20 tutors. M1 alone
+unblocks a two-tutor studio that is happy to share everything.
+
+### 9.11 Open questions for Konrad
+
+1. **Library default:** personal (this section's proposal) or shared (PLAN Phase 7)?
+2. **Students with two tutors:** one owner + the other tutor's lessons (v1 proposal), or real
+   co-ownership from the start?
+3. **Parent contacts in agencies:** should tutors see them by default (`tutor`), or only admins?
+4. **A leaver's personal library:** does the agency keep it, can the tutor take a copy, or both?
+5. **Seat pricing:** the per-seat price above 5; does a non-teaching admin take a seat; does the
+   founding-year deal cover Studio?
+6. **One login, several workspaces:** needed in v1, or merge-only until a marketplace?
+7. **Tiers:** is "Agency" (white-label, API) a separate plan above Studio, and roughly what does
+   it cost?
+8. **Admins observing live boards:** agencies do quality checks. Allow an admin to join any
+   lesson silently, visibly, or not at all? (Minors are on those boards.)
+9. **Tutors seeing colleagues:** names and schedules (a shared week view), or admins only?
+10. **Claude policy:** may an admin switch Claude off for every tutor, or is it always each
+    tutor's own switch?
+11. **Marketplaces:** is there a specific one and a contact, or does M6 stay a note until one
+    appears?

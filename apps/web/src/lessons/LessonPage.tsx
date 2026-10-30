@@ -15,9 +15,11 @@ import {
 } from './lessons.ts'
 import { PlanSlot } from './PlanSlot.tsx'
 import { HomeworkSlot } from './HomeworkSlot.tsx'
-import { ParentUpdateDialog, lessonContacts, recipientsOf, portalLink, firstName } from './ParentUpdate.tsx'
+import { ParentUpdateDialog, lessonContacts, recipientsOf, portalLink, firstName, tutorSignature } from './ParentUpdate.tsx'
+import { fillTemplate, DEFAULT_TEMPLATES } from './template.ts'
 import { AfterLesson, useLessonResults } from './AfterLesson.tsx'
 import { fileUrl } from '../lib/files.ts'
+import { useOrg } from '../lib/useOrg.ts'
 
 function localDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -42,6 +44,8 @@ export function LessonPage() {
   const { session } = useSession()
   const [aiEnabled, setAiEnabled] = useState(false)
   const { results, reload: reloadResults } = useLessonResults(lessonId!)
+  const org = useOrg()
+  const inPerson = org?.teachWhere === 'in_person'
   useHashScroll(!!lesson)
   useEffect(() => { apiFetch('/api/tutor/ai-import/status').then((r) => setAiEnabled(!!r.enabled)).catch(() => {}) }, [])
 
@@ -87,7 +91,7 @@ export function LessonPage() {
           {lesson.from_calendar && (
             <p className="lesson-series">
               <CalendarDays size={13} strokeWidth={2} />
-              {lesson.skipped ? 'Skipped this week (still in your Google Calendar).' : 'From your Google Calendar.'}
+              {lesson.skipped ? 'Skipped this week (still in your calendar).' : 'From your calendar.'}
               {lesson.calendar_event_url && (
                 <a href={lesson.calendar_event_url} target="_blank" rel="noopener noreferrer" className="inline-link">
                   Move or cancel it there <ExternalLink size={12} strokeWidth={2} />
@@ -98,11 +102,15 @@ export function LessonPage() {
         </div>
         <div className="toolbar-actions">
           {canOpenBoard(lesson) && (
-            <Button onClick={() => startLesson(lesson, navigate).catch((err) => toast((err as Error).message))}>
-              <Play size={14} strokeWidth={2.2} /> {started ? 'Open board' : 'Start lesson'}
+            // In person there's no meeting to open; the board is still there for a shared tablet.
+            <Button variant={inPerson ? 'secondary' : 'primary'}
+              onClick={() => startLesson(inPerson ? { ...lesson, meeting_url: null } : lesson, navigate).catch((err) => toast((err as Error).message))}>
+              <Play size={14} strokeWidth={2.2} /> {started || inPerson ? 'Open board' : 'Start lesson'}
             </Button>
           )}
-          <Button variant="secondary" onClick={() => setUpdating(true)}><Mail size={14} strokeWidth={2} /> Update parents</Button>
+          {org?.parentUpdates.afterLesson && lesson.parent_updates !== false && (
+            <Button variant="secondary" onClick={() => setUpdating(true)}><Mail size={14} strokeWidth={2} /> Update parents</Button>
+          )}
           {lesson.from_calendar && (lesson.skipped
             ? <Button variant="ghost" onClick={() => patch({ skipped: false })}>Undo skip</Button>
             : <Button variant="ghost" onClick={() => patch({ skipped: true })}>Skip this week</Button>)}
@@ -123,7 +131,7 @@ export function LessonPage() {
           <HomeworkSlot lesson={lesson} onChanged={reload} />
         </div>
         <div className="lesson-col">
-          <MeetingSlot lesson={lesson} onSave={(meetingUrl) => patch({ meetingUrl })} />
+          {!inPerson && <MeetingSlot lesson={lesson} onSave={(meetingUrl) => patch({ meetingUrl })} />}
           <LastHomeworkSlot lesson={lesson} />
           <NotesSlot lesson={lesson} onSave={(notes) => patch({ notes })} />
           {lesson.series && (
@@ -133,49 +141,56 @@ export function LessonPage() {
       </div>
 
       {updating && (() => {
-        // The update is drafted from what the app knows; with Claude on, it can
-        // also be written up from the same facts, never from anything else.
-        const hw = lesson.homework[lesson.homework.length - 1]
-        const tutor = session?.user.email?.split('@')[0] ?? ''
-        const sign = tutor ? tutor.charAt(0).toUpperCase() + tutor.slice(1) : ''
+        // The update is the tutor's template (Settings → Parents) filled from
+        // what the app knows; with Claude on, the same facts can be written up
+        // as prose instead, never from anything else.
         async function facts() {
-          const ps = await lessonContacts(lesson!)
+          const ps = (await lessonContacts(lesson!)).filter((p) => p.parent_updates !== false)
           const names = ps.map((p) => firstName(p.name))
           const who = names.length ? names.join(' and ') : lessonWho(lesson!)
           const board = results?.board ?? []
           const right = board.reduce((n, q) => n + q.right.length, 0)
           const total = board.reduce((n, q) => n + q.right.length + q.wrong.length, 0)
           const lastHw = results?.homework.find((h) => h.handedIn > 0)
-          return {
-            ps, names, who,
-            lines: [
-              lesson!.notes ? `What we covered: ${lesson!.notes.trim()}` : lesson!.plan_title ? `What we covered: ${lesson!.plan_title}` : 'What we covered: ',
-              ...(total ? [`On the board: ${right} of ${total} answers right.`] : []),
-              ...(lastHw ? [`Last homework (${lastHw.title}): ${lastHw.misses.length ? `${lastHw.misses.length} to go over` : 'all right'}.`] : []),
-              ...(hw ? [`Homework: ${hw.title}${hw.dueAt ? `, due ${dueLabel(hw.dueAt)}` : ''}.`] : []),
-            ],
+          const hw = lesson!.homework[lesson!.homework.length - 1]
+          const vars = {
+            first_name: who,
+            date: shortDate(lesson!.scheduled_at),
+            covered: lesson!.notes?.trim() || lesson!.plan_title || '',
+            board_score: total ? `${right} of ${total} answers right` : '',
+            last_homework: lastHw ? `${lastHw.title}, ${lastHw.misses.length ? `${lastHw.misses.length} to go over` : 'all right'}` : '',
+            homework: hw ? `${hw.title}${hw.dueAt ? `, due ${dueLabel(hw.dueAt)}` : ''}` : '',
+            board_notes_link: results?.boardPdf ? `${window.location.origin}${fileUrl(results.boardPdf)}` : '',
+            portal_link: ps.length === 1 ? portalLink(ps[0].portal_token)
+              : ps.map((p) => `\n${firstName(p.name)}: ${portalLink(p.portal_token)}`).join(''),
+            tutor_name: tutorSignature(org, session?.user.email),
           }
+          return { ps, vars }
         }
-        const links = (ps: { name: string; portal_token: string }[], names: string[]) => [
-          ...(results?.boardPdf ? [`Notes from the board: ${window.location.origin}${fileUrl(results.boardPdf)}`] : []),
-          ...(ps.length === 1 ? [`${names[0]}'s homework and lessons are here: ${portalLink(ps[0].portal_token)}`]
-            : ps.length ? [`Their homework and lessons:
-${ps.map((p) => `${firstName(p.name)}: ${portalLink(p.portal_token)}`).join('\n')}`] : []),
-        ]
         return (
           <ParentUpdateDialog onClose={() => setUpdating(false)}
             load={async () => {
-              const f = await facts()
-              const body = ['Hi,', '', `A quick update on ${f.who}'s lesson on ${shortDate(lesson.scheduled_at)}.`, '', ...f.lines, '', ...links(f.ps, f.names), '', 'Best,', sign]
-              return { to: recipientsOf(f.ps), subject: `${f.who}: lesson on ${shortDate(lesson.scheduled_at)}`, body: body.join('\n') }
+              const { ps, vars } = await facts()
+              const { subject, body } = fillTemplate(org?.parentTemplates.lesson ?? DEFAULT_TEMPLATES.lesson, vars)
+              return { to: recipientsOf(ps), subject, body }
             }}
             draftWithAi={aiEnabled ? async () => {
-              const f = await facts()
+              const { vars } = await facts()
               const { text } = await apiFetch('/api/tutor/ai/parent-update', {
                 method: 'POST',
-                body: JSON.stringify({ facts: [`Student${f.names.length > 1 ? 's' : ''}: ${f.who}`, `Lesson: ${shortDate(lesson.scheduled_at)}`, ...f.lines].join('\n') }),
+                body: JSON.stringify({ facts: [
+                  `Student${vars.first_name.includes(' and ') ? 's' : ''}: ${vars.first_name}`, `Lesson: ${vars.date}`,
+                  ...(vars.covered ? [`What we covered: ${vars.covered}`] : []),
+                  ...(vars.board_score ? [`On the board: ${vars.board_score}.`] : []),
+                  ...(vars.last_homework ? [`Last homework: ${vars.last_homework}.`] : []),
+                  ...(vars.homework ? [`Homework: ${vars.homework}.`] : []),
+                ].join('\n') }),
               })
-              return ['Hi,', '', text, '', ...links(f.ps, f.names), '', 'Best,', sign].join('\n')
+              const links = [
+                ...(vars.board_notes_link ? [`Notes from the board: ${vars.board_notes_link}`] : []),
+                `${vars.first_name}'s homework and lessons are here: ${vars.portal_link}`,
+              ]
+              return ['Hi,', '', text, '', ...links, '', 'Best,', vars.tutor_name].join('\n')
             } : undefined} />
         )
       })()}

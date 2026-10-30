@@ -5,6 +5,10 @@ import { useSession } from '../lib/useSession.ts'
 import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
 import { CalendarCard } from './CalendarCard.tsx'
+import { TeachingPrefs } from './TeachingPrefs.tsx'
+import { ParentsCard } from './ParentsCard.tsx'
+import { DataCard } from './DataCard.tsx'
+import { useOrg } from '../lib/useOrg.ts'
 
 // Account/settings surface (PLAN.md §6.7). Billing/seat management arrives with
 // the plans work; for now: the account, the lesson defaults, and sign-out.
@@ -19,6 +23,7 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [linkSource, setLinkSource] = useState<'invite' | 'own'>('invite')
   const [ai, setAi] = useState<{ available: boolean; on: boolean }>({ available: false, on: true })
+  const org = useOrg()
 
   useEffect(() => {
     apiFetch('/api/tutor/org')
@@ -94,6 +99,14 @@ export function SettingsPage() {
       </div>
 
       <div className="surface-card settings-card">
+        <div className="card-title">How you teach</div>
+        <p className="muted">These set defaults and what's shown. Nothing is locked: any lesson can still be scheduled, started now or logged afterwards.</p>
+        {org && <TeachingPrefs org={org} />}
+      </div>
+
+      {org && <ParentsCard org={org} />}
+
+      {org?.teachWhere !== 'in_person' && <div className="surface-card settings-card">
         <div className="card-title">Lessons</div>
         <Field label="Your meeting link">
           <Input value={meetingUrl} onChange={(e) => setMeetingUrl(e.target.value)}
@@ -116,7 +129,7 @@ export function SettingsPage() {
             Use the student's link, or mine above
           </label>
         </div>
-      </div>
+      </div>}
 
       <CalendarCard />
 
@@ -133,6 +146,8 @@ export function SettingsPage() {
           </p>
         </div>
       )}
+
+      {savedNames.org && <DataCard orgName={savedNames.org} />}
 
       <div className="surface-card" style={{ padding: 22, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>

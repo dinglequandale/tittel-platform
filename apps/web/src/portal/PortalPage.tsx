@@ -32,6 +32,7 @@ export function PortalPage() {
   const navigate = useNavigate()
   const [studentName, setStudentName] = useState('')
   const [tutorName, setTutorName] = useState('')
+  const [inPerson, setInPerson] = useState(false)
   const [lessons, setLessons] = useState<PortalLesson[]>([])
   const [notes, setNotes] = useState<{ id: string; scheduled_at: string; group_name: string | null; board_pdf: string }[]>([])
   const [assignments, setAssignments] = useState<Assignment[] | null>(null)
@@ -41,7 +42,7 @@ export function PortalPage() {
   useEffect(() => {
     if (!studentToken) return
     apiFetch(`/api/portal/${studentToken}`)
-      .then((d) => { setStudentName(d.studentName); setTutorName(d.tutorName ?? ''); setLessons(d.lessons ?? []); setNotes(d.notes ?? []); setAssignments(d.assignments) })
+      .then((d) => { setStudentName(d.studentName); setTutorName(d.tutorName ?? ''); setInPerson(!!d.inPerson); setLessons(d.lessons ?? []); setNotes(d.notes ?? []); setAssignments(d.assignments) })
       .catch((e) => setError(linkErrorMessage(e)))
     // Join lights up 15 minutes before; re-check each minute.
     const t = window.setInterval(() => setTick((n) => n + 1), 60_000)
@@ -96,7 +97,7 @@ export function PortalPage() {
                   <strong>{dayLabel(l.scheduled_at)}, {timeLabel(l.scheduled_at)}–{timeLabel(lessonEnd(l).toISOString())}</strong>
                   {l.group_name && <div className="muted">{l.group_name}</div>}
                 </div>
-                {open
+                {inPerson ? null : open
                   ? <Button onClick={() => join(l)}>Join lesson</Button>
                   : <span className="muted">Join opens 15 minutes before</span>}
               </div>

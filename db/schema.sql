@@ -406,3 +406,9 @@ alter table responses add column if not exists tutor_marked boolean not null def
 -- A calendar lesson the tutor skipped in the app for one week; the sync keeps
 -- it cancelled instead of restoring it from the calendar.
 alter table sessions add column if not exists skipped boolean not null default false;
+
+-- Parent updates are the tutor's to shape (Settings → Parents). Off for a
+-- student (say, an adult learner) hides updates and reports for them;
+-- last_report_at is when a progress report last went out, for the reminder.
+alter table students add column if not exists parent_updates boolean not null default true;
+alter table students add column if not exists last_report_at timestamptz;

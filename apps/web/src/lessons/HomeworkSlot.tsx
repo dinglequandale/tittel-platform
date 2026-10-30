@@ -11,8 +11,22 @@ import type { ProblemSetSummary } from '../content/types.ts'
 import { draftFromText } from './composer.ts'
 import { DropZone, PasteDialog } from './Drop.tsx'
 import { type Lesson, shortDate, dueLabel } from './lessons.ts'
+import { useOrg } from '../lib/useOrg.ts'
 
 const baseName = (name: string) => name.replace(/\.[^.]+$/, '')
+const DAY_MS = 86_400_000
+
+/** When homework is due: the tutor's default (Settings → How you teach), changeable each time. */
+type DueChoice = string // 'next_lesson' | 'in_days:<n>' | 'none' | 'date'
+
+function dueAtFor(choice: DueChoice, lesson: Lesson, date: string): string | null {
+  if (choice === 'none') return null
+  if (choice === 'date') return date ? new Date(`${date}T23:59`).toISOString() : null
+  if (choice === 'next_lesson' && lesson.next_lesson_at) return lesson.next_lesson_at
+  // "Next lesson" with none booked yet means a week, like the server's default.
+  const days = choice.startsWith('in_days:') ? Number(choice.slice('in_days:'.length)) : 7
+  return new Date(new Date(lesson.scheduled_at).getTime() + days * DAY_MS).toISOString()
+}
 
 /**
  * Homework from the lesson, in whatever form the tutor has it: a worksheet
@@ -29,6 +43,12 @@ export function HomeworkSlot({ lesson, onChanged }: { lesson: Lesson; onChanged:
   const [busy, setBusy] = useState<string | null>(null)
   const [pasting, setPasting] = useState(false)
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
+  const org = useOrg()
+  const [due, setDue] = useState<DueChoice | null>(null)
+  const [dueDate, setDueDate] = useState('')
+  // Digital-SAT-style: the homework page offers a calculator and a reference sheet.
+  const [satTools, setSatTools] = useState(false)
+  const choice = due ?? org?.homeworkDue ?? 'next_lesson'
   const who = lesson.student_name ? `${lesson.student_name}'s portal` : 'every member’s portal'
 
   useEffect(() => {
@@ -39,7 +59,8 @@ export function HomeworkSlot({ lesson, onChanged }: { lesson: Lesson; onChanged:
   async function give(body: Record<string, unknown>) {
     setBusy('Giving it…')
     try {
-      await apiFetch(`/api/tutor/sessions/${lesson.id}/homework`, { method: 'POST', body: JSON.stringify(body) })
+      const dueAt = dueAtFor(choice, lesson, dueDate)
+      await apiFetch(`/api/tutor/sessions/${lesson.id}/homework`, { method: 'POST', body: JSON.stringify({ ...body, dueAt, ...(satTools ? { tools: { calculator: true, reference: true } } : {}) }) })
       await onChanged()
       toast(`On ${who} now`)
     } catch (err) {
@@ -100,7 +121,8 @@ export function HomeworkSlot({ lesson, onChanged }: { lesson: Lesson; onChanged:
   }
 
   const usable = sets.filter((s) => s.problem_count > 0)
-  const due = lesson.next_lesson_at ? `due at the next lesson, ${shortDate(lesson.next_lesson_at)}` : 'with no due date (no next lesson yet)'
+  const dueAt = dueAtFor(choice, lesson, dueDate)
+  const dueText = choice === 'none' ? 'with no due date' : dueAt ? `due ${shortDate(dueAt)}` : 'due on the date you pick'
 
   return (
     <section className="surface-card slot" id="homework">
@@ -116,7 +138,26 @@ export function HomeworkSlot({ lesson, onChanged }: { lesson: Lesson; onChanged:
           <Button variant="ghost" onClick={() => setRemoveTarget(h.id)}>Remove</Button>
         </div>
       ))}
-      {lesson.homework.length === 0 && <p className="muted">It goes straight to {who}, {due}.</p>}
+      {lesson.homework.length === 0 && <p className="muted">It goes straight to {who}, {dueText}.</p>}
+      <div className="due-row">
+        <span className="list-row-sub">Due</span>
+        <Select value={choice} onValueChange={setDue}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="next_lesson">{lesson.next_lesson_at ? `At the next lesson (${shortDate(lesson.next_lesson_at)})` : 'Next lesson (none booked: a week)'}</SelectItem>
+            <SelectItem value="in_days:3">3 days after this lesson</SelectItem>
+            <SelectItem value="in_days:7">A week after this lesson</SelectItem>
+            <SelectItem value="in_days:14">Two weeks after this lesson</SelectItem>
+            <SelectItem value="date">On a date…</SelectItem>
+            <SelectItem value="none">No due date</SelectItem>
+          </SelectContent>
+        </Select>
+        {choice === 'date' && <input type="date" className="input due-date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} aria-label="Due date" />}
+      </div>
+      <label className="check-row">
+        <input type="checkbox" checked={satTools} onChange={(e) => setSatTools(e.target.checked)} />
+        Digital-SAT-style: a calculator and reference sheet on the homework page
+      </label>
       <DropZone accept="application/pdf,image/png,image/jpeg,image/webp" busy={busy} onFiles={addWorksheet}>
         <strong>Drop a worksheet</strong>
         <span className="muted">PDF or photo. {aiEnabled ? 'Done on paper, or turned into auto-graded questions.' : 'They do it on paper and hand in photos.'}</span>

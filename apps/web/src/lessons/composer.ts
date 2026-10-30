@@ -16,6 +16,8 @@ export function normalizeMath(text: string): string {
 
 const ANSWER_LINE = /^\s*(?:\*\*)?(?:answer|ans|solution)(?:\*\*)?\s*[:=-]\s*(.+?)\s*$/i
 const KEY_HEADING = /^\s*(?:#+\s*)?\**\s*(?:answers?|answer key|solutions?|key)\s*:?\s*\**\s*:?\s*$/i
+/** "Answers: 1) 6  2) 5√2": the key on the heading's own line. Plural only, so "Answer: 3.5" stays one problem's answer. */
+const KEY_INLINE = /^\s*(?:#+\s*)?\**\s*(?:answers|answer key|solutions|key)\s*\**\s*:\s*\**\s*(\d{1,3}\s*[.):].*)$/i
 const NUMBERED = /^\s*(?:#+\s*)?(?:\*\*)?(?:q(?:uestion)?\s*|problem\s*)?(\d{1,3})(?:\*\*)?\s*[.):]\s*(?:\*\*)?\s*/i
 const CHOICE_LINE = /^\s*\(?([A-Ea-e])[).:]\s+(.+)$/
 const NUMERIC = /^[-+]?(\d[\d,]*\.?\d*|\.\d+)(\/\d+)?$/
@@ -44,9 +46,10 @@ function parseKey(lines: string[]): Map<number, string> {
  */
 export function draftFromText(raw: string, title: string): AiImportDraft {
   const lines = normalizeMath(raw).replace(/\r/g, '').split('\n')
-  const keyAt = lines.findIndex((l) => KEY_HEADING.test(l))
+  const keyAt = lines.findIndex((l) => KEY_HEADING.test(l) || KEY_INLINE.test(l))
   const body = keyAt >= 0 ? lines.slice(0, keyAt) : lines
-  const key = keyAt >= 0 ? parseKey(lines.slice(keyAt + 1)) : new Map<number, string>()
+  const inline = keyAt >= 0 ? lines[keyAt].match(KEY_INLINE)?.[1] : undefined
+  const key = keyAt >= 0 ? parseKey([...(inline ? [inline] : []), ...lines.slice(keyAt + 1)]) : new Map<number, string>()
 
   const chunks: { n: number | null; lines: string[] }[] = []
   const numbered = body.some((l) => NUMBERED.test(l))

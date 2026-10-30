@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, Dialog, DialogContent, DialogTitle } from '@tittel/ui'
-import { apiFetch } from '../lib/api.ts'
+import { saveOrg } from '../lib/useOrg.ts'
 
 /**
  * Once per workspace, before any students go in (OVERHAUL §5, child data):
@@ -30,7 +30,8 @@ export function ConsentDialog({ onDone }: { onDone: () => void }) {
           <Button disabled={!checked || busy} onClick={async () => {
             setBusy(true)
             try {
-              await apiFetch('/api/tutor/org', { method: 'PATCH', body: JSON.stringify({ consent: true }) })
+              // Through saveOrg, so Home's onboarding sees the consent without a reload.
+              await saveOrg({ consent: true })
               onDone()
             } finally {
               setBusy(false)

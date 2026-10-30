@@ -8,6 +8,7 @@ import { useSession } from '../lib/useSession.ts'
 import { AppToastProvider } from '../lib/toast.tsx'
 import { ScheduleLessonDialog } from '../lessons/ScheduleLessonDialog.tsx'
 import { HomeworkForDialog } from '../lessons/HomeworkForDialog.tsx'
+import { StartNowDialog } from '../lessons/QuickLesson.tsx'
 import { GlobalSearch } from './GlobalSearch.tsx'
 import { ConsentDialog } from './ConsentDialog.tsx'
 import { apiFetch } from '../lib/api.ts'
@@ -29,6 +30,8 @@ export function AppShell() {
   const navigate = useNavigate()
   const [scheduling, setScheduling] = useState(false)
   const [givingHomework, setGivingHomework] = useState(false)
+  const [startingNow, setStartingNow] = useState(false)
+  const [logging, setLogging] = useState(false)
   const [me, setMe] = useState<{ displayName: string; consentAt: string | null } | null>(null)
   useEffect(() => { apiFetch('/api/tutor/org').then(setMe).catch(() => {}) }, [])
   // Opening a dialog from a menu item waits a tick, so the menu has closed
@@ -90,6 +93,8 @@ export function AppShell() {
                 </MenuTrigger>
                 <MenuContent>
                   <MenuItem onSelect={later(() => setScheduling(true))}>Lesson</MenuItem>
+                  <MenuItem onSelect={later(() => setStartingNow(true))}>Lesson now</MenuItem>
+                  <MenuItem onSelect={later(() => setLogging(true))}>Log a past lesson</MenuItem>
                   <MenuItem onSelect={() => navigate('/app/students?new=1')}>Student</MenuItem>
                   <MenuItem onSelect={later(() => setGivingHomework(true))}>Homework</MenuItem>
                   <MenuItem onSelect={() => window.open('/try', '_blank', 'noopener')}>Quick board</MenuItem>
@@ -103,6 +108,8 @@ export function AppShell() {
       </Shell>
       <ScheduleLessonDialog open={scheduling} onOpenChange={setScheduling} />
       <HomeworkForDialog open={givingHomework} onOpenChange={setGivingHomework} />
+      <StartNowDialog open={startingNow} onOpenChange={setStartingNow} />
+      <ScheduleLessonDialog open={logging} onOpenChange={setLogging} mode="log" />
       {me && !me.consentAt && <ConsentDialog onDone={() => setMe({ ...me, consentAt: new Date().toISOString() })} />}
     </AppToastProvider>
   )

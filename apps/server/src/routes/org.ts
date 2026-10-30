@@ -25,11 +25,80 @@ orgRouter.get('/org', async (req, res) => {
     // Offering Claude drafts is the tutor's choice; some tutors don't want AI at all.
     aiHelp: org?.settings?.aiHelp !== false,
     aiAvailable: !!process.env.ANTHROPIC_API_KEY,
+    ...teaching(org?.settings ?? {}),
   })
 })
 
+// How the tutor teaches (asked once on Home, editable in Settings). Each
+// preference only changes defaults and what's shown; nothing is locked.
+const TEACH_WHERE = ['online', 'in_person', 'both'] as const
+const SCHEDULE = ['regular', 'as_needed'] as const
+const REMINDER = ['none', 'monthly', '4weeks'] as const
+const HOMEWORK_DUE = /^(next_lesson|none|in_days:([1-9]|[1-5]\d|60))$/
+
+export function teaching(s: Record<string, unknown>) {
+  const pick = <T extends readonly string[]>(v: unknown, of: T, d: T[number]): T[number] => (of.includes(v as string) ? (v as T[number]) : d)
+  const pu = (s.parentUpdates ?? {}) as Record<string, unknown>
+  const tpl = (s.parentTemplates ?? {}) as Record<string, unknown>
+  return {
+    teachWhere: pick(s.teachWhere, TEACH_WHERE, 'online'),
+    schedule: pick(s.schedule, SCHEDULE, 'regular'),
+    homeworkDue: typeof s.homeworkDue === 'string' && HOMEWORK_DUE.test(s.homeworkDue) ? s.homeworkDue : 'next_lesson',
+    teachingAskedAt: typeof s.teachingAskedAt === 'string' ? s.teachingAskedAt : null,
+    parentUpdates: {
+      afterLesson: pu.afterLesson !== false,
+      reports: pu.reports !== false,
+      reminder: pick(pu.reminder, REMINDER, 'none'),
+    },
+    // null = the app's default wording (lessons/template.ts).
+    parentTemplates: {
+      lesson: typeof tpl.lesson === 'string' ? tpl.lesson : null,
+      report: typeof tpl.report === 'string' ? tpl.report : null,
+    },
+  }
+}
+
+async function setSetting(orgId: string, key: string, value: unknown) {
+  await orgQuery(
+    orgId,
+    `update orgs set settings = jsonb_set(settings, $2::text[], $3::jsonb) where id = $1::text /* org_id */`,
+    [[key], JSON.stringify(value)],
+  )
+}
+
 orgRouter.patch('/org', async (req, res) => {
-  const { defaultMeetingUrl, meetingLinkSource, aiHelp, name, displayName, consent } = req.body ?? {}
+  const { defaultMeetingUrl, meetingLinkSource, aiHelp, name, displayName, consent, teachWhere, schedule, homeworkDue, teachingAsked, parentUpdates, parentTemplates } = req.body ?? {}
+  if (teachWhere !== undefined && !TEACH_WHERE.includes(teachWhere)) return res.status(400).json({ error: `teachWhere must be one of ${TEACH_WHERE.join(', ')}` })
+  if (schedule !== undefined && !SCHEDULE.includes(schedule)) return res.status(400).json({ error: `schedule must be one of ${SCHEDULE.join(', ')}` })
+  if (homeworkDue !== undefined && !(typeof homeworkDue === 'string' && HOMEWORK_DUE.test(homeworkDue))) {
+    return res.status(400).json({ error: "homeworkDue must be 'next_lesson', 'none' or 'in_days:<1–60>'" })
+  }
+  if (parentUpdates !== undefined) {
+    const p = parentUpdates as Record<string, unknown> | null
+    if (!p || typeof p !== 'object' || (p.afterLesson !== undefined && typeof p.afterLesson !== 'boolean')
+      || (p.reports !== undefined && typeof p.reports !== 'boolean') || (p.reminder !== undefined && !REMINDER.includes(p.reminder as never))) {
+      return res.status(400).json({ error: 'parentUpdates is { afterLesson?: boolean, reports?: boolean, reminder?: none|monthly|4weeks }' })
+    }
+  }
+  if (parentTemplates !== undefined) {
+    const t = parentTemplates as Record<string, unknown> | null
+    const ok = (v: unknown) => v === undefined || v === null || (typeof v === 'string' && v.length <= 5000)
+    if (!t || typeof t !== 'object' || !ok(t.lesson) || !ok(t.report)) {
+      return res.status(400).json({ error: 'parentTemplates is { lesson?: string | null, report?: string | null }, up to 5000 characters each' })
+    }
+  }
+  const orgId = req.auth!.orgId
+  if (teachWhere !== undefined) await setSetting(orgId, 'teachWhere', teachWhere)
+  if (schedule !== undefined) await setSetting(orgId, 'schedule', schedule)
+  if (homeworkDue !== undefined) await setSetting(orgId, 'homeworkDue', homeworkDue)
+  if (teachingAsked === true) await setSetting(orgId, 'teachingAskedAt', new Date().toISOString())
+  if (parentUpdates !== undefined || parentTemplates !== undefined) {
+    // Merged over what's saved, so one switch or one template saves alone.
+    const [row] = await orgQuery<{ settings: Record<string, unknown> }>(orgId, `select settings from orgs where id = $1::text /* org_id */`)
+    const cur = teaching(row?.settings ?? {})
+    if (parentUpdates !== undefined) await setSetting(orgId, 'parentUpdates', { ...cur.parentUpdates, ...parentUpdates })
+    if (parentTemplates !== undefined) await setSetting(orgId, 'parentTemplates', { ...cur.parentTemplates, ...parentTemplates })
+  }
   if (name !== undefined && (typeof name !== 'string' || !name.trim())) return res.status(400).json({ error: 'name can’t be blank' })
   if (displayName !== undefined && typeof displayName !== 'string') return res.status(400).json({ error: 'displayName must be a string' })
   if (name !== undefined) {

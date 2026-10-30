@@ -21,6 +21,7 @@ interface AttemptRow {
   materials: StoredFile[]
   work_files: StoredFile[]
   tutor_comment: string | null
+  tools: { calculator?: boolean; reference?: boolean } | null
 }
 
 async function loadAttempt(token: string): Promise<AttemptRow | undefined> {
@@ -28,7 +29,7 @@ async function loadAttempt(token: string): Promise<AttemptRow | undefined> {
     token,
     `select a.id, a.status, a.started_at, asg.time_limit_sec, asg.due_at, a.assignment_id,
             coalesce(asg.title, ps.title) as assignment_title, s.name as student_name, a.org_id,
-            asg.materials, a.work_files, a.tutor_comment
+            asg.materials, a.work_files, a.tutor_comment, asg.settings->'tools' as tools
        from attempts a
        join assignments asg on asg.id = a.assignment_id
        join problem_sets ps on ps.id = asg.set_id
@@ -114,6 +115,7 @@ attemptRouter.get('/:token', async (req, res) => {
     remainingSec: remaining === null ? null : Math.max(0, Math.floor(remaining)),
     materials: at.materials,
     workFiles: at.work_files,
+    tools: { calculator: !!at.tools?.calculator, reference: !!at.tools?.reference },
     problems,
     responses,
   })

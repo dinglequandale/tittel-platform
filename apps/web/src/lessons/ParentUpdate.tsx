@@ -1,9 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Button, Field, Input, Dialog, DialogContent, DialogTitle, DialogClose } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
+import type { Org } from '../lib/useOrg.ts'
 
-interface Contact { name: string; emails: { email: string; role: 'student' | 'parent' }[]; portal_token: string }
+interface Contact { name: string; emails: { email: string; role: 'student' | 'parent' }[]; portal_token: string; parent_updates?: boolean }
+
+/** How the tutor signs off: their name from Settings, else their email's name part. */
+export function tutorSignature(org: Pick<Org, 'displayName'> | null, email: string | undefined): string {
+  if (org?.displayName?.trim()) return org.displayName.trim()
+  const local = email?.split('@')[0] ?? ''
+  return local ? local.charAt(0).toUpperCase() + local.slice(1) : ''
+}
 
 /** Who to write to: the parents' addresses, or the student's own when there are none. */
 export function recipientsOf(students: Pick<Contact, 'emails'>[]): string[] {
@@ -22,8 +30,14 @@ export const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name
  * is sent by the app.
  */
 export function ParentUpdateDialog({
-  load, onClose, draftWithAi,
+  load, onClose, draftWithAi, title = 'Update for parents', onSent, children, draftKey,
 }: {
+  draftKey?: string
+  title?: string
+  /** Called when the tutor copies it or opens it in their email: as close to "sent" as the app can know. */
+  onSent?: () => void
+  /** Above the message, e.g. a progress report's period picker. */
+  children?: ReactNode
   /** Builds the draft once its data is fetched: who it goes to and what it says. */
   load: () => Promise<{ to: string[]; subject: string; body: string }>
   onClose: () => void
@@ -37,9 +51,13 @@ export function ParentUpdateDialog({
   const [error, setError] = useState('')
   const [drafting, setDrafting] = useState(false)
 
+  // Drafted once, and again only when draftKey changes (a report's period),
+  // so a parent re-rendering never throws away the tutor's edits.
   useEffect(() => {
+    setBody(null)
+    setError('')
     load().then((d) => { setTo(d.to.join(', ')); setSubject(d.subject); setBody(d.body) }).catch((e) => setError((e as Error).message))
-  }, [])
+  }, [draftKey])
 
   const mailto = `mailto:${to.split(/[,;\s]+/).filter(Boolean).map(encodeURIComponent).join(',')}`
     + `?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body ?? '')}`
@@ -47,7 +65,8 @@ export function ParentUpdateDialog({
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="dialog-content dialog-wide">
-        <DialogTitle>Update for parents</DialogTitle>
+        <DialogTitle>{title}</DialogTitle>
+        {children}
         {error && <p className="field-error">{error}</p>}
         {body === null && !error ? <p className="muted">Drafting…</p> : (
           <>
@@ -65,8 +84,8 @@ export function ParentUpdateDialog({
             <p className="muted">Opens in your own email app to send. Or copy it into a text.</p>
             <div className="row-end">
               <DialogClose asChild><Button variant="ghost">Close</Button></DialogClose>
-              <Button variant="secondary" onClick={() => navigator.clipboard.writeText(body ?? '').then(() => toast('Copied'), () => toast('Couldn’t copy'))}>Copy text</Button>
-              <a className="btn btn-primary" href={mailto} onClick={() => setTimeout(onClose, 300)}>Open in email</a>
+              <Button variant="secondary" onClick={() => navigator.clipboard.writeText(body ?? '').then(() => { toast('Copied'); onSent?.() }, () => toast('Couldn’t copy'))}>Copy text</Button>
+              <a className="btn btn-primary" href={mailto} onClick={() => { onSent?.(); setTimeout(onClose, 300) }}>Open in email</a>
             </div>
           </>
         )}

@@ -7,6 +7,9 @@ import { useSession } from '../lib/useSession.ts'
 import { useToast } from '../lib/toast.tsx'
 import { ScheduleLessonDialog } from '../lessons/ScheduleLessonDialog.tsx'
 import { CalendarInbox, type CalendarStatus } from '../lessons/CalendarInbox.tsx'
+import { QuickStudents } from '../lessons/QuickLesson.tsx'
+import { TeachingPrefs } from '../settings/TeachingPrefs.tsx'
+import { useOrg } from '../lib/useOrg.ts'
 import {
   type Lesson, lessonWho, lessonEnd, timeLabel, dayLabel, isJoinable, startLesson, scoreTone, canOpenBoard, dueLabel,
 } from '../lessons/lessons.ts'
@@ -21,6 +24,21 @@ interface Returned {
   next_lesson_id: string | null
 }
 interface Overdue { student_name: string; title: string; due_at: string; next_lesson_id: string | null }
+
+/**
+ * The period a progress-report reminder covers (Settings → Parents), in the
+ * tutor's own time zone: last calendar month from the 1st, or the last four
+ * weeks. Reports sent since the period ended count as done.
+ */
+function reminderWindow(reminder: 'monthly' | '4weeks') {
+  const d = new Date()
+  if (reminder === 'monthly') {
+    const thisMonth = new Date(d.getFullYear(), d.getMonth(), 1)
+    return { since: new Date(d.getFullYear(), d.getMonth() - 1, 1), until: thisMonth, sentBefore: thisMonth, period: 'last_month', label: 'Last month' }
+  }
+  const since = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 27)
+  return { since, until: d, sentBefore: since, period: 'last4', label: 'Last 4 weeks' }
+}
 
 function greeting(): string {
   const h = new Date().getHours()
@@ -56,6 +74,14 @@ export function Home() {
   const [demo, setDemo] = useState<{ studentId: string; lessonId: string; assignmentIds: string[] } | null>(null)
   const [trying, setTrying] = useState(false)
   const [, setTick] = useState(0)
+  const org = useOrg()
+  const [reportsDue, setReportsDue] = useState<{ id: string; name: string }[]>([])
+  const reminder = org?.parentUpdates.reports && org.parentUpdates.reminder !== 'none' ? reminderWindow(org.parentUpdates.reminder) : null
+  useEffect(() => {
+    if (!reminder) { setReportsDue([]); return }
+    const q = `since=${reminder.since.toISOString()}&until=${reminder.until.toISOString()}&sentBefore=${reminder.sentBefore.toISOString()}`
+    apiFetch(`/api/tutor/reports/due?${q}`).then((r) => setReportsDue(r.students)).catch(() => {})
+  }, [reminder?.period])
 
   // The lessons read syncs Google Calendar first (when connected), so the
   // calendar status is fetched after it and reflects that sync.
@@ -131,7 +157,7 @@ export function Home() {
 
   async function start(l: Lesson) {
     try {
-      await startLesson(l, navigate)
+      await startLesson(org?.teachWhere === 'in_person' ? { ...l, meeting_url: null } : l, navigate)
     } catch (err) {
       toast((err as Error).message)
     }
@@ -194,10 +220,22 @@ export function Home() {
         </div>
       )}
 
+      {org && org.consentAt && !org.teachingAskedAt && (
+        <div className="surface-card teach-card">
+          <div>
+            <div className="card-title-lg">How do you teach?</div>
+            <p className="muted">So the app fits how you work. It only sets defaults, and you can change any of it in Settings.</p>
+          </div>
+          <TeachingPrefs org={org} onboarding />
+        </div>
+      )}
+
       <CalendarInbox status={calendar} onChanged={load} />
 
+      {org?.schedule === 'as_needed' && <QuickStudents />}
+
       {lessons.length === 0 ? (
-        <EmptyState
+        org?.schedule === 'as_needed' && (studentCount ?? 0) > 0 ? null : <EmptyState
           art="pythagoras"
           title="Your week is empty"
           description="Schedule your first lesson. Its plan, homework and meeting link all live on it."
@@ -226,7 +264,7 @@ export function Home() {
         </div>
       )}
 
-      {(returned.length > 0 || overdue.length > 0) && (
+      {(returned.length > 0 || overdue.length > 0 || reportsDue.length > 0) && (
         <section className="week-day">
           <h2 className="week-day-title">Needs attention</h2>
           <div className="surface-card card-pad-x">
@@ -249,6 +287,15 @@ export function Home() {
                   <div className="list-row-sub">Was due {new Date(o.due_at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</div>
                 </div>
                 <span className="badge badge-warning">Overdue</span>
+              </Link>
+            ))}
+            {reminder && reportsDue.map((st) => (
+              <Link key={st.id} to={`/app/students/${st.id}?report=${reminder.period}`} className="list-row">
+                <div>
+                  <div className="list-row-title">Progress report for {st.name}</div>
+                  <div className="list-row-sub">{reminder.label}, for their parents</div>
+                </div>
+                <span className="badge badge-accent">Report</span>
               </Link>
             ))}
           </div>

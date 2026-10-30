@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Calculator, BookOpen } from 'lucide-react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Button, Dialog, DialogContent, DialogTitle, DialogClose } from '@tittel/ui'
 import { apiFetch, linkErrorMessage } from '../lib/api.ts'
 import { RichText } from '../lib/Math.tsx'
 import { fileUrl, type StoredFile } from '../lib/files.ts'
 import { dueLabel } from '../lessons/lessons.ts'
+
+const RunnerTools = lazy(() => import('./RunnerTools.tsx'))
 
 interface RChoice { id: string; content: string }
 interface RProblem {
@@ -26,6 +29,8 @@ interface AttemptPayload {
   remainingSec: number | null
   materials: StoredFile[]
   workFiles: StoredFile[]
+  /** Digital-SAT-style help the tutor turned on for this homework. */
+  tools?: { calculator: boolean; reference: boolean }
   problems: RProblem[]
   responses: SavedResponse[]
 }
@@ -110,11 +115,9 @@ function mmss(total: number): string {
   return `${m}:${String(s % 60).padStart(2, '0')}`
 }
 
-// Functional core loop only (answer, autosave, timer, submit) — the full
-// Bluebook-parity skin (calculator, reference sheet, choice elimination) is
-// deferred; PLAN.md §10 Phase 2's "visually indistinguishable" bar needs
-// Konrad's own visual check against the current app, which can't happen
-// until this is live.
+// The core loop (answer, autosave, timer, submit), plus the calculator and
+// reference sheet when the tutor gave it as digital-SAT-style homework.
+// Choice elimination and section timing are not built.
 export function RunnerPage() {
   const { attemptToken } = useParams()
   const navigate = useNavigate()
@@ -128,6 +131,7 @@ export function RunnerPage() {
   const [submitting, setSubmitting] = useState(false)
   const [starting, setStarting] = useState(false)
   const [confirmSubmit, setConfirmSubmit] = useState(false)
+  const [tool, setTool] = useState<'calculator' | 'reference' | null>(null)
 
   const answersRef = useRef(answers)
   answersRef.current = answers
@@ -372,8 +376,24 @@ export function RunnerPage() {
     <div className="page">
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <strong>{data.assignmentTitle || 'Homework'}</strong>
-        {remaining !== null && <span className={lowTime ? 'badge badge-incorrect' : 'badge'}>{mmss(remaining)}</span>}
+        <div className="runner-tools-bar">
+          {data.tools?.calculator && (
+            <Button variant={tool === 'calculator' ? 'primary' : 'ghost'} aria-pressed={tool === 'calculator'}
+              onClick={() => setTool((t) => (t === 'calculator' ? null : 'calculator'))}><Calculator size={15} /> Calculator</Button>
+          )}
+          {data.tools?.reference && (
+            <Button variant={tool === 'reference' ? 'primary' : 'ghost'} aria-pressed={tool === 'reference'}
+              onClick={() => setTool((t) => (t === 'reference' ? null : 'reference'))}><BookOpen size={15} /> Reference</Button>
+          )}
+          {remaining !== null && <span className={lowTime ? 'badge badge-incorrect' : 'badge'}>{mmss(remaining)}</span>}
+        </div>
       </header>
+
+      {tool && attemptToken && (
+        <Suspense fallback={null}>
+          <RunnerTools token={attemptToken} panel={tool} onClose={() => setTool(null)} />
+        </Suspense>
+      )}
 
       {paper && attemptToken && (
         <PaperWork token={attemptToken} materials={data.materials} workFiles={data.workFiles}

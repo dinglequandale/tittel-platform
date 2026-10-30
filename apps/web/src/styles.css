@@ -198,6 +198,13 @@ html, body, #root {
 .inbox-row-main { min-width: 0; flex: 1 1 260px; }
 .calendar-filters { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
 .radio-col { display: flex; flex-direction: column; gap: 6px; }
+
+/* How the tutor teaches: asked once on Home, kept in Settings */
+.pref-list { display: flex; flex-direction: column; gap: 16px; }
+.pref-row { display: flex; flex-direction: column; gap: 8px; }
+.teach-card { padding: 22px 24px; margin-bottom: 28px; display: flex; flex-direction: column; gap: 14px; }
+.quick-list .list-row { gap: 12px; flex-wrap: wrap; }
+.quick-list .toolbar-actions { margin-left: auto; }
 .email-list { display: flex; flex-direction: column; gap: 6px; }
 .email-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; }
 .email-row select, .invitee-row select { font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: var(--radius-control); padding: 6px 8px; background: var(--surface); }
@@ -307,3 +314,34 @@ html, body, #root {
 .landing-footer a { color: var(--ink-3); }
 .onboard-try { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--surface-2); }
 .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; margin-bottom: 16px; font-size: 14px; }
+
+/* Homework's due date, on the lesson's Homework card */
+.due-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.due-row .select-trigger { min-width: 240px; }
+.due-date { width: auto; }
+.student-quick { margin: -8px 0 20px; }
+
+/* Settings → Parents: the tutor's own wording, with a live preview */
+.template-editor { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.template-editor .chip { cursor: pointer; font-family: ui-monospace, monospace; font-size: 12px; }
+.template-panes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.template-text { font-size: 13px; line-height: 1.5; resize: vertical; }
+.template-preview { border: 1px solid var(--line); border-radius: var(--radius-control); padding: 10px 12px; background: var(--paper-2); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.template-preview pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; font-size: 13px; line-height: 1.5; }
+@media (max-width: 720px) { .template-panes { grid-template-columns: 1fr; } }
+
+/* Homework runner: calculator and reference sheet (digital-SAT-style homework) */
+.runner-tools-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.runner-tool {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); z-index: 40;
+  display: flex; flex-direction: column; background: var(--paper); border-left: 1px solid var(--line);
+  box-shadow: 0 8px 30px rgb(0 0 0 / .08);
+}
+.runner-tool-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--line); }
+.runner-tool-body { flex: 1; min-height: 0; overflow: auto; }
+.ref-sheet { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.ref-row { display: flex; flex-direction: column; gap: 4px; }
+.ref-fact { margin: 0; font-size: 14px; }
+@media (max-width: 720px) {
+  .runner-tool { top: auto; left: 0; width: 100vw; height: 72vh; border-left: none; border-top: 1px solid var(--line); border-radius: 12px 12px 0 0; }
+}

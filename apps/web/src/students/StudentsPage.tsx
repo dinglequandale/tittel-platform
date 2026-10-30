@@ -17,6 +17,7 @@ interface Student {
   portal_token: string
   notes: string | null
   meeting_url: string | null
+  parent_updates: boolean
   created_at: string
   board_id: string | null
   next_lesson_id: string | null
@@ -116,12 +117,12 @@ export function StudentsPage() {
     }
   }
 
-  async function updateStudent(id: string, name: string, emails: StudentEmail[], notes: string, meetingUrl: string) {
+  async function updateStudent(id: string, name: string, emails: StudentEmail[], notes: string, meetingUrl: string, parentUpdates: boolean) {
     await apiFetch(`/api/tutor/students/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({
         name: name.trim(), emails: emails.filter((e) => e.email.trim()), notes: notes.trim() || null,
-        meetingUrl: meetingUrl.trim() || null,
+        meetingUrl: meetingUrl.trim() || null, parentUpdates,
       }),
     })
     await reload()
@@ -493,20 +494,21 @@ function EditStudentDialog({
 }: {
   student: Student
   onOpenChange: (open: boolean) => void
-  onSave: (id: string, name: string, emails: StudentEmail[], notes: string, meetingUrl: string) => Promise<void>
+  onSave: (id: string, name: string, emails: StudentEmail[], notes: string, meetingUrl: string, parentUpdates: boolean) => Promise<void>
 }) {
   const toast = useToast()
   const [name, setName] = useState(student.name)
   const [emails, setEmails] = useState<StudentEmail[]>(student.emails)
   const [notes, setNotes] = useState(student.notes ?? '')
   const [meetingUrl, setMeetingUrl] = useState(student.meeting_url ?? '')
+  const [parentUpdates, setParentUpdates] = useState(student.parent_updates !== false)
   const [saving, setSaving] = useState(false)
 
   async function submit() {
     if (!name.trim() || saving) return
     setSaving(true)
     try {
-      await onSave(student.id, name, emails, notes, meetingUrl)
+      await onSave(student.id, name, emails, notes, meetingUrl, parentUpdates)
       onOpenChange(false)
       toast('Student updated')
     } catch (err) {
@@ -529,6 +531,11 @@ function EditStudentDialog({
           <Input value={meetingUrl} onChange={(e) => setMeetingUrl(e.target.value)}
             placeholder="Their usual Meet or Zoom link; blank uses your default" />
         </Field>
+        <label className="check-row">
+          <input type="checkbox" checked={parentUpdates} onChange={(e) => setParentUpdates(e.target.checked)} />
+          Updates and progress reports to parents
+        </label>
+        <p className="muted">Untick for an adult learner, or a family you keep in touch with your own way.</p>
         <div className="row-end">
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
           <Button onClick={submit} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Button>

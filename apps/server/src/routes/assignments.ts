@@ -33,6 +33,8 @@ export interface NewAssignment {
   sessionId?: string
   /** Worksheet files (already checked to be this org's) the student works from. */
   materials?: { token: string; name: string; type: string }[]
+  /** Digital-SAT-style help on the homework page: a graphing calculator and a reference sheet. */
+  tools?: { calculator?: boolean; reference?: boolean }
 }
 export type CreateAssignmentResult =
   | { assignmentId: string; links: { studentId: string; studentName: string; attemptToken: string }[] }
@@ -41,7 +43,7 @@ export type CreateAssignmentResult =
 export async function createAssignment(
   orgId: string,
   userId: string,
-  { setId, title, timeLimitSec, dueAt, studentIds, sessionId, materials }: NewAssignment,
+  { setId, title, timeLimitSec, dueAt, studentIds, sessionId, materials, tools }: NewAssignment,
 ): Promise<CreateAssignmentResult> {
   const [set] = await orgQuery<{ id: string; problem_count: number }>(
     orgId,
@@ -58,8 +60,8 @@ export async function createAssignment(
 
     const assignmentId = newId()
     await client.query(
-      `insert into assignments (id, org_id, set_id, title, time_limit_sec, due_at, created_by, session_id, materials)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      `insert into assignments (id, org_id, set_id, title, time_limit_sec, due_at, created_by, session_id, materials, settings)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         assignmentId, orgId, setId, title || null,
         timeLimitSec ? Math.max(1, Math.floor(Number(timeLimitSec))) : null,
@@ -67,6 +69,7 @@ export async function createAssignment(
         userId,
         sessionId ?? null,
         JSON.stringify(materials ?? []),
+        JSON.stringify(tools?.calculator || tools?.reference ? { tools: { calculator: !!tools.calculator, reference: !!tools.reference } } : {}),
       ],
     )
 

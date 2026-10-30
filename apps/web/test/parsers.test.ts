@@ -3,6 +3,7 @@
 // (lessons/composer.ts). Pure functions, so no browser needed.
 import { proposePeople, nameFromTitle } from '../src/lessons/invitees.ts'
 import { draftFromText, planFromText } from '../src/lessons/composer.ts'
+import { fillTemplate, DEFAULT_TEMPLATES } from '../src/lessons/template.ts'
 import { parseLessonDoc } from '@tittel/shared'
 let bad = 0
 const eq = (name: string, got: unknown, want: unknown) => {
@@ -64,6 +65,39 @@ eq2('three unnumbered problems', t.problems.length === 3, t.problems)
 eq2('inline answer numeric', t.problems[0].type === 'numeric' && t.problems[0].correct === '7', t.problems[0])
 eq2('inline choices', t.problems[1].type === 'mc' && t.problems[1].choices?.map((c) => c.content).join('|') === '4|9|7|15' && t.problems[1].correct === 'C', t.problems[1])
 eq2('"x = 5" answer -> numeric 5', t.problems[2].type === 'numeric' && t.problems[2].correct === '5', t.problems[2])
+
+// The key on the heading's own line, after a blank line (from the persona trial).
+const oneLine = draftFromText(`1) Solve for x: 3x - 7 = 11
+2) Simplify √50
+3) If f(x) = 2x² − 3, find f(−2).
+4) The graph of y = x² is shifted 3 units right. Which equation?
+(a) y = (x+3)²
+(b) y = (x−3)²
+(c) y = x² + 3
+5) Explain why a quadratic can have at most two real roots.
+
+Answers: 1) 6  2) 5√2  3) 5  4) b`, '')
+eq2('one-line key: five problems', oneLine.problems.length === 5, oneLine.problems.map((p) => p.stemLatex))
+eq2('one-line key: four answers found', oneLine.problems.filter((p) => p.answerConfidence === 'found').length === 4, oneLine.problems)
+eq2('one-line key: key not in the last stem', !oneLine.problems[4].stemLatex.includes('Answers'), oneLine.problems[4].stemLatex)
+eq2('one-line key: 4 is multiple choice B', oneLine.problems[3].type === 'mc' && oneLine.problems[3].correct === 'B', oneLine.problems[3])
+eq2('one-line key: 1 numeric 6', oneLine.problems[0].type === 'numeric' && oneLine.problems[0].correct === '6', oneLine.problems[0])
+eq2('one-line key: 2 text 5√2', oneLine.problems[1].type === 'text' && oneLine.problems[1].correct === '5√2', oneLine.problems[1])
+const singular = draftFromText('What is 7 ÷ 2?\nAnswer: 3.5', '')
+eq2('"Answer: 3.5" stays an inline answer', singular.problems.length === 1 && singular.problems[0].correct === '3.5', singular.problems)
+
+// Parent messages from the tutor's template.
+const filled = fillTemplate(DEFAULT_TEMPLATES.lesson, {
+  first_name: 'Sam', date: 'Thu, Oct 29', covered: 'Factoring', board_score: '1 of 2 answers right',
+  last_homework: '', homework: '', board_notes_link: '', portal_link: 'https://x/s/abc', tutor_name: 'Konrad',
+})
+eq('template: subject from the first line', filled.subject, 'Sam: lesson on Thu, Oct 29')
+eq2('template: empty parts dropped', !filled.body.includes('Homework') && !filled.body.includes('Notes from the board'), filled.body)
+eq2('template: kept parts filled', filled.body.includes('What we covered: Factoring') && filled.body.includes('On the board: 1 of 2 answers right.'), filled.body)
+eq2('template: no doubled blank lines', !/\n\n\n/.test(filled.body), filled.body)
+eq2('template: signed with the name', filled.body.endsWith('Best,\nKonrad'), filled.body)
+eq('template: unknown placeholder kept, no subject', fillTemplate('Hi {nmae}', { first_name: 'Sam' }), { subject: '', body: 'Hi {nmae}' })
+eq('template: plain lines always kept', fillTemplate('Thanks!\n{covered}', { covered: '' }).body, 'Thanks!')
 
 // A plan from text, through the server's own parser.
 const plan = planFromText(`# Factoring quadratics

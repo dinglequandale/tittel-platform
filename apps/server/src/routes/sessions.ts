@@ -45,7 +45,7 @@ export async function materializeSeries(orgId: string): Promise<void> {
 // prefers the series, student or tutor link and falls back to the invite's.
 const LESSON_SELECT = `
   select se.id, se.scheduled_at, se.duration_min, se.status, se.notes, se.series_id, se.board_id,
-         se.student_id, st.name as student_name,
+         se.student_id, st.name as student_name, st.parent_updates,
          se.group_id, g.name as group_name,
          se.plan_id, pl.title as plan_title,
          se.meeting_url as own_meeting_url,
@@ -227,6 +227,25 @@ export async function nextLessonAfter(
   return next?.scheduled_at ?? null
 }
 
+// Homework's due date when the tutor doesn't pick one, by their preference
+// (Settings → Lessons): the next lesson, N days after this one, or none.
+// With no next lesson booked (ad-hoc teaching), "next lesson" means a week.
+export async function defaultDueAt(
+  orgId: string,
+  lessonId: string,
+  lesson: { scheduled_at: string; student_id: string | null; group_id: string | null },
+): Promise<string | null> {
+  const [org] = await orgQuery<{ pref: string | null }>(orgId, `select settings->>'homeworkDue' as pref from orgs where id = $1::text /* org_id */`)
+  const pref = org?.pref ?? 'next_lesson'
+  if (pref === 'none') return null
+  const days = pref.startsWith('in_days:') ? Number(pref.slice('in_days:'.length)) : null
+  if (days === null) {
+    const next = await nextLessonAfter(orgId, lessonId, lesson)
+    if (next) return next
+  }
+  return new Date(new Date(lesson.scheduled_at).getTime() + (days ?? 7) * DAY_MS).toISOString()
+}
+
 sessionsRouter.patch('/sessions/:id', async (req, res) => {
   const orgId = req.auth!.orgId
   const { meetingUrl, planId, notes, status, skipped } = req.body ?? {}
@@ -398,7 +417,7 @@ sessionsRouter.post('/sessions/:id/homework', async (req, res) => {
 
   let dueAt: string | null
   if (req.body?.dueAt === undefined) {
-    dueAt = await nextLessonAfter(orgId, req.params.id, lesson)
+    dueAt = await defaultDueAt(orgId, req.params.id, lesson)
   } else if (req.body.dueAt === null) {
     dueAt = null
   } else {
@@ -414,6 +433,7 @@ sessionsRouter.post('/sessions/:id/homework', async (req, res) => {
     studentIds: students.map((s) => s.id),
     sessionId: req.params.id,
     materials,
+    tools: req.body?.tools && typeof req.body.tools === 'object' ? req.body.tools : undefined,
   })
   if ('error' in result) return res.status(result.status).json({ error: result.error })
   res.status(201).json({ ...result, dueAt })

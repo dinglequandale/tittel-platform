@@ -5,6 +5,7 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
+import { useOrg } from '../lib/useOrg.ts'
 
 interface Who { id: string; name: string }
 
@@ -24,17 +25,31 @@ function nextSlot(): { date: string; time: string } {
   return { date: localDate(d), time: `${String(d.getHours()).padStart(2, '0')}:00` }
 }
 
+/** The hour that has just started: when a lesson being logged most likely began. */
+function thisHour(): { date: string; time: string } {
+  const d = new Date()
+  d.setMinutes(0, 0, 0)
+  if (d.getHours() < 8) { d.setDate(d.getDate() - 1); d.setHours(16) }
+  return { date: localDate(d), time: `${String(d.getHours()).padStart(2, '0')}:00` }
+}
+
 // Schedules a lesson (optionally every week) and goes straight to it, since
-// the next thing a tutor does with a new lesson is prepare it.
+// the next thing a tutor does with a new lesson is prepare it. In "log" mode
+// it records a lesson that already happened (in person, or booked ad hoc),
+// with notes, so it's on the student's record and in Hours.
 export function ScheduleLessonDialog({
-  open, onOpenChange, defaultWho,
+  open, onOpenChange, defaultWho, mode = 'schedule',
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** "s:<studentId>" or "g:<groupId>" to preselect. */
   defaultWho?: string
+  mode?: 'schedule' | 'log'
 }) {
   const navigate = useNavigate()
+  const org = useOrg()
+  const logging = mode === 'log'
+  const [notes, setNotes] = useState('')
   const [students, setStudents] = useState<Who[]>([])
   const [groups, setGroups] = useState<Who[] | null>(null)
   const [who, setWho] = useState(defaultWho ?? '')
@@ -50,13 +65,17 @@ export function ScheduleLessonDialog({
     if (!open) return
     setWho(defaultWho ?? '')
     setError('')
-    const slot = nextSlot()
+    setNotes('')
+    const slot = logging ? thisHour() : nextSlot()
     setDate(slot.date)
     setTime(slot.time)
     Promise.all([apiFetch('/api/tutor/students'), apiFetch('/api/tutor/groups')])
       .then(([s, g]) => { setStudents(s.students); setGroups(g.groups) })
       .catch((err) => setError((err as Error).message))
-  }, [open, defaultWho])
+  }, [open, defaultWho, logging])
+
+  // Tutors who book as needed rarely want a weekly series.
+  useEffect(() => { if (open && org) setWeekly(org.schedule === 'regular') }, [open, org])
 
   async function submit() {
     if (!who || !date || !time || saving) return
@@ -70,11 +89,14 @@ export function ScheduleLessonDialog({
           ...(kind === 's' ? { studentId: id } : { groupId: id }),
           scheduledAt: new Date(`${date}T${time}`).toISOString(),
           durationMin: Number(duration),
-          repeatWeekly: weekly,
+          repeatWeekly: !logging && weekly,
           tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          meetingUrl: meetingUrl.trim() || undefined,
+          meetingUrl: (!logging && meetingUrl.trim()) || undefined,
         }),
       })
+      if (logging && notes.trim()) {
+        await apiFetch(`/api/tutor/sessions/${lesson.id}`, { method: 'PATCH', body: JSON.stringify({ notes: notes.trim() }) })
+      }
       onOpenChange(false)
       navigate(`/app/lessons/${lesson.id}`)
     } catch (err) {
@@ -90,7 +112,7 @@ export function ScheduleLessonDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogTitle>Schedule a lesson</DialogTitle>
+        <DialogTitle>{logging ? 'Log a lesson' : 'Schedule a lesson'}</DialogTitle>
         {nobody ? (
           <p className="muted">Add a student first. Lessons are always with a student or a group.</p>
         ) : (
@@ -116,21 +138,34 @@ export function ScheduleLessonDialog({
                 </Select>
               </Field>
             </div>
-            <label className="check-row">
-              <input type="checkbox" checked={weekly} onChange={(e) => setWeekly(e.target.checked)} />
-              Every week at this time
-            </label>
-            <Field label="Meeting link (optional)">
-              <Input value={meetingUrl} onChange={(e) => setMeetingUrl(e.target.value)}
-                placeholder="Leave blank to use the student's or your default link" />
-            </Field>
+            {logging ? (
+              <Field label="Notes (optional)">
+                <textarea className="input" rows={4} value={notes} onChange={(e) => setNotes(e.target.value)}
+                  placeholder="What you covered, how it went, what's next. Only you see these." />
+              </Field>
+            ) : (
+              <>
+                <label className="check-row">
+                  <input type="checkbox" checked={weekly} onChange={(e) => setWeekly(e.target.checked)} />
+                  Every week at this time
+                </label>
+                {org?.teachWhere !== 'in_person' && (
+                  <Field label="Meeting link (optional)">
+                    <Input value={meetingUrl} onChange={(e) => setMeetingUrl(e.target.value)}
+                      placeholder="Leave blank to use the student's or your default link" />
+                  </Field>
+                )}
+              </>
+            )}
           </>
         )}
         {error && <p className="field-error">{error}</p>}
         <div className="row-end">
           <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
           {!nobody && (
-            <Button onClick={submit} disabled={!who || saving}>{saving ? 'Scheduling…' : 'Schedule'}</Button>
+            <Button onClick={submit} disabled={!who || saving}>
+              {saving ? 'Saving…' : logging ? 'Save lesson' : 'Schedule'}
+            </Button>
           )}
         </div>
       </DialogContent>

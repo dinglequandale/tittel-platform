@@ -29,6 +29,8 @@ export interface Lesson {
   board_id: string | null
   student_id: string | null
   student_name: string | null
+  /** The 1:1 student's "updates to parents" switch; null for a group lesson. */
+  parent_updates?: boolean | null
   group_id: string | null
   group_name: string | null
   plan_id: string | null

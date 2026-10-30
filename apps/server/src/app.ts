@@ -24,6 +24,7 @@ import { calendarRouter } from './routes/calendar.ts'
 import { filesRouter, publicFilesRouter } from './routes/files.ts'
 import { followUpRouter } from './routes/followUp.ts'
 import { demoRouter } from './routes/demo.ts'
+import { accountRouter } from './routes/account.ts'
 import { rateLimit } from './lib/rateLimit.ts'
 
 // The configured Express app — defined separately from the listen() bootstrap
@@ -76,6 +77,7 @@ app.use('/api/tutor', requireTutor, calendarRouter)
 app.use('/api/tutor', requireTutor, filesRouter)
 app.use('/api/tutor', requireTutor, followUpRouter)
 app.use('/api/tutor', requireTutor, demoRouter)
+app.use('/api/tutor', requireTutor, accountRouter)
 // Uploaded files by their token: plan pages on boards, worksheets on portals.
 app.use('/api/files', rateLimit(1200), publicFilesRouter)
 

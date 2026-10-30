@@ -87,7 +87,7 @@ export async function addStudentEmails(orgId: string, studentId: string, emails:
 studentsRouter.get('/students', async (req, res) => {
   const rows = await orgQuery(
     req.auth!.orgId,
-    `select s.id, s.name, ${EMAILS}, s.portal_token, s.report_token, s.notes, s.meeting_url, s.created_at,
+    `select s.id, s.name, ${EMAILS}, s.portal_token, s.report_token, s.notes, s.meeting_url, s.parent_updates, s.created_at,
             b.id as board_id, nl.id as next_lesson_id, nl.scheduled_at as next_lesson_at
        from students s
        left join lateral (
@@ -157,7 +157,8 @@ studentsRouter.get('/students/:id', async (req, res) => {
   const orgId = req.auth!.orgId
   const [student] = await orgQuery(
     orgId,
-    `select s.id, s.name, ${EMAILS}, s.portal_token, s.notes, s.meeting_url, s.created_at, s.archived_at
+    `select s.id, s.name, ${EMAILS}, s.portal_token, s.notes, s.meeting_url, s.parent_updates, s.last_report_at,
+            s.created_at, s.archived_at
        from students s where s.org_id = $1 and s.id = $2`,
     [req.params.id],
   )
@@ -201,6 +202,104 @@ studentsRouter.get('/students/:id', async (req, res) => {
   res.json({ student: { ...student, groups }, lessons, homework })
 })
 
+function isoParam(v: unknown): string | null {
+  return typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : null
+}
+
+// A progress report's facts for one student over a period: the lessons they
+// had (group lessons included), the homework given or due in it, and their
+// answers on the board. The tutor's template turns these into the message.
+studentsRouter.get('/students/:id/progress', async (req, res) => {
+  const orgId = req.auth!.orgId
+  const from = isoParam(req.query.from)
+  const to = isoParam(req.query.to)
+  if (!from || !to || from >= to) return res.status(400).json({ error: 'from and to must be dates, from first' })
+  const [student] = await orgQuery(
+    orgId,
+    `select s.id, s.name, ${EMAILS}, s.portal_token, s.parent_updates, s.last_report_at
+       from students s where s.org_id = $1 and s.id = $2`,
+    [req.params.id],
+  )
+  if (!student) return res.status(404).json({ error: 'not found' })
+  const [lessons, homework, [board]] = await Promise.all([
+    orgQuery(
+      orgId,
+      `select se.scheduled_at, se.notes, pl.title as plan_title, g.name as group_name
+         from sessions se
+         left join groups g on g.id = se.group_id
+         left join lessons pl on pl.id = se.plan_id
+        where se.org_id = $1 and se.status != 'cancelled'
+          and (se.student_id = $2 or se.group_id in (select gm.group_id from group_members gm where gm.student_id = $2))
+          and se.scheduled_at >= $3 and se.scheduled_at < least($4::timestamptz, now())
+        order by se.scheduled_at`,
+      [req.params.id, from, to],
+    ),
+    orgQuery(
+      orgId,
+      `select coalesce(a.title, ps.title) as title, a.due_at, a.created_at, at.status, at.submitted_at,
+              (select count(*)::int from responses r where r.attempt_id = at.id and r.is_correct) as score,
+              (select count(*)::int from assignment_problems ap join problems p on p.id = ap.problem_id
+                where ap.assignment_id = a.id
+                  and (p.type != 'frq' or exists (select 1 from responses r where r.attempt_id = at.id and r.problem_id = p.id and r.is_correct is not null))) as total
+         from attempts at
+         join assignments a on a.id = at.assignment_id
+         join problem_sets ps on ps.id = a.set_id
+        where at.org_id = $1 and at.student_id = $2 and a.archived_at is null
+          and ((a.created_at >= $3 and a.created_at < $4) or (a.due_at >= $3 and a.due_at < $4))
+        order by a.created_at`,
+      [req.params.id, from, to],
+    ),
+    orgQuery<{ right: number; total: number }>(
+      orgId,
+      `select count(*) filter (where is_correct)::int as right, count(*) filter (where is_correct is not null)::int as total
+         from quiz_events where org_id = $1 and student_id = $2 and created_at >= $3 and created_at < $4`,
+      [req.params.id, from, to],
+    ),
+  ])
+  res.json({ student, lessons, homework, board: board ?? { right: 0, total: 0 } })
+})
+
+// The tutor copied a progress report or opened it in their email.
+studentsRouter.post('/students/:id/report-sent', async (req, res) => {
+  const rows = await orgQuery(
+    req.auth!.orgId,
+    `update students set last_report_at = now() where org_id = $1 and id = $2 returning id`,
+    [req.params.id],
+  )
+  if (!rows[0]) return res.status(404).json({ error: 'not found' })
+  res.status(204).end()
+})
+
+// Progress reports the tutor's reminder says are due (Settings → Parents):
+// students with updates on who had a lesson in [since, until) and haven't had
+// a report since sentBefore. The client works out the period in the tutor's
+// own time zone (last calendar month, or the last four weeks).
+studentsRouter.get('/reports/due', async (req, res) => {
+  const since = isoParam(req.query.since)
+  const until = isoParam(req.query.until)
+  const sentBefore = isoParam(req.query.sentBefore)
+  if (!since || !until || !sentBefore) return res.status(400).json({ error: 'since, until and sentBefore are required' })
+  const rows = await orgQuery(
+    req.auth!.orgId,
+    `select s.id, s.name from students s
+      where s.org_id = $1 and s.archived_at is null and s.parent_updates
+        and (s.last_report_at is null or s.last_report_at < $4)
+        and exists (
+          select 1 from sessions se
+           where se.org_id = s.org_id and se.status != 'cancelled'
+             and (se.student_id = s.id or se.group_id in (select gm.group_id from group_members gm where gm.student_id = s.id))
+             and se.scheduled_at >= $2 and se.scheduled_at < least($3::timestamptz, now()))
+        -- A first report waits until they've been around for a whole period.
+        and (s.last_report_at is not null or exists (
+          select 1 from sessions se
+           where se.org_id = s.org_id and se.status != 'cancelled' and se.scheduled_at < $2
+             and (se.student_id = s.id or se.group_id in (select gm.group_id from group_members gm where gm.student_id = s.id))))
+      order by s.name`,
+    [since, until, sentBefore],
+  )
+  res.json({ students: rows })
+})
+
 // Lessons taught per student in a period (default: this calendar month), for
 // invoicing. A group lesson counts for each member. Lessons still ahead in
 // the period are counted apart, so a month in progress reads clearly.
@@ -228,7 +327,8 @@ studentsRouter.get('/hours', async (req, res) => {
 })
 
 studentsRouter.patch('/students/:id', async (req, res) => {
-  const { name, notes, meetingUrl } = req.body ?? {}
+  const { name, notes, meetingUrl, parentUpdates } = req.body ?? {}
+  if (parentUpdates !== undefined && typeof parentUpdates !== 'boolean') return res.status(400).json({ error: 'parentUpdates must be true or false' })
   // `emails`, when present, replaces the student's whole address list.
   const emails = req.body?.emails === undefined ? undefined : parseEmails(req.body.emails)
   if (emails === null) return res.status(400).json({ error: "one of those email addresses doesn't look right" })
@@ -239,10 +339,11 @@ studentsRouter.patch('/students/:id', async (req, res) => {
     `update students set
        name = coalesce($3, name),
        notes = case when $4 then $5 else notes end,
-       meeting_url = case when $6 then $7 else meeting_url end
+       meeting_url = case when $6 then $7 else meeting_url end,
+       parent_updates = coalesce($8, parent_updates)
      where org_id = $1 and id = $2 and archived_at is null
-     returning id, name, portal_token, report_token, notes, meeting_url, created_at`,
-    [req.params.id, name, notes !== undefined, notes ?? null, meetingUrl !== undefined, meetingUrl ?? null],
+     returning id, name, portal_token, report_token, notes, meeting_url, parent_updates, created_at`,
+    [req.params.id, name, notes !== undefined, notes ?? null, meetingUrl !== undefined, meetingUrl ?? null, parentUpdates ?? null],
   )
   if (!rows[0]) return res.status(404).json({ error: 'not found' })
   if (emails) {

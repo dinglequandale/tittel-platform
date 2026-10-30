@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { CalendarPlus, ChevronLeft, Mail } from 'lucide-react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { CalendarPlus, ChevronLeft, FileText } from 'lucide-react'
 import { Button, CopyButton, PageLoading } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
 import { ScheduleLessonDialog } from '../lessons/ScheduleLessonDialog.tsx'
 import { shortDate, timeLabel, scoreTone, dueLabel } from '../lessons/lessons.ts'
-import { ParentUpdateDialog, recipientsOf, portalLink, firstName } from '../lessons/ParentUpdate.tsx'
+import { portalLink, firstName } from '../lessons/ParentUpdate.tsx'
+import { QuickLessonButtons } from '../lessons/QuickLesson.tsx'
+import { ProgressReportDialog, type Period } from './ProgressReport.tsx'
+import { useOrg } from '../lib/useOrg.ts'
 
 interface Record {
   student: {
     id: string; name: string; portal_token: string; notes: string | null; archived_at: string | null
+    meeting_url: string | null; parent_updates: boolean
     emails: { email: string; role: 'student' | 'parent' }[]
     groups: { id: string; name: string }[]
   }
@@ -38,7 +42,11 @@ export function StudentPage() {
   const [data, setData] = useState<Record | null>(null)
   const [error, setError] = useState('')
   const [scheduling, setScheduling] = useState(false)
-  const [updating, setUpdating] = useState(false)
+  // ?report=<period> opens the progress report (from Home's reminder).
+  const [search, setSearch] = useSearchParams()
+  const reporting = search.get('report') as Period | null
+  const setReporting = (p: Period | null) => setSearch(p ? { report: p } : {}, { replace: true })
+  const org = useOrg()
 
   function load() {
     apiFetch(`/api/tutor/students/${studentId}`).then(setData).catch((e) => setError((e as Error).message))
@@ -73,8 +81,13 @@ export function StudentPage() {
         </div>
         <div className="toolbar-actions">
           <Button onClick={() => setScheduling(true)}><CalendarPlus size={14} strokeWidth={2} /> Schedule</Button>
-          <Button variant="secondary" onClick={() => setUpdating(true)}><Mail size={14} strokeWidth={2} /> Update parents</Button>
+          {org?.parentUpdates.reports && student.parent_updates && (
+            <Button variant="secondary" onClick={() => setReporting('last4')}><FileText size={14} strokeWidth={2} /> Progress report</Button>
+          )}
         </div>
+      </div>
+      <div className="student-quick">
+        <QuickLessonButtons who={{ studentId: student.id, meetingUrl: student.meeting_url }} whoKey={`s:${student.id}`} />
       </div>
 
       <div className="lesson-grid">
@@ -141,23 +154,9 @@ export function StudentPage() {
       </div>
 
       <ScheduleLessonDialog open={scheduling} onOpenChange={(o) => { setScheduling(o); if (!o) load() }} defaultWho={`s:${student.id}`} />
-      {updating && (
-        <ParentUpdateDialog onClose={() => setUpdating(false)} load={async () => {
-          const recent = past.slice(0, 3)
-          const lines = ['Hi,', '', `A quick update on ${first}.`]
-          if (recent.length) {
-            lines.push('', 'Recent lessons:')
-            for (const l of recent) lines.push(`- ${shortDate(l.scheduled_at)}: ${l.notes?.trim() || l.plan_title || ''}`)
-          }
-          const done = homework.filter((h) => h.status === 'submitted' || h.status === 'expired').slice(0, 3)
-          if (done.length) {
-            lines.push('', 'Homework:')
-            for (const h of done) lines.push(`- ${h.title}: ${hwState(h).label}`)
-          }
-          if (overdue.length) lines.push('', `Still to do: ${overdue.map((h) => h.title).join(', ')}.`)
-          lines.push('', `${first}'s homework and lessons are here: ${portalLink(student.portal_token)}`, '', 'Best,')
-          return { to: recipientsOf([student]), subject: `${first}: an update`, body: lines.join('\n') }
-        }} />
+      {reporting && (
+        <ProgressReportDialog studentId={student.id} defaultPeriod={reporting}
+          onClose={() => setReporting(null)} />
       )}
     </div>
   )

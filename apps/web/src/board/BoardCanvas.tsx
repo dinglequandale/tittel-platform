@@ -7,7 +7,10 @@ import {
   DefaultMainMenuContent,
   PeopleMenu,
   atom,
+  defaultHandleExternalFileContent,
   useEditor,
+  useToasts,
+  useTranslation,
   useValue,
   type Atom,
   type Editor,
@@ -39,9 +42,10 @@ import { Calculator } from './Calculator.tsx'
 import { Timer, type TimerWireState } from './Timer.tsx'
 import { exportBoardToPdf, lessonNotesPdf } from './exportPdf.ts'
 import { apiFetch } from '../lib/api.ts'
-import { uploadFile } from '../lib/files.ts'
+import { uploadFile, isPdf } from '../lib/files.ts'
 import { useLessons } from './lesson/useLessons.ts'
 import { LessonPicker } from './lesson/LessonPicker.tsx'
+import { planFromFiles } from './lesson/fromFiles.ts'
 import { makeAnswerOverlay } from './quiz/AnswerOverlay.tsx'
 import { StatsPanel } from './quiz/StatsPanel.tsx'
 import './board.css'
@@ -264,6 +268,24 @@ export function BoardCanvas({
     }
   }, [])
 
+  // A PDF or photos brought in mid-lesson: saved as a library plan, then loaded
+  // like any other, so the pages land after the board's own and open on the first.
+  const { loadLibraryLesson } = lessons
+  const addFiles = useCallback(
+    async (files: File[]) => {
+      try {
+        const planId = await planFromFiles(files, setPdfStatus)
+        if (!planId) throw new Error('Choose a PDF or photos (PNG, JPEG).')
+        setPdfStatus(null)
+        await loadLibraryLesson(planId)
+      } catch (err) {
+        setPdfStatus(err instanceof Error ? err.message : String(err))
+        setTimeout(() => setPdfStatus(null), 5000)
+      }
+    },
+    [loadLibraryLesson],
+  )
+
   const toggleGrant = useCallback(
     (studentId: string, allow: boolean) => {
       grantedAtom.update((prev) => {
@@ -437,7 +459,7 @@ export function BoardCanvas({
       )}
       {signedInHost && (
         <>
-          <LessonPicker onPick={lessons.loadLibraryLesson} />
+          <LessonPicker onPick={lessons.loadLibraryLesson} onAddFiles={addFiles} />
           <span className="board-bar__sep" />
         </>
       )}
@@ -529,7 +551,9 @@ export function BoardCanvas({
             setEditor(ed)
           }}
           components={components}
-        />
+        >
+          {signedInHost && <PdfDrop onPdfs={addFiles} />}
+        </Tldraw>
       </BarContext.Provider>
 
       <ConfirmDialog
@@ -623,6 +647,28 @@ function WriteAccessControls({
       })}
     </div>
   )
+}
+
+// A PDF dropped on the canvas goes on the board as new pages, like a plan's.
+// Every other file (photos included) keeps tldraw's default drop. A child of
+// <Tldraw>, so its effect runs after tldraw registers its default handlers.
+function PdfDrop({ onPdfs }: { onPdfs: (files: File[]) => void }) {
+  const editor = useEditor()
+  const toasts = useToasts()
+  const msg = useTranslation()
+  const onPdfsRef = useRef(onPdfs)
+  onPdfsRef.current = onPdfs
+
+  useEffect(() => {
+    editor.registerExternalContentHandler('files', async (content) => {
+      const pdfs = content.files.filter(isPdf)
+      const rest = content.files.filter((f) => !isPdf(f))
+      if (pdfs.length) void onPdfsRef.current(pdfs)
+      if (rest.length) await defaultHandleExternalFileContent(editor, { ...content, files: rest }, { toasts, msg })
+    })
+  }, [editor, toasts, msg])
+
+  return null
 }
 
 // Stays in the bar for the whole session: a tutor often re-sends the link mid-lesson.

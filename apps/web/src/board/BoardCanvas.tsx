@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { ConfirmDialog } from '@tittel/ui'
 import {
   Tldraw,
-  DefaultMainMenu,
-  DefaultMainMenuContent,
   PeopleMenu,
   atom,
   defaultHandleExternalFileContent,
@@ -38,6 +36,8 @@ import { setupCameraSync, type FollowController } from './cameraSync.ts'
 import { setupPageSync } from './pageSync.ts'
 import { setupRightClickPan } from './rightClickPan.ts'
 import type { ControlChannel } from './controlChannel.ts'
+import { BoardToolbar } from './BoardToolbar.tsx'
+import { boardCustomTools, boardShapeUtils, boardUiOverrides, keepDashInStep } from './boardTools.ts'
 import { Calculator } from './Calculator.tsx'
 import { Timer, type TimerWireState } from './Timer.tsx'
 import { exportBoardToPdf, lessonNotesPdf } from './exportPdf.ts'
@@ -60,6 +60,23 @@ const BarContext = createContext<ReactNode>(null)
 function BoardTopPanel() {
   const bar = useContext(BarContext)
   return bar ? <div className="board-bar">{bar}</div> : null
+}
+
+// tldraw's own chrome, switched off piece by piece rather than with `hideUi`,
+// which would also take the keyboard shortcuts, paste and the TopPanel slot.
+// The licence watermark is part of the canvas and stays (OVERHAUL.md §5).
+const HIDDEN_UI: TLComponents = {
+  MainMenu: null,
+  StylePanel: null,
+  ActionsMenu: null,
+  QuickActions: null,
+  NavigationPanel: null,
+  HelpMenu: null,
+  KeyboardShortcutsDialog: null,
+  ContextMenu: null,
+  DebugPanel: null,
+  DebugMenu: null,
+  CursorChatBubble: null,
 }
 
 function connectUrl(boardId: string, authParams: string) {
@@ -143,10 +160,12 @@ export function BoardCanvas({
     cameraCtl.current = camera
     pageCtl.current = page
     const stopPan = isHost ? setupRightClickPan(editor) : undefined
+    const stopDash = keepDashInStep(editor)
     return () => {
       camera.stop()
       page.stop()
       stopPan?.()
+      stopDash()
       cameraCtl.current = null
       pageCtl.current = null
     }
@@ -299,18 +318,6 @@ export function BoardCanvas({
     [channel, grantedAtom],
   )
 
-  const HostMainMenu = useMemo(
-    () =>
-      function HostMainMenu() {
-        return (
-          <DefaultMainMenu>
-            <DefaultMainMenuContent />
-          </DefaultMainMenu>
-        )
-      },
-    [],
-  )
-
   const HostSharePanel = useMemo(
     () =>
       function HostSharePanel() {
@@ -418,16 +425,15 @@ export function BoardCanvas({
   }
 
   const components = useMemo<TLComponents>(() => {
+    const c: TLComponents = { ...HIDDEN_UI, InFrontOfTheCanvas: AnswerOverlay, TopPanel: BoardTopPanel, Toolbar: BoardToolbar }
     if (isHost) {
-      const c: TLComponents = { MainMenu: HostMainMenu, InFrontOfTheCanvas: AnswerOverlay, TopPanel: BoardTopPanel }
       if (isLarge) c.SharePanel = HostSharePanel
       return c
     }
-    const c: TLComponents = { InFrontOfTheCanvas: AnswerOverlay, TopPanel: BoardTopPanel }
     if (!canWrite) c.Toolbar = null
     if (!freeReign) c.PageMenu = null
     return c
-  }, [isHost, isLarge, canWrite, freeReign, AnswerOverlay, HostMainMenu, HostSharePanel])
+  }, [isHost, isLarge, canWrite, freeReign, AnswerOverlay, HostSharePanel])
 
   if (store.status === 'loading') {
     return <div className="board-status board-scope">Connecting to the board…</div>
@@ -551,6 +557,9 @@ export function BoardCanvas({
             setEditor(ed)
           }}
           components={components}
+          tools={boardCustomTools}
+          shapeUtils={boardShapeUtils}
+          overrides={boardUiOverrides}
         >
           {signedInHost && <PdfDrop onPdfs={addFiles} />}
         </Tldraw>

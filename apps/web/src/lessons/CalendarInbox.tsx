@@ -28,11 +28,15 @@ export interface CalendarFilters {
 export interface CalendarStatus {
   connected: boolean
   feed?: string
+  /** Whose calendar the feed is; null for a test host. */
+  provider?: 'google' | 'outlook' | 'icloud' | null
   filters?: CalendarFilters
   lastSync?: {
     at: string; ok: boolean; error?: string; imported: number; filtered: number; unmatched: UnmatchedSeries[]
     /** The series the filters left out (up to 50), to count one in by hand. */
     left_out?: { uid: string; title: string; next: string }[]
+    /** The feed lists no invitees (some Outlook and iCloud feeds), so the "someone is invited" rule is skipped. */
+    no_attendees?: boolean
   }
 }
 
@@ -62,8 +66,8 @@ export function CalendarInbox({ status, onChanged }: { status: CalendarStatus | 
     return (
       <div className="surface-card calendar-prompt">
         <div>
-          <div className="list-row-title">Bring in your Google Calendar</div>
-          <div className="list-row-sub">Your lessons appear here by themselves, with their Meet links.</div>
+          <div className="list-row-title">Bring in your calendar</div>
+          <div className="list-row-sub">Google, Outlook or iCloud: your lessons appear here by themselves, with their meeting links.</div>
         </div>
         <Link to="/app/settings#calendar" className="card-link">Connect</Link>
       </div>

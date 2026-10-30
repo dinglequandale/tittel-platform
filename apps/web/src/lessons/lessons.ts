@@ -43,6 +43,8 @@ export interface Lesson {
   skipped: boolean
   /** Where to move or cancel a calendar lesson (lesson page only). */
   calendar_event_url?: string | null
+  /** Whose calendar it came from; null for a test host. Picks the page's wording. */
+  calendar_provider?: 'google' | 'outlook' | 'icloud' | null
   /** The last earlier lesson's notes with the same student or group. */
   prev_notes: string | null
   prev_at: string | null

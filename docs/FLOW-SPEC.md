@@ -300,7 +300,7 @@ into O6's shell items.
 - **Disconnect** removes the address and unprepared future imports. Prepared lessons stay as
   ordinary lessons.
 - **Not done:** writing to Google (stage C, OAuth after O5); calendars other than Google's
-  (widen the allowlist when a partner needs Outlook or iCloud).
+  (widen the allowlist when a partner needs Outlook or iCloud; done in §9.4).
 
 ### 9.1 After Konrad's first real sync (2026-10-28)
 
@@ -378,6 +378,29 @@ and saw invites stay unmatched after creating the right students. Changes:
   `newStudents`). Everything is checked before anyone is created.
 - Group members count as scheduled (their next lesson can be the group's), and the Students
   table fits a phone (group and board columns drop off below 720 px).
+
+### 9.4 Outlook / Microsoft 365 and iCloud feeds (2026-10-30)
+
+A simulated trial found a UK tutor on Outlook couldn't connect at all. Now accepted alongside
+Google: `outlook.office365.com`, `outlook.office.com`, `outlook.live.com` (published ICS link) and
+any `*.icloud.com` host (iCloud public calendar; `webcal://` becomes https). `providerOf` in
+`lib/calendar.ts` is the allowlist: exact hosts, and a suffix check on the parsed hostname for
+iCloud, never a substring. `ICS_ALLOW_HOSTS` now adds to it instead of replacing it. Still no
+redirects, 10 s, 5 MB.
+- **The tutor's other address:** Google's is in the secret address. Outlook and iCloud addresses
+  don't carry it, so it's the ORGANIZER of the most event series in the feed (none if the
+  sign-in address organizes anything, or no one clearly leads).
+- **No attendee data:** a feed with no ATTENDEE line anywhere (not just in the window) skips
+  "someone besides you is invited", which would otherwise drop every event. Email matching
+  can't work there either, so title keywords and the inbox do the sorting; Settings says so and
+  greys out that rule (`lastSync.no_attendees`).
+- **Copy:** the status and lesson responses carry `provider` / `calendar_provider`
+  (`google | outlook | icloud`, null for a test host). Only Google lessons get
+  `calendar_event_url`; the others say to move or cancel it in your calendar. Settings → Calendar
+  has short how-to-find-the-address steps for all three.
+- **Not tested against real Outlook or iCloud feeds**, only fixtures written from their documented
+  shape (`test/fixtures/*.ics`). If a real feed redirects (iCloud may move a calendar between
+  `pNN-caldav` hosts), the no-redirect rule makes the fetch fail and Settings shows "Couldn't read that calendar".
 
 ## 10. As built: the rest of the usability pass (2026-10-29)
 

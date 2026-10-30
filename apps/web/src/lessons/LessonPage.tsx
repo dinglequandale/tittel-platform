@@ -92,10 +92,13 @@ export function LessonPage() {
             <p className="lesson-series">
               <CalendarDays size={13} strokeWidth={2} />
               {lesson.skipped ? 'Skipped this week (still in your calendar).' : 'From your calendar.'}
-              {lesson.calendar_event_url && (
+              {lesson.calendar_event_url ? (
                 <a href={lesson.calendar_event_url} target="_blank" rel="noopener noreferrer" className="inline-link">
                   Move or cancel it there <ExternalLink size={12} strokeWidth={2} />
                 </a>
+              ) : (
+                // Only Google events can be linked to directly.
+                <span>Move or cancel it in {lesson.calendar_provider === 'outlook' ? 'Outlook' : lesson.calendar_provider === 'icloud' ? 'iCloud' : 'your calendar'}.</span>
               )}
             </p>
           )}

@@ -1,10 +1,10 @@
-import type { Editor } from 'tldraw'
+import type { BoardEditor } from './engine/editor.ts'
 
 // Tutor convenience: hold the RIGHT mouse button and drag to pan the canvas,
 // instead of the default space-drag / hand-tool. The browser context menu is
 // suppressed while we're on the board. Students don't need this — their camera
 // is locked to the tutor's anyway.
-export function setupRightClickPan(editor: Editor): () => void {
+export function setupRightClickPan(editor: BoardEditor): () => void {
   const container = editor.getContainer()
   let panning = false
   let lastX = 0
@@ -35,7 +35,7 @@ export function setupRightClickPan(editor: Editor): () => void {
     const cam = editor.getCamera()
     // Screen pixels -> page units (divide by zoom). Dragging right pushes the
     // canvas right under the cursor, like grabbing the paper.
-    editor.setCamera({ x: cam.x + dx / cam.z, y: cam.y + dy / cam.z, z: cam.z }, { immediate: true })
+    editor.setCamera({ x: cam.x + dx / cam.z, y: cam.y + dy / cam.z, z: cam.z })
     e.preventDefault()
     e.stopPropagation()
   }

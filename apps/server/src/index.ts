@@ -11,13 +11,13 @@ import { verifyBoardToken } from './board/boardToken.ts'
 // Long-running server bootstrap (Render). The app itself lives in app.ts so
 // tests can import it without this listen() call. A raw http.Server (rather
 // than app.listen) is required so we can route WebSocket upgrades ourselves —
-// PLAN.md §4.1's board sync (tldraw `/connect/:boardId`) and ControlChannel
+// PLAN.md §4.1's board sync (Yjs, `/connect/:boardId`) and ControlChannel
 // (`/control/:boardId`) live alongside the REST API on one deployable service.
 const PORT = Number(process.env.PORT) || 6060
 
 const server = http.createServer(app)
 // ws defaults to 100 MiB frames, which any anonymous guest could send. Real
-// frames are far smaller: snapshots cap at 5 MB and images go over /uploads.
+// frames are far smaller: saved boards cap at 5 MB and images go over /uploads.
 const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 })
 
 async function lookupBoard(boardId: string): Promise<{ archived: boolean; mode: 'small' | 'large' } | null> {
@@ -105,7 +105,7 @@ server.on('upgrade', (req, socket, head) => {
         wss.handleUpgrade(req, socket, head, (ws) => {
           const sessionId = url.searchParams.get('sessionId') || crypto.randomUUID()
           if (resolved.userId) room.syncUsers.set(sessionId, resolved.userId)
-          room.socketRoom.handleSocketConnect({ sessionId, socket: ws as never, isReadonly })
+          room.sync.connect(ws, { sessionId, readonly: isReadonly })
         })
       })
       .catch((err) => {

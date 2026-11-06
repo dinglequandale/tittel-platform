@@ -3,7 +3,7 @@ import type { LessonDoc } from '@tittel/shared'
 // Pure flow-layout computation, ported from the legacy whiteboard: given a
 // parsed lesson and the *measured* pixel size of each rendered block, decide
 // where every block sits on its page. Blocks stack top-to-bottom, separated by
-// each block's `spacingAfter` (the workspace gap). No DOM, no tldraw.
+// each block's `spacingAfter` (the workspace gap). No DOM.
 //
 // One change from the legacy port: every id carries an `idPrefix` (one per
 // loaded plan — `lesson-<sessionId>` or `plan-<planId>-v<version>`), so several

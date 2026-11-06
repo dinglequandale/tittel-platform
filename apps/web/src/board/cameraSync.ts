@@ -1,7 +1,5 @@
-import type { Editor } from 'tldraw'
+import type { BoardEditor, Camera } from './engine/editor.ts'
 import type { ControlChannel } from './controlChannel.ts'
-
-type Camera = { x: number; y: number; z: number }
 
 /** A guest sync controller whose "follow the tutor" behavior can be toggled live. */
 export interface FollowController {
@@ -10,6 +8,8 @@ export interface FollowController {
   setFollow: (follow: boolean) => void
 }
 
+const BROADCAST_MS = 50
+
 // Keeps every viewer's camera locked to the tutor's, over the shared control
 // channel.
 //  - Tutor (host): broadcasts its camera on every change.
@@ -17,7 +17,7 @@ export interface FollowController {
 //    When free reign is on the lock is released so the student can roam; turning
 //    it back off re-locks and snaps to the tutor's latest camera.
 export function setupCameraSync(
-  editor: Editor,
+  editor: BoardEditor,
   channel: ControlChannel,
   isHost: boolean,
   initialFollow = true,
@@ -29,23 +29,13 @@ export function setupCameraSync(
     let following = initialFollow
     let last: Camera | null = null
 
-    const setLocked = (locked: boolean) => {
-      const opts = editor.getCameraOptions()
-      editor.setCameraOptions({ ...opts, isLocked: locked })
-    }
-    const apply = (cam: Camera) => {
-      setLocked(false)
-      editor.setCamera(cam, { immediate: true })
-      setLocked(true)
-    }
-
-    setLocked(following)
+    editor.setCameraLocked(following)
     // Always track the tutor's latest camera; only apply it while following.
     cleanups.push(
       channel.on('camera', (m) => {
         if (!m.camera) return
         last = m.camera
-        if (following) apply(m.camera)
+        if (following) editor.setCamera(m.camera)
       }),
     )
 
@@ -54,31 +44,23 @@ export function setupCameraSync(
       setFollow: (follow: boolean) => {
         if (follow === following) return
         following = follow
-        if (follow) {
-          if (last) apply(last) // snap back to the tutor's view
-          else setLocked(true)
-        } else {
-          setLocked(false) // release for free roaming
-        }
+        editor.setCameraLocked(follow) // released for free roaming
+        if (follow && last) editor.setCamera(last) // snap back to the tutor's view
       },
     }
   } else {
     // ---- Host: broadcast camera changes (throttled) ----
     let last: Camera | null = null
-    let lastSent = 0
     const broadcast = (force: boolean) => {
       const c = editor.getCamera()
       const changed = !last || last.x !== c.x || last.y !== c.y || last.z !== c.z
-      const now = performance.now()
-      if ((force || changed) && (force || now - lastSent >= 50)) {
+      if (force || changed) {
         last = { x: c.x, y: c.y, z: c.z }
-        lastSent = now
         channel.send({ type: 'camera', camera: last })
       }
     }
-    const onTick = () => broadcast(false)
-    editor.on('tick', onTick)
-    cleanups.push(() => editor.off('tick', onTick))
+    const timer = setInterval(() => broadcast(false), BROADCAST_MS)
+    cleanups.push(() => clearInterval(timer))
     // Re-push the current camera whenever the socket (re)connects, so a student
     // who joins later immediately jumps to the tutor's current view.
     cleanups.push(channel.on('open', () => broadcast(true)))

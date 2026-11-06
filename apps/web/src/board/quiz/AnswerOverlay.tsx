@@ -1,17 +1,11 @@
 // Student-facing answer inputs, anchored beneath each answerable problem on the
-// tldraw canvas (ported from the legacy whiteboard, restyled).  Mounted via `components.InFrontOfTheCanvas`, which tldraw
-// renders as a DOM SIBLING of `.tl-canvas` (verified in the installed source,
-// `@tldraw/editor/src/lib/components/default-components/DefaultCanvas.tsx`):
-// it is NOT nested inside the camera-transformed `.tl-html-layer`, so nothing
-// here is positioned for us. `OnTheCanvas` would be camera-transformed, but it
-// paints *underneath* shapes — no good for an input that must sit in front of
-// (beneath, visually) a locked problem image.
+// board (ported from the legacy whiteboard, restyled). Mounted over the canvas,
+// not inside its SVG.
 //
-// To place boxes in page coordinates we replicate tldraw's own layer
-// transform by hand: a 1x1px absolutely-positioned wrapper carrying
-// `scale(z) translate(x, y)` for the current camera, exactly like
-// `.tl-html-layer` does internally. Children are then positioned with plain
-// page-space coordinates, and the wrapper's scale/translate does the rest.
+// To place boxes in page coordinates we repeat the canvas's camera transform: a
+// 1x1px absolutely-positioned wrapper carrying `scale(z) translate(x, y)`.
+// Children are then positioned with plain page-space coordinates, and the
+// wrapper's scale/translate does the rest.
 import {
   useEffect,
   useRef,
@@ -22,8 +16,9 @@ import {
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
 } from 'react'
-import { useEditor, useValue, type Box, type TLShapeId } from 'tldraw'
+import type { Box } from '@tittel/board'
 import type { ControlChannel } from '../controlChannel.ts'
+import { useBoardValue, useEditor } from '../engine/react.ts'
 import {
   DEFAULT_CHOICES,
   MAX_ANSWER_LEN,
@@ -40,7 +35,7 @@ import './quiz.css'
 type AckState = { correct?: boolean }
 
 type VisibleQuestion = {
-  shapeId: TLShapeId
+  shapeId: string
   q: QuestionMeta
   bounds: Box
 }
@@ -95,30 +90,25 @@ export function makeAnswerOverlay(opts: {
     const editor = useEditor()
 
     // Camera, read reactively so the wrapper's transform tracks pan/zoom exactly
-    // the way tldraw's own `.tl-html-layer` does.
-    const camera = useValue('quiz-overlay camera', () => editor.getCamera(), [editor])
+    // the way the canvas does.
+    const camera = useBoardValue(editor, () => editor.getCamera(), Object.is)
 
     // Every answerable shape on the current page, with its page-space bounds.
     // `getShapePageBounds` is used (rather than reading shape.x/y directly)
-    // because it accounts for the shape's full page transform and is robust to
-    // parenting/rotation quirks.
-    const questions = useValue<VisibleQuestion[]>(
-      'quiz-overlay questions',
-      () => {
-        const out: VisibleQuestion[] = []
-        for (const shape of editor.getCurrentPageShapes()) {
-          const q = (shape.meta as { q?: QuestionMeta }).q
-          if (!q) continue
-          const bounds = editor.getShapePageBounds(shape.id)
-          if (!bounds) continue
-          out.push({ shapeId: shape.id, q, bounds })
-        }
-        // Stable order so the list doesn't reshuffle visually between renders.
-        out.sort((a, b) => a.q.id.localeCompare(b.q.id))
-        return out
-      },
-      [editor]
-    )
+    // because it accounts for rotation.
+    const questions = useBoardValue<VisibleQuestion[]>(editor, () => {
+      const out: VisibleQuestion[] = []
+      for (const shape of editor.getCurrentPageShapes()) {
+        const q = (shape.meta as { q?: QuestionMeta }).q
+        if (!q) continue
+        const bounds = editor.getShapePageBounds(shape.id)
+        if (!bounds) continue
+        out.push({ shapeId: shape.id, q, bounds })
+      }
+      // Stable order so the list doesn't reshuffle visually between renders.
+      out.sort((a, b) => a.q.id.localeCompare(b.q.id))
+      return out
+    })
 
     // Current/submitted value per question id. A question not yet present here
     // falls back to sessionStorage (see `valueFor`) — that's how a submitted
@@ -230,8 +220,8 @@ export function makeAnswerOverlay(opts: {
       })
     }, [])
 
-    // The outer wrapper replicates tldraw's own camera transform, so its
-    // children (in raw page-space coordinates) land in the right screen spot.
+    // The outer wrapper repeats the canvas's camera transform, so its children
+    // (in raw page-space coordinates) land in the right screen spot.
     const wrapperStyle: CSSProperties = {
       position: 'absolute',
       top: 0,
@@ -242,15 +232,10 @@ export function makeAnswerOverlay(opts: {
       transform: `scale(${camera.z}) translate(${camera.x}px, ${camera.y}px)`,
     }
 
-    // tldraw owns pointer/keyboard events on the canvas via listeners on
-    // ancestor DOM nodes (a container-level `keydown` listener, gesture/wheel
-    // handlers, etc.). Because `InFrontOfTheCanvas` lives inside that same
-    // ancestor chain, native events fired here would otherwise bubble straight
-    // into tldraw's shortcut handling (deleting shapes, panning, zooming) —
-    // exactly the failure mode `Calculator.tsx`'s shield/pointer-capture
-    // pattern exists to avoid on the floating panel side. Since React's
+    // The board's shortcuts listen on the window, so without this a key pressed
+    // on one of these buttons could delete shapes or switch tool. Since React's
     // `stopPropagation()` calls the underlying native `stopPropagation()`, it
-    // halts real DOM bubbling before it reaches those ancestor listeners.
+    // halts real DOM bubbling before it gets there.
     const shield = {
       onPointerDown: (e: ReactPointerEvent) => e.stopPropagation(),
       onPointerMove: (e: ReactPointerEvent) => e.stopPropagation(),

@@ -2,7 +2,7 @@
 // A stroke is either open (only a line can match) or closed (ellipse, rectangle
 // or triangle can match). Each candidate is fitted and scored by its distance
 // from the ink, and the best one wins if it clears the confidence threshold.
-// No engine imports: this has to outlive the move away from tldraw.
+// Pure geometry, with no knowledge of the board.
 
 export interface Point {
   x: number

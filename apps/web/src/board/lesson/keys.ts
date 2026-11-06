@@ -3,7 +3,7 @@ import { blockId } from './layout.ts'
 
 // The key/meta split, enforced in code (ported from the legacy whiteboard): a
 // block's `answer` carries the answer key, which must NEVER reach a synced
-// tldraw shape — `meta` is synced to every student and readable in devtools.
+// shape — `meta` is synced to every student and readable in devtools.
 //   - `questionMetaFor`     -> shape `meta.q`, synced. Identity + format only.
 //   - `questionKeysFromDoc` -> host-side only, sent to the server over the
 //     control channel by the caller.

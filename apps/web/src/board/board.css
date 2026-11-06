@@ -226,29 +226,8 @@
   cursor: not-allowed;
 }
 
-/* Host "Load lesson" button, placed in a horizontal row beside tldraw's default
-   menu/page buttons (the top-left slot stacks vertically + is pointer-events:none,
-   so we lay out a row and opt the controls back into pointer events). */
-.tittel-menu-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  pointer-events: none;
-}
-
-.tittel-menu-row > * {
-  pointer-events: all;
-}
-
-.tittel-load-lesson {
-  margin-top: 6px;
-}
-
-/* "Write access" section appended inside tldraw's people-menu popover. */
+/* The tutor's "Write access" list in the people menu. */
 .write-access {
-  border-top: 1px solid var(--tl-color-divider, var(--line));
-  padding-top: 6px;
-  margin-top: 2px;
   min-width: 12rem;
 }
 
@@ -301,10 +280,327 @@
   font-size: 1.05rem;
 }
 
-/* The tutor's bar (and a student's calculator toggle) lives in tldraw's own
-   top-center slot (components.TopPanel), so tldraw's layout keeps it clear of
-   the drawing toolbar, the menus and the licence watermark. It wraps rather
-   than overflowing on a narrow screen; below 1100px buttons go icon-only
+/* The drawing surface. It takes all input itself, so the browser mustn't scroll
+   or zoom the page under a pen or finger. */
+.board-canvas {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #fbfcfe;
+}
+
+.board-surface {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+.board-surface.tool-draw,
+.board-surface.tool-highlight,
+.board-surface.tool-shape-ink,
+.board-surface.tool-line,
+.board-surface.tool-arrow {
+  cursor: crosshair;
+}
+
+.board-surface.tool-text {
+  cursor: text;
+}
+
+.board-surface.tool-hand {
+  cursor: grab;
+}
+
+.board-surface.tool-eraser {
+  cursor: cell;
+}
+
+.board-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.board-selection {
+  pointer-events: none;
+  overflow: visible;
+}
+
+.board-frame {
+  fill: none;
+  stroke: var(--accent-2, #2563eb);
+  stroke-width: 1.5;
+}
+
+.board-marquee {
+  fill: rgb(37 99 235 / 0.08);
+  stroke: #2563eb;
+  stroke-width: 1;
+}
+
+.board-handle {
+  pointer-events: all;
+  fill: #fff;
+  stroke: #2563eb;
+  stroke-width: 1.5;
+  cursor: move;
+}
+
+.board-handle.nw, .board-handle.se { cursor: nwse-resize; }
+.board-handle.ne, .board-handle.sw { cursor: nesw-resize; }
+.board-handle.n, .board-handle.s { cursor: ns-resize; }
+.board-handle.e, .board-handle.w { cursor: ew-resize; }
+.board-handle.rotate { cursor: grab; }
+
+.board-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  pointer-events: none;
+  display: flex;
+  align-items: flex-start;
+}
+
+.board-cursor span {
+  margin: 12px 0 0 -4px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.board-text-input {
+  position: absolute;
+  z-index: 6;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: 1px dashed #2563eb;
+  background: transparent;
+  font-family: var(--font-body);
+  line-height: 1.3;
+  white-space: pre;
+  overflow: hidden;
+  resize: none;
+}
+
+/* Everything floating over the board. The empty space lets the pointer through. */
+.board-chrome {
+  position: absolute;
+  inset: 0;
+  z-index: 400;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.board-chrome__top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.board-chrome__side {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  padding: 6px;
+}
+
+.board-chrome__side.end {
+  justify-content: flex-end;
+}
+
+.board-chrome__center {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.board-chrome__bottom {
+  display: flex;
+  justify-content: center;
+}
+
+.board-offline {
+  pointer-events: all;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+}
+
+.page-menu {
+  position: relative;
+  pointer-events: all;
+}
+
+.page-menu__trigger {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-1);
+  max-width: 16rem;
+}
+
+.page-menu__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-menu__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 18rem;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-2);
+}
+
+.page-menu__row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.page-menu__item {
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.page-menu__item:hover,
+.page-menu__action:hover {
+  background: var(--surface-2);
+}
+
+.page-menu__check {
+  flex: 0 0 14px;
+  display: inline-flex;
+}
+
+.page-menu__add {
+  color: var(--ink-2);
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 8px 8px;
+  margin-top: 4px;
+}
+
+.page-menu__action {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.page-menu__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.people-menu {
+  position: relative;
+  pointer-events: all;
+}
+
+.people-menu__dots {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.people-menu__dots:disabled {
+  cursor: default;
+}
+
+.people-menu__dot {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.people-menu__more {
+  font-size: 0.75rem;
+  color: var(--ink-2);
+  padding: 0 4px;
+}
+
+.people-menu__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-2);
+}
+
+/* The tutor's bar (and a student's calculator toggle), top-centre. It wraps
+   rather than overflowing on a narrow screen; below 1100px buttons go icon-only
    (each keeps its name as title + aria-label). */
 .board-bar {
   pointer-events: all;
@@ -393,7 +689,7 @@
   }
 }
 
-/* Our drawing toolbar, in tldraw's bottom-centre Toolbar slot. */
+/* The drawing toolbar, bottom-centre. */
 .board-toolbar {
   pointer-events: all;
   position: relative;
@@ -835,7 +1131,7 @@
 }
 
 /* The app's dialogs (ConfirmDialog etc.) portal to <body> with no z-index;
-   on the board they must clear tldraw and the floating panels (up to 1500). */
+   on the board they must clear the chrome and the floating panels (up to 1500). */
 .overlay,
 .dialog-content {
   z-index: 2000;

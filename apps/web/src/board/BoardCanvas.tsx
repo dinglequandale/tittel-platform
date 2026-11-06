@@ -1,20 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ConfirmDialog } from '@tittel/ui'
-import {
-  Tldraw,
-  PeopleMenu,
-  atom,
-  defaultHandleExternalFileContent,
-  useEditor,
-  useToasts,
-  useTranslation,
-  useValue,
-  type Atom,
-  type Editor,
-  type TLComponents,
-} from 'tldraw'
-import 'tldraw/tldraw.css'
 import {
   Lock,
   Unlock,
@@ -30,17 +16,19 @@ import {
   LogOut,
 } from 'lucide-react'
 import type { QuestionMeta, QuizStats } from '@tittel/shared'
-import { useSync } from '@tldraw/sync'
-import { makeAssetStore } from './assetStore.ts'
+import { Canvas } from './engine/Canvas.tsx'
+import { useBoardConnection, useBoardValue } from './engine/react.ts'
+import { uploadBoardImage } from './assetStore.ts'
 import { setupCameraSync, type FollowController } from './cameraSync.ts'
 import { setupPageSync } from './pageSync.ts'
 import { setupRightClickPan } from './rightClickPan.ts'
 import type { ControlChannel } from './controlChannel.ts'
 import { BoardToolbar } from './BoardToolbar.tsx'
-import { boardCustomTools, boardShapeUtils, boardUiOverrides, keepDashInStep } from './boardTools.ts'
+import { PageMenu } from './PageMenu.tsx'
+import { PeopleMenu } from './PeopleMenu.tsx'
 import { Calculator } from './Calculator.tsx'
 import { Timer, type TimerWireState } from './Timer.tsx'
-import { exportBoardToPdf, lessonNotesPdf } from './exportPdf.ts'
+import { exportBoardToPdf, lessonNotesPdf } from './exportPdf.tsx'
 import { apiFetch } from '../lib/api.ts'
 import { uploadFile, isPdf } from '../lib/files.ts'
 import { useLessons } from './lesson/useLessons.ts'
@@ -52,42 +40,10 @@ import './board.css'
 
 type ClassMode = 'small' | 'large'
 
-// The bar's contents, handed from BoardCanvas into tldraw's TopPanel slot. A
-// context (not a closure) keeps the slot component's identity stable, so
-// tldraw doesn't remount it on every state change.
-const BarContext = createContext<ReactNode>(null)
-
-function BoardTopPanel() {
-  const bar = useContext(BarContext)
-  return bar ? <div className="board-bar">{bar}</div> : null
-}
-
-// tldraw's own chrome, switched off piece by piece rather than with `hideUi`,
-// which would also take the keyboard shortcuts, paste and the TopPanel slot.
-// The licence watermark is part of the canvas and stays (OVERHAUL.md §5).
-const HIDDEN_UI: TLComponents = {
-  MainMenu: null,
-  StylePanel: null,
-  ActionsMenu: null,
-  QuickActions: null,
-  NavigationPanel: null,
-  HelpMenu: null,
-  KeyboardShortcutsDialog: null,
-  ContextMenu: null,
-  DebugPanel: null,
-  DebugMenu: null,
-  CursorChatBubble: null,
-}
-
-function connectUrl(boardId: string, authParams: string) {
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  return `${proto}://${window.location.host}/connect/${encodeURIComponent(boardId)}?${authParams}`
-}
-
 // Ported from the legacy whiteboard's Board.tsx (its `BoardCanvas`) — PLAN.md
 // §6.3: "port unchanged, restyled." Lesson loading lives in ./lesson/, the
 // answer overlay + stats panel in ./quiz/. Still to come (OVERHAUL O2): games,
-// which slot into the same `components`/dock spots.
+// which slot into the same chrome/dock spots.
 export function BoardCanvas({
   boardId,
   isHost,
@@ -105,25 +61,20 @@ export function BoardCanvas({
   userId: string
   authParams: string
 }) {
-  const assets = useMemo(() => makeAssetStore(boardId), [boardId])
-  const store = useSync({
-    uri: connectUrl(boardId, authParams),
-    assets,
-    userInfo: {
-      id: userId,
-      name: displayName,
-      color: isHost ? '#2563eb' : '#16a34a',
-    },
+  const connection = useBoardConnection(boardId, authParams, {
+    userId,
+    userName: displayName,
+    color: isHost ? '#2563eb' : '#16a34a',
   })
-
-  const [editor, setEditor] = useState<Editor | null>(null)
-  const editorRef = useRef<Editor | null>(null)
+  const { editor } = connection
+  const editorRef = useRef(editor)
+  editorRef.current = editor
   const [calcOpen, setCalcOpen] = useState(false)
   const [studentsCanEdit, setStudentsCanEdit] = useState(false)
   const lastCalcState = useRef<unknown>(null)
   const lastCalcGeom = useRef<unknown>(null)
   const [pdfStatus, setPdfStatus] = useState<string | null>(null)
-  const grantedAtom = useMemo(() => atom('granted-writers', new Set<string>()), [])
+  const [granted, setGranted] = useState(() => new Set<string>())
   const [freeReign, setFreeReign] = useState(false)
   const freeReignRef = useRef(freeReign)
   freeReignRef.current = freeReign
@@ -135,11 +86,9 @@ export function BoardCanvas({
   const pageCtl = useRef<FollowController | null>(null)
   const isLarge = mode === 'large'
   const [canWrite, setCanWrite] = useState(!isLarge)
-  const canWriteRef = useRef(canWrite)
-  canWriteRef.current = canWrite
   // Only a signed-in tutor's persistent board has plans (the /try board has no account).
   const signedInHost = isHost && authParams.startsWith('boardToken=')
-  const lessons = useLessons({ editor, channel, boardId, enabled: signedInHost })
+  const lessons = useLessons({ editor, channel, boardId, authParams, enabled: signedInHost })
   const navigate = useNavigate()
   const lessonHref = lessons.sessionId ? `/app/lessons/${encodeURIComponent(lessons.sessionId)}` : null
   // Answers (host only): the panel toggle and the latest stats on the wire, so a
@@ -160,12 +109,10 @@ export function BoardCanvas({
     cameraCtl.current = camera
     pageCtl.current = page
     const stopPan = isHost ? setupRightClickPan(editor) : undefined
-    const stopDash = keepDashInStep(editor)
     return () => {
       camera.stop()
       page.stop()
       stopPan?.()
-      stopDash()
       cameraCtl.current = null
       pageCtl.current = null
     }
@@ -219,23 +166,7 @@ export function BoardCanvas({
 
   useEffect(() => {
     if (!editor || isHost || !isLarge) return
-    const pinIfLocked = () => {
-      if (!canWriteRef.current && editor.getCurrentToolId() !== 'hand') editor.setCurrentTool('hand')
-    }
-    const defer = () => setTimeout(pinIfLocked, 0)
-    defer()
-    const unlisten = editor.store.listen(
-      () => {
-        if (!canWriteRef.current) defer()
-      },
-      { scope: 'session', source: 'user' },
-    )
-    return () => unlisten()
-  }, [editor, isHost, isLarge])
-
-  useEffect(() => {
-    if (!editor || isHost || !isLarge) return
-    editor.setCurrentTool(canWrite ? 'select' : 'hand')
+    editor.setReadonly(!canWrite)
   }, [canWrite, editor, isHost, isLarge])
 
   useEffect(() => {
@@ -305,82 +236,77 @@ export function BoardCanvas({
     [loadLibraryLesson],
   )
 
-  const toggleGrant = useCallback(
-    (studentId: string, allow: boolean) => {
-      grantedAtom.update((prev) => {
-        const next = new Set(prev)
-        if (allow) next.add(studentId)
-        else next.delete(studentId)
-        return next
-      })
-      channel.send({ type: 'access', userId: studentId, allow })
-    },
-    [channel, grantedAtom],
-  )
+  // Images go up to the room's asset store. A PDF dropped on the canvas goes on
+  // the board as new pages, like a plan's.
+  useEffect(() => {
+    if (!editor) return
+    editor.uploadImage = (file) => uploadBoardImage(boardId, authParams, file, file.name || 'image')
+    editor.onError = (message) => {
+      setPdfStatus(message)
+      setTimeout(() => setPdfStatus(null), 5000)
+    }
+    editor.onOtherFiles = signedInHost
+      ? (files) => {
+          const pdfs = files.filter(isPdf)
+          if (pdfs.length) void addFiles(pdfs)
+        }
+      : null
+  }, [editor, boardId, authParams, signedInHost, addFiles])
 
-  const HostSharePanel = useMemo(
-    () =>
-      function HostSharePanel() {
-        return (
-          <div className="tlui-share-zone" draggable={false}>
-            <PeopleMenu>
-              <WriteAccessControls grantedAtom={grantedAtom} onToggle={toggleGrant} selfId={userId} />
-            </PeopleMenu>
-          </div>
-        )
-      },
-    [grantedAtom, toggleGrant, userId],
-  )
+  function toggleGrant(studentId: string, allow: boolean) {
+    setGranted((prev) => {
+      const next = new Set(prev)
+      if (allow) next.add(studentId)
+      else next.delete(studentId)
+      return next
+    })
+    channel.send({ type: 'access', userId: studentId, allow })
+  }
 
   // Anchored under each answerable problem: an input for students, an open/close
-  // gate for the tutor. Built once per identity (tldraw remounts the slot when it
-  // changes, dropping a half-typed answer); `answerKeys` only changes on the host
+  // gate for the tutor. Built once per identity (a new component remounts,
+  // dropping a half-typed answer); `answerKeys` only changes on the host
   // when a plan loads, and the gate state is re-echoed by the server anyway.
   const AnswerOverlay = useMemo(
     () => makeAnswerOverlay({ channel, roomId: boardId, userId, displayName, isHost, answerKeys: lessons.answerKeys }),
     [channel, boardId, userId, displayName, isHost, lessons.answerKeys],
   )
 
-  // Connected students, from tldraw presence (collaborators excludes self): the
-  // stats panel's "3/5 answered" denominator.
-  const rosterSize = useValue('roster size', () => editor?.getCollaborators().length ?? 0, [editor])
+  // Connected students, from presence (collaborators excludes self): the stats
+  // panel's "3/5 answered" denominator.
+  const rosterSize = useBoardValue(editor, () => editor?.getCollaborators().length ?? 0)
+  const connected = useBoardValue(editor, () => editor?.isConnected() ?? true)
 
   // Every answerable question on the tutor's current page, so the dock can open
   // or close a whole page at once.
-  const pageQids = useValue<string[]>(
-    'page question ids',
-    () =>
-      editor
-        ? editor
-            .getCurrentPageShapes()
-            .map((s) => (s.meta as { q?: QuestionMeta }).q?.id)
-            .filter((id): id is string => !!id)
-        : [],
-    [editor],
+  const pageQids = useBoardValue<string[]>(editor, () =>
+    editor
+      ? editor
+          .getCurrentPageShapes()
+          .map((s) => (s.meta as { q?: QuestionMeta }).q?.id)
+          .filter((id): id is string => !!id)
+      : [],
   )
   const anyOpenOnPage = pageQids.some((id) => openQids.has(id))
 
   // qid -> "Linear functions · 2 · Q1": the page name without its date, then the
   // question's order down the page. Ids carry a per-plan prefix, so they read badly.
-  const questionLabels = useValue<Record<string, string>>(
-    'question labels',
-    () => {
-      const out: Record<string, string> = {}
-      if (!isHost || !editor) return out
-      for (const page of editor.getPages()) {
-        const qs = [...editor.getPageShapeIds(page.id)]
-          .map((id) => editor.getShape(id)!)
-          .filter((sh) => (sh.meta as { q?: QuestionMeta }).q)
-          .sort((a, b) => a.y - b.y)
-        const pageName = page.name.includes(' · ') ? page.name.slice(page.name.indexOf(' · ') + 3) : page.name
-        qs.forEach((sh, i) => {
-          out[(sh.meta as { q?: QuestionMeta }).q!.id] = `${pageName} · Q${i + 1}`
-        })
-      }
-      return out
-    },
-    [editor, isHost],
-  )
+  const questionLabels = useBoardValue<Record<string, string>>(editor, () => {
+    const out: Record<string, string> = {}
+    if (!isHost || !editor) return out
+    for (const page of editor.getPages()) {
+      const qs = editor
+        .getPageShapeIds(page.id)
+        .map((id) => editor.getShape(id)!)
+        .filter((sh) => (sh.meta as { q?: QuestionMeta }).q)
+        .sort((a, b) => a.y - b.y)
+      const pageName = page.name.includes(' · ') ? page.name.slice(page.name.indexOf(' · ') + 3) : page.name
+      qs.forEach((sh, i) => {
+        out[(sh.meta as { q?: QuestionMeta }).q!.id] = `${pageName} · Q${i + 1}`
+      })
+    }
+    return out
+  })
   const labelFor = useCallback((qid: string) => questionLabels[qid] ?? qid, [questionLabels])
 
   // "Everyone's answered everything open": the tutor's cue to move on. `>=`, not
@@ -424,25 +350,14 @@ export function BoardCanvas({
     navigate(lessonHref)
   }
 
-  const components = useMemo<TLComponents>(() => {
-    const c: TLComponents = { ...HIDDEN_UI, InFrontOfTheCanvas: AnswerOverlay, TopPanel: BoardTopPanel, Toolbar: BoardToolbar }
-    if (isHost) {
-      if (isLarge) c.SharePanel = HostSharePanel
-      return c
-    }
-    if (!canWrite) c.Toolbar = null
-    if (!freeReign) c.PageMenu = null
-    return c
-  }, [isHost, isLarge, canWrite, freeReign, AnswerOverlay, HostSharePanel])
-
-  if (store.status === 'loading') {
+  if (connection.status === 'loading') {
     return <div className="board-status board-scope">Connecting to the board…</div>
   }
-  if (store.status === 'error') {
+  if (connection.status === 'error') {
     return (
       <div className="board-status board-scope">
         <div>Couldn&rsquo;t connect to the board.</div>
-        <div style={{ fontSize: '0.85rem' }}>{store.error.message}</div>
+        <div style={{ fontSize: '0.85rem' }}>{connection.error}</div>
       </div>
     )
   }
@@ -549,21 +464,22 @@ export function BoardCanvas({
 
   return (
     <div className="board-root board-scope">
-      <BarContext.Provider value={bar}>
-        <Tldraw
-          store={store.store}
-          onMount={(ed) => {
-            editorRef.current = ed
-            setEditor(ed)
-          }}
-          components={components}
-          tools={boardCustomTools}
-          shapeUtils={boardShapeUtils}
-          overrides={boardUiOverrides}
-        >
-          {signedInHost && <PdfDrop onPdfs={addFiles} />}
-        </Tldraw>
-      </BarContext.Provider>
+      <Canvas editor={connection.editor}>
+        <AnswerOverlay />
+        <div className="board-chrome">
+          <div className="board-chrome__top">
+            <div className="board-chrome__side">{(isHost || freeReign) && <PageMenu canEdit={isHost} />}</div>
+            <div className="board-chrome__center">
+              {bar && <div className="board-bar">{bar}</div>}
+              {!connected && <span className="board-offline" role="status">Reconnecting…</span>}
+            </div>
+            <div className="board-chrome__side end">
+              <PeopleMenu selfId={userId} granted={isHost && isLarge ? granted : undefined} onToggle={toggleGrant} />
+            </div>
+          </div>
+          <div className="board-chrome__bottom">{(isHost || canWrite) && <BoardToolbar />}</div>
+        </div>
+      </Canvas>
 
       <ConfirmDialog
         open={confirmEnd}
@@ -615,69 +531,6 @@ export function BoardCanvas({
       {!isHost && studentSoloCalc && personalCalcOpen && <Calculator channel={channel} isHost={false} personal />}
     </div>
   )
-}
-
-function WriteAccessControls({
-  grantedAtom,
-  onToggle,
-  selfId,
-}: {
-  grantedAtom: Atom<Set<string>>
-  onToggle: (studentId: string, allow: boolean) => void
-  selfId: string
-}) {
-  const editor = useEditor()
-  const collaborators = useValue('collaborators', () => editor.getCollaborators(), [editor])
-  const granted = useValue(grantedAtom)
-  const students = collaborators.filter((c) => c.userId !== selfId)
-  if (students.length === 0) return null
-
-  return (
-    <div className="tlui-people-menu__section write-access">
-      <div className="write-access__title">Write access</div>
-      {students.map((c) => {
-        const can = granted.has(c.userId)
-        return (
-          <div className="write-access__row" key={c.userId}>
-            <span className="write-access__dot" style={{ background: c.color }} />
-            <span className="write-access__name">{c.userName || 'Student'}</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={can}
-              title={can ? 'Can write — click to lock' : 'Locked — click to let them write'}
-              className={`calc-switch ${can ? 'on' : ''}`}
-              onClick={() => onToggle(c.userId, !can)}
-            >
-              <span className="calc-switch-knob" />
-            </button>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// A PDF dropped on the canvas goes on the board as new pages, like a plan's.
-// Every other file (photos included) keeps tldraw's default drop. A child of
-// <Tldraw>, so its effect runs after tldraw registers its default handlers.
-function PdfDrop({ onPdfs }: { onPdfs: (files: File[]) => void }) {
-  const editor = useEditor()
-  const toasts = useToasts()
-  const msg = useTranslation()
-  const onPdfsRef = useRef(onPdfs)
-  onPdfsRef.current = onPdfs
-
-  useEffect(() => {
-    editor.registerExternalContentHandler('files', async (content) => {
-      const pdfs = content.files.filter(isPdf)
-      const rest = content.files.filter((f) => !isPdf(f))
-      if (pdfs.length) void onPdfsRef.current(pdfs)
-      if (rest.length) await defaultHandleExternalFileContent(editor, { ...content, files: rest }, { toasts, msg })
-    })
-  }, [editor, toasts, msg])
-
-  return null
 }
 
 // Stays in the bar for the whole session: a tutor often re-sends the link mid-lesson.

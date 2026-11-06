@@ -34,7 +34,7 @@ typechecks.
 | Billing / onboarding seed / email / legal | None | All required to charge money |
 | Password reset / Google sign-in | None | Required |
 | Board assets | In-memory (lost on restart) | Supabase Storage for persistent boards |
-| Security | tldraw sync accepts writes from any guest (B7 TODO). DB TLS `rejectUnauthorized` TODO | Must fix before paying customers |
+| Security | DB TLS `rejectUnauthorized` TODO | Must fix before paying customers |
 | Responsiveness | 3 media queries in the whole app, 0 in `board.css` | Portal, runner, and review must work on phones |
 | Tests / CI | `smoke.mjs` + grader unit test. No CI | CI on push. Browser tests are now possible (see §6) |
 | Meta | `<title>Slate</title>`, no favicon, no OG tags | Brand meta |
@@ -289,14 +289,13 @@ scheduled for O6.)
 ## 5. Launch infrastructure
 
 - **Licensing (§8, R5; researched 2026-10-20, primary sources):**
-  - **tldraw: stay on 3.15.5, never upgrade to 4.x without a key.** `LICENSE.md` at tag
-    `v3.15.5` grants use "in your commercial or non-commercial projects" provided the "made with
-    tldraw" watermark stays. A paid Business License only removes the watermark. 4.x (Sept 2025)
-    changed this: production needs a key, and the free hobby key is non-commercial. **Caveat:**
-    the installed packages' `LICENSE.md` just links to the licence on `main`, which is now the
-    4.x text. Before charging money, email tldraw to confirm in writing that 3.x production use with
-    the watermark is permitted, and ask for a startup quote to remove it. Cost if confirmed: $0.
-    Risk: 3.x gets no upstream fixes, so we own any bugs.
+  - **Canvas: our own engine; tldraw is gone (2026-11).** The board is built on MIT libraries: Yjs +
+    y-websocket for sync, undo and presence, perfect-freehand for ink, @use-gesture for pinch and
+    wheel. `packages/board` holds the document and geometry, `apps/web/src/board/engine` the editor.
+    No licence, key or watermark applies, so no email to tldraw is needed. Boards saved by the old
+    engine are imported on first open (`boards.snapshot` is kept untouched as the original;
+    `boards.doc` is the live document). Superseded tldraw terms, for the record: 3.15.5 allowed
+    commercial use with the watermark; 4.x needs a production key.
   - **Desmos: $100/mo** (Starter, self-serve, up to 1,000 annual users; $200 to 2,500; $300 to
     5,000; graphing + scientific only). The free tier is non-commercial or a 90-day evaluation, and
     "commercial use includes any use … accessed by End Users in production." Konrad teaching paid
@@ -331,7 +330,7 @@ scheduled for O6.)
 - **Quality**: GitHub Actions running typecheck, build, and test on every push. PLAN §9.6 says no
   browser exists here. **That's outdated:** use the desktop browser pane (or Playwright) for
   runner, review, and board name-gate checks.
-- **Performance**: route-level code splitting (tldraw, Desmos, KaTeX, pdf.js lazy), fonts preloaded.
+- **Performance**: route-level code splitting (the board, Desmos, KaTeX, pdf.js lazy), fonts preloaded.
 
 ---
 
@@ -340,8 +339,7 @@ scheduled for O6.)
 Each phase ends green on typecheck, build, and test, with a "Konrad browser-check" list. Konrad's
 time goes to teaching on it (from O2), recruiting partners, and the two licence calls.
 
-- **T0 (Konrad, this week, no code):** email tldraw (written confirmation that 3.x commercial use
-  with the watermark is OK, plus a startup quote), get a Desmos trial key, list 5–10 design-
+- **T0 (Konrad, this week, no code):** get a Desmos trial key, list 5–10 design-
   partner tutors (SpiderSmart colleagues, Yale tutors), and 3 name candidates checked for domain +
   USPTO.
 - **O0 Housekeeping (hours).** Commit the uncommitted pass (it typechecks), excluding `output.png`
@@ -436,8 +434,8 @@ an assignment graded with a follow-up created). Partner bar to continue past O6:
 5. **Tabular figures:** resolved. Outfit has `tnum`, so no second face is needed (§2.2).
 6. **Order:** design foundation first, but capped at 3 days; then product depth on the board.
    Delight is concentrated on student/parent surfaces.
-7. Still Konrad's (blocking only where noted): the final name (blocks O5), tldraw's written
-   confirmation (blocks charging money), and whether to pay for a lawyer pass on the policies.
+7. Still Konrad's (blocking only where noted): the final name (blocks O5) and whether to pay for a
+   lawyer pass on the policies.
 
 ## 8. Red-team record (adversarial review, 2026-10-20)
 
@@ -450,7 +448,7 @@ relitigate it without new evidence.
 | R2 | "Why would a tutor leave Zoom + Bitpaper + Docs?" | They keep Zoom. The board has to beat Bitpaper on its home turf (**PDF on the board**) and then win with what nobody else has: live answer collection with stats. Neither is in the board today, so board parity jumps to O2. |
 | R3 | "Who pays your customer? Parents. Tutors churn when parents don't see progress." | **The session summary** is the wedge. It's weekly, visible to the payer, and saves the tutor an hour. Konrad already promises families this by hand. |
 | R4 | "The visual lesson builder is weeks of work tutors won't use; they teach from PDFs." | Cut to a composer. PDF import, AI import (exists), and bank problems cover authoring. |
-| R5 | "Your core canvas has an unpublished price. What if it eats your margin?" | Researched (§5). The pinned tldraw 3.15.5 licence allows commercial use with the watermark: $0, but get it confirmed in writing and never upgrade to 4.x unpaid. Desmos is $100/mo; superseded by R14. |
+| R5 | "Your core canvas has an unpublished price. What if it eats your margin?" | Resolved (§5): the canvas is now our own, on MIT libraries, so it has no price. Desmos is $100/mo; superseded by R14. |
 | R14 | "You're building a Desmos clone? That's a legal and engineering sinkhole." (2026-10-21) | Konrad's call: own the calculator. **Clean-room only** (GRAPH-SPEC §0): public docs and observation, never their code. Two facts make it viable. (1) Desmos's own math-input field is open source (MPL-2.0), so the typing feel is licensed, not copied. (2) The SAT calculator is standard Desmos minus images, folders and notes, so the target is fully documented. Phased by SAT usage (G1 board → G2 SAT core → G3 breadth). It also removes the Desmos sync hack and the $100/mo. |
 | R6 | "Tutors want *their* brand in front of parents, not yours." | White-label student/parent surfaces. The product is a small footer mark, which is also the referral loop. |
 | R7 | "Your own students are 10. COPPA." | Data minimisation by default (first name, no child email, tutor-owned parent contact), a consent attestation, and policies before partners. |

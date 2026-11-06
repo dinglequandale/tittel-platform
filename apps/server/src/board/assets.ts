@@ -29,7 +29,7 @@ boardAssetsRouter.post('/uploads/:boardId/:id', express.raw({ type: '*/*', limit
 
   // The upload is served back from the app's own origin, so an uploader-chosen
   // type like text/html would be stored XSS against every signed-in tutor.
-  // tldraw only ever uploads images and videos.
+  // The board only ever uploads images, and videos on older boards.
   const contentType = req.header('content-type') ?? ''
   if (!SAFE_ASSET_TYPE.test(contentType)) {
     return res.status(415).json({ error: 'only image and video uploads are supported' })

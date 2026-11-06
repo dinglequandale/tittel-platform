@@ -143,6 +143,43 @@ export function planFromText(raw: string, title: string): LessonDoc {
   }
 }
 
+/** An answer box pinned on an image page: where (fractions of the page) and how it's answered. */
+export interface PageBox {
+  page: number
+  x: number
+  y: number
+  choices: 'ABCD' | 'ABCDE' | 'typed'
+  key: string
+}
+
+export function boxesOf(doc: LessonDoc): PageBox[] {
+  return doc.pages.flatMap((p, page) => p.blocks.flatMap((b) => (b.at && b.answer ? [{
+    page, x: b.at.x, y: b.at.y, key: b.answer.key,
+    choices: b.answer.format === 'grid' ? 'typed' as const : b.answer.choices?.length === 5 ? 'ABCDE' as const : 'ABCD' as const,
+  }] : [])))
+}
+
+/** The plan with exactly these boxes on its image pages, numbered in reading order. */
+export function withBoxes(doc: LessonDoc, boxes: PageBox[]): LessonDoc {
+  let n = 0
+  return {
+    ...doc,
+    pages: doc.pages.map((p, page) => ({
+      ...p,
+      blocks: [
+        ...p.blocks.filter((b) => !b.at),
+        ...boxes.filter((b) => b.page === page).sort((a, b) => a.y - b.y || a.x - b.x).map((b): LessonBlock => ({
+          type: 'text', kind: 'body', content: `Q${++n}`, spacingAfter: 0, maxWidth: 120,
+          at: { x: b.x, y: b.y },
+          answer: b.choices === 'typed'
+            ? { format: 'grid', key: b.key.trim(), reveal: 'never' }
+            : { format: 'choice', key: b.key, choices: [...b.choices], reveal: 'never' },
+        })),
+      ],
+    })),
+  }
+}
+
 /** A plan whose pages are images (PDF pages, photos): one per board page, no workspace gap. */
 export function planFromImages(urls: string[], title: string): LessonDoc {
   return {

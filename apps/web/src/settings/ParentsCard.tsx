@@ -1,86 +1,34 @@
-import { useEffect, useRef, useState } from 'react'
-import { Button, Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@tittel/ui'
+import { useState } from 'react'
+import { Button, Dialog, DialogContent, DialogDescription, DialogTitle, Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@tittel/ui'
 import { saveOrg, type Org } from '../lib/useOrg.ts'
 import { useToast } from '../lib/toast.tsx'
-import { fillTemplate, DEFAULT_TEMPLATES, PLACEHOLDERS, type TemplateKind } from '../lessons/template.ts'
+import { TemplateEditor } from './TemplateEditor.tsx'
+import type { TemplateKind } from '../lessons/template.ts'
 
-// What the preview fills each template with: a made-up student, never real data.
-const SAMPLE: Record<TemplateKind, Record<string, string>> = {
-  lesson: {
-    first_name: 'Sam', date: 'Thu, Oct 29', covered: 'Solving quadratics by factoring. Next: completing the square.',
-    board_score: '3 of 4 answers right', last_homework: 'Quadratics practice, 1 to go over', homework: 'Factoring set B, due Tue, Nov 3',
-    board_notes_link: 'https://…/board-notes.pdf', portal_link: 'https://…/s/sam', tutor_name: 'You',
-  },
-  report: {
-    first_name: 'Sam', period: 'Oct 1 to Oct 31', lesson_count: '4',
-    lessons: '- Thu, Oct 8: Linear equations\n- Thu, Oct 15: Systems of equations\n- Thu, Oct 22: Factoring\n- Thu, Oct 29: Quadratics',
-    homework_summary: '3 of 4 handed in, 81% right', homework_list: '- Linear practice: 9/10\n- Systems: 7/10\n- Factoring A: 8/10\n- Factoring B: due Tue, Nov 3',
-    board_summary: '11 of 14 answers right', portal_link: 'https://…/s/sam', tutor_name: 'You',
-  },
-}
-
-function TemplateEditor({ kind, saved, label }: { kind: TemplateKind; saved: string | null; label: string }) {
+function TemplateRow({ kind, saved, label, tutorName }: { kind: TemplateKind; saved: string | null; label: string; tutorName: string }) {
   const toast = useToast()
   const [open, setOpen] = useState(false)
-  const [text, setText] = useState(saved ?? DEFAULT_TEMPLATES[kind])
-  const box = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => setText(saved ?? DEFAULT_TEMPLATES[kind]), [saved, kind])
-  const preview = fillTemplate(text, SAMPLE[kind])
-  const changed = text !== (saved ?? DEFAULT_TEMPLATES[kind])
-
-  function insert(name: string) {
-    const el = box.current
-    const at = el ? el.selectionStart : text.length
-    const next = `${text.slice(0, at)}{${name}}${text.slice(el ? el.selectionEnd : at)}`
-    setText(next)
-    requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(at + name.length + 2, at + name.length + 2) })
-  }
-
-  async function save(next: string | null) {
-    try {
-      await saveOrg({ parentTemplates: { [kind]: next } })
-      toast(next === null ? 'Back to the standard wording' : 'Saved')
-    } catch (err) {
-      toast((err as Error).message)
-    }
-  }
-
-  if (!open) {
-    return (
-      <div className="list-row">
-        <div>
-          <div className="list-row-title">{label}</div>
-          <div className="list-row-sub">{saved === null ? 'Standard wording' : 'Your own wording'}</div>
-        </div>
-        <Button variant="ghost" onClick={() => setOpen(true)}>Edit wording</Button>
-      </div>
-    )
-  }
   return (
-    <div className="template-editor">
-      <div className="list-row-title">{label}</div>
-      <p className="muted">
-        Write it how you'd say it. Click a part to add it where the cursor is. A line whose parts are all empty is left out,
-        so delete a line to drop that part for good. A first line starting “Subject:” is the email subject.
-      </p>
-      <div className="chip-row">
-        {PLACEHOLDERS[kind].map((p) => (
-          <button key={p.name} type="button" className="chip" title={p.hint} onClick={() => insert(p.name)}>{`{${p.name}}`}</button>
-        ))}
+    <div className="list-row">
+      <div>
+        <div className="list-row-title">{label}</div>
+        <div className="list-row-sub">{saved === null ? 'Standard wording' : 'Your own wording'}</div>
       </div>
-      <div className="template-panes">
-        <textarea ref={box} className="input template-text" rows={14} value={text} onChange={(e) => setText(e.target.value)} aria-label={label} />
-        <div className="template-preview" aria-label="Preview">
-          <div className="list-row-sub">Preview, with a made-up student</div>
-          {preview.subject && <div className="list-row-title">{preview.subject}</div>}
-          <pre>{preview.body}</pre>
-        </div>
-      </div>
-      <div className="row-end">
-        <Button variant="ghost" onClick={() => { setText(DEFAULT_TEMPLATES[kind]); void save(null) }} disabled={saved === null && !changed}>Reset to standard</Button>
-        <Button variant="ghost" onClick={() => setOpen(false)}>Close</Button>
-        <Button onClick={() => save(text)} disabled={!changed}>Save</Button>
-      </div>
+      <Button variant="ghost" onClick={() => setOpen(true)}>Edit wording</Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="dialog-content tpl-dialog">
+          <DialogTitle className="card-title-lg">{label}</DialogTitle>
+          <DialogDescription>Nothing goes to parents until you've checked it.</DialogDescription>
+          <TemplateEditor kind={kind} saved={saved} tutorName={tutorName} footer={({ changed, busy, save }) => (
+            <div className="row-end">
+              <Button variant="ghost" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
+              <Button disabled={busy || !changed} onClick={async () => {
+                if (await save()) { setOpen(false); toast('Saved') }
+              }}>{busy ? 'Saving…' : 'Save'}</Button>
+            </div>
+          )} />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -125,8 +73,8 @@ export function ParentsCard({ org }: { org: Org }) {
           </Select>
         </div>
       )}
-      {pu.afterLesson && <TemplateEditor kind="lesson" saved={org.parentTemplates.lesson} label="After a lesson" />}
-      {pu.reports && <TemplateEditor kind="report" saved={org.parentTemplates.report} label="Progress report" />}
+      {pu.afterLesson && <TemplateRow kind="lesson" saved={org.parentTemplates.lesson} label="After a lesson" tutorName={org.displayName} />}
+      {pu.reports && <TemplateRow kind="report" saved={org.parentTemplates.report} label="Progress report" tutorName={org.displayName} />}
     </div>
   )
 }

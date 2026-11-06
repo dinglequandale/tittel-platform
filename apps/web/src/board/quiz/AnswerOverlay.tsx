@@ -275,7 +275,8 @@ export function makeAnswerOverlay(opts: {
           const boxStyle: CSSProperties = {
             left: bounds.x,
             top: bounds.y + bounds.h + 16,
-            width: Math.min(bounds.w, 720),
+            // A pin on a PDF page is narrower than the box it needs.
+            width: Math.max(Math.min(bounds.w, 720), 260),
           }
 
           // The tutor doesn't answer; they decide when answering opens.

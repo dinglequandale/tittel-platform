@@ -33,10 +33,10 @@ export function lessonRefOf(meta: JsonObject | undefined): LessonRef | null {
 
 const dayFmt = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
 
-async function uploadAsset(boardId: string, blob: Blob): Promise<string> {
+async function uploadAsset(boardId: string, authParams: string, blob: Blob): Promise<string> {
   const id = `${crypto.randomUUID()}-lesson.png`
   const url = `/uploads/${encodeURIComponent(boardId)}/${encodeURIComponent(id)}`
-  const res = await fetch(url, { method: 'POST', body: blob, headers: { 'content-type': blob.type || 'image/png' } })
+  const res = await fetch(`${url}?${authParams}`, { method: 'POST', body: blob, headers: { 'content-type': blob.type || 'image/png' } })
   if (!res.ok) throw new Error(`Couldn’t upload a lesson image (${res.status})`)
   return url
 }
@@ -52,6 +52,7 @@ export interface LoadResult {
 
 export interface LoadOptions {
   boardId: string
+  authParams: string
   ref: LessonRef
   /** The plan's title, for page names. Falls back to the doc's own title. */
   title?: string
@@ -87,7 +88,7 @@ export async function loadPlanOntoBoard(editor: Editor, raw: unknown, opts: Load
   for (let pi = 0; pi < doc.pages.length; pi++) {
     for (let bi = 0; bi < doc.pages[pi].blocks.length; bi++) {
       const rendered = await renderBlock(doc.pages[pi].blocks[bi])
-      const url = rendered.blob ? await uploadAsset(opts.boardId, rendered.blob) : rendered.src!
+      const url = rendered.blob ? await uploadAsset(opts.boardId, opts.authParams, rendered.blob) : rendered.src!
       built.set(`${pi}:${bi}`, { url, w: rendered.w, h: rendered.h, mimeType: rendered.mimeType })
       opts.onProgress?.(++done, total)
     }

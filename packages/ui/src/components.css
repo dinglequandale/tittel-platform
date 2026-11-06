@@ -542,18 +542,7 @@ a.data-row:hover, button.data-row:hover { background: var(--bg); }
 .step-num[data-c='gold'] { --c: var(--gold); color: var(--ink); }
 .step-num[data-c='coral'] { --c: var(--coral); color: var(--ink); }
 .step-num[data-done='true'] { --c: var(--ink); color: #fff; }
-.step:hover .step-num { transform: rotate(-8deg) scale(1.08); }
 
-/* --- Home onboarding ----------------------------------------------------------- */
-.onboard { padding: 22px 24px; margin-bottom: 28px; }
-.onboard-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
-.onboard-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-@media (max-width: 900px) { .onboard-steps { grid-template-columns: 1fr; } }
-.step { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border-radius: var(--radius-control); }
-.step[data-done='true'] { background: var(--paper-2); }
-.step-title { font-size: 14px; font-weight: 600; }
-.step[data-done='true'] .step-title { text-decoration: line-through; text-decoration-thickness: 1.5px; }
-.step-hint { font-size: 13px; color: var(--ink-2); }
 .list-row {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 10px 0; border-bottom: 1px solid var(--surface-2);

@@ -88,7 +88,7 @@ export function BoardCanvas({
   userId: string
   authParams: string
 }) {
-  const assets = useMemo(() => makeAssetStore(boardId), [boardId])
+  const assets = useMemo(() => makeAssetStore(boardId, authParams), [boardId, authParams])
   const store = useSync({
     uri: connectUrl(boardId, authParams),
     assets,
@@ -122,7 +122,7 @@ export function BoardCanvas({
   canWriteRef.current = canWrite
   // Only a signed-in tutor's persistent board has plans (the /try board has no account).
   const signedInHost = isHost && authParams.startsWith('boardToken=')
-  const lessons = useLessons({ editor, channel, boardId, enabled: signedInHost })
+  const lessons = useLessons({ editor, channel, boardId, authParams, enabled: signedInHost })
   const navigate = useNavigate()
   const lessonHref = lessons.sessionId ? `/app/lessons/${encodeURIComponent(lessons.sessionId)}` : null
   // Answers (host only): the panel toggle and the latest stats on the wire, so a

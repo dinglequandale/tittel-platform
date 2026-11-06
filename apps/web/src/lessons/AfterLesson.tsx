@@ -15,7 +15,7 @@ export interface LessonResults {
   endedAt: string | null
   boardPdf: string | null
   board: BoardQuestion[]
-  homework: { title: string; handedIn: number; assigned: number; misses: Miss[] }[]
+  homework: { title: string; handedIn: number; handedInBy: string[]; assigned: number; misses: Miss[] }[]
 }
 
 export function useLessonResults(lessonId: string) {

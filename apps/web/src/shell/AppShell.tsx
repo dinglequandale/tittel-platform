@@ -10,7 +10,6 @@ import { ScheduleLessonDialog } from '../lessons/ScheduleLessonDialog.tsx'
 import { HomeworkForDialog } from '../lessons/HomeworkForDialog.tsx'
 import { StartNowDialog } from '../lessons/QuickLesson.tsx'
 import { GlobalSearch } from './GlobalSearch.tsx'
-import { ConsentDialog } from './ConsentDialog.tsx'
 import { apiFetch } from '../lib/api.ts'
 
 // Five places, organised around the tutor's week rather than the database
@@ -32,7 +31,7 @@ export function AppShell() {
   const [givingHomework, setGivingHomework] = useState(false)
   const [startingNow, setStartingNow] = useState(false)
   const [logging, setLogging] = useState(false)
-  const [me, setMe] = useState<{ displayName: string; consentAt: string | null } | null>(null)
+  const [me, setMe] = useState<{ displayName: string } | null>(null)
   useEffect(() => { apiFetch('/api/tutor/org').then(setMe).catch(() => {}) }, [])
   // Opening a dialog from a menu item waits a tick, so the menu has closed
   // first instead of lingering behind the dialog.
@@ -110,7 +109,6 @@ export function AppShell() {
       <HomeworkForDialog open={givingHomework} onOpenChange={setGivingHomework} />
       <StartNowDialog open={startingNow} onOpenChange={setStartingNow} />
       <ScheduleLessonDialog open={logging} onOpenChange={setLogging} mode="log" />
-      {me && !me.consentAt && <ConsentDialog onDone={() => setMe({ ...me, consentAt: new Date().toISOString() })} />}
     </AppToastProvider>
   )
 }

@@ -7,8 +7,9 @@ import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
 import { uploadFile, pdfToPages, fileUrl, isPdf, isImage } from '../lib/files.ts'
 import type { LessonSummary } from '../content/types.ts'
-import { planFromImages, planFromText } from './composer.ts'
+import { planFromImages, planFromText, boxesOf } from './composer.ts'
 import { DropZone, PasteDialog } from './Drop.tsx'
+import { AnswerBoxesDialog } from './AnswerBoxes.tsx'
 import type { Lesson } from './lessons.ts'
 
 const baseName = (name: string) => name.replace(/\.[^.]+$/, '')
@@ -24,9 +25,15 @@ export function PlanSlot({ lesson, onChange }: { lesson: Lesson; onChange: (body
   const [plans, setPlans] = useState<LessonSummary[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [writing, setWriting] = useState(false)
+  const [boxing, setBoxing] = useState(false)
+  const [doc, setDoc] = useState<LessonDoc | null>(null)
+  const hasImagePages = !!doc?.pages.some((p) => p.blocks.some((b) => b.type === 'image'))
+  const boxCount = doc ? boxesOf(doc).length : 0
 
   useEffect(() => {
     apiFetch('/api/tutor/lessons').then((r) => setPlans(r.lessons)).catch(() => setPlans([]))
+    setDoc(null)
+    if (lesson.plan_id) apiFetch(`/api/tutor/lessons/${lesson.plan_id}`).then((r) => setDoc(r.lesson.doc)).catch(() => {})
   }, [lesson.plan_id])
 
   async function save(doc: LessonDoc) {
@@ -68,7 +75,15 @@ export function PlanSlot({ lesson, onChange }: { lesson: Lesson; onChange: (body
         {lesson.plan_id && <Button variant="ghost" onClick={() => onChange({ planId: null })}>Remove</Button>}
       </div>
       {lesson.plan_id ? (
-        <p className="slot-value">{lesson.plan_title}<span className="muted"> · on the board when you start</span></p>
+        <>
+          <p className="slot-value">{lesson.plan_title}<span className="muted"> · on the board when you start</span></p>
+          {hasImagePages && (
+            <div className="slot-actions">
+              <Button variant="secondary" onClick={() => setBoxing(true)}>{boxCount ? `Answer boxes (${boxCount})` : 'Add answer boxes'}</Button>
+              {!boxCount && <span className="muted slot-note">So students can answer on these pages.</span>}
+            </div>
+          )}
+        </>
       ) : (
         <>
           <DropZone accept="application/pdf,image/png,image/jpeg,image/webp" multiple busy={busy} onFiles={addFiles}>
@@ -87,6 +102,14 @@ export function PlanSlot({ lesson, onChange }: { lesson: Lesson; onChange: (body
             )}
           </div>
         </>
+      )}
+      {boxing && doc && (
+        <AnswerBoxesDialog doc={doc} onClose={() => setBoxing(false)} onSave={async (next) => {
+          const { lesson: plan } = await apiFetch(`/api/tutor/lessons/${lesson.plan_id}`, { method: 'PATCH', body: JSON.stringify({ doc: next }) })
+          setDoc(plan.doc)
+          setBoxing(false)
+          toast('Answer boxes saved')
+        }} />
       )}
       {writing && (
         <PasteDialog

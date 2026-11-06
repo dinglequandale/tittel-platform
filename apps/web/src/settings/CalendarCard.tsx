@@ -5,8 +5,7 @@ import { useToast } from '../lib/toast.tsx'
 import type { CalendarFilters, CalendarStatus } from '../lessons/CalendarInbox.tsx'
 import { dayLabel, timeLabel } from '../lessons/lessons.ts'
 import { useHashScroll } from '../lib/useHashScroll.ts'
-
-const PROVIDER_NAME = { google: 'Google Calendar', outlook: 'Outlook calendar', icloud: 'iCloud Calendar' } as const
+import { CalendarConnect, PROVIDER_NAME } from './CalendarConnect.tsx'
 
 // Connect a calendar through its secret or published iCal address (FLOW-SPEC
 // §3 B, §9): Google, Outlook / Microsoft 365 or iCloud. Read-only, no sign-in,
@@ -15,7 +14,6 @@ const PROVIDER_NAME = { google: 'Google Calendar', outlook: 'Outlook calendar', 
 export function CalendarCard() {
   const toast = useToast()
   const [status, setStatus] = useState<CalendarStatus | null>(null)
-  const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirmDisconnect, setConfirmDisconnect] = useState(false)
@@ -40,14 +38,11 @@ export function CalendarCard() {
     }
   }
 
-  async function connect() {
-    const s = await call('PUT', '/api/tutor/calendar', { icsUrl: url })
-    if (s?.connected) {
-      setUrl('')
-      const n = s.lastSync?.imported ?? 0
-      const u = s.lastSync?.unmatched.length ?? 0
-      toast(`Connected. ${n} lesson${n === 1 ? '' : 's'} imported${u ? `, ${u} to sort out on This week` : ''}.`)
-    }
+  function connected(s: CalendarStatus) {
+    setStatus(s)
+    const n = s.lastSync?.imported ?? 0
+    const u = s.lastSync?.unmatched.length ?? 0
+    toast(`Connected. ${n} lesson${n === 1 ? '' : 's'} imported${u ? `, ${u} to sort out on This week` : ''}.`)
   }
 
   const sync = status?.lastSync
@@ -110,30 +105,8 @@ export function CalendarCard() {
         </>
       ) : (
         <>
-          <p className="muted">
-            Paste your calendar's private feed address. Lessons come in by themselves and nothing is written back.
-            Treat the address like a password: anyone with it can see your calendar.
-          </p>
-          <p className="muted">
-            <strong>Google Calendar:</strong> Settings → click your calendar under “Settings for my calendars” →
-            Integrate calendar → copy <strong>Secret address in iCal format</strong>.
-          </p>
-          <p className="muted">
-            <strong>Outlook / Microsoft 365:</strong> Outlook on the web → Settings → Calendar → Shared calendars →
-            Publish a calendar → pick your calendar and <strong>Can view all details</strong> → Publish → copy the
-            <strong> ICS</strong> link.
-          </p>
-          <p className="muted">
-            <strong>iCloud:</strong> on icloud.com, open Calendar → the share button next to your calendar → tick
-            <strong> Public Calendar</strong> → copy the link (it starts with webcal://).
-          </p>
-          <Field label="Calendar address (iCal / ICS)">
-            <Input value={url} onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://…/basic.ics, https://…/calendar.ics or webcal://…" />
-          </Field>
-          <div className="row-end">
-            <Button onClick={connect} disabled={busy || !url.trim()}>{busy ? 'Connecting…' : 'Connect'}</Button>
-          </div>
+          <p className="muted">Your lessons come in by themselves and nothing is written back. Pick your calendar to see where to find its private address.</p>
+          <CalendarConnect onConnected={connected} />
         </>
       )}
       {error && <p className="field-error">{error}</p>}

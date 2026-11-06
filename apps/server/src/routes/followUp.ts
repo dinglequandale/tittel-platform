@@ -85,7 +85,9 @@ followUpRouter.get('/sessions/:id/results', async (req, res) => {
   const board = new Map<string, { qid: string; stem: string; correct: string | null; right: string[]; wrong: { name: string; answer: string }[] }>()
   for (const e of events) {
     const block = blockOf(doc, e.qid)
-    const q = board.get(e.qid) ?? { qid: e.qid, stem: block?.content || `Question ${board.size + 1}`, correct: block?.answer?.key ?? null, right: [], wrong: [] }
+    // A pin on a PDF page has no words of its own; where it sits is what identifies it.
+    const stem = block?.at ? `Page ${lessonOfQuestion(e.qid)!.page + 1}, ${block.content}` : block?.content || `Question ${board.size + 1}`
+    const q = board.get(e.qid) ?? { qid: e.qid, stem, correct: block?.answer?.key ?? null, right: [], wrong: [] }
     if (e.is_correct) q.right.push(e.name)
     else q.wrong.push({ name: e.name, answer: String(e.answer ?? '') })
     board.set(e.qid, q)
@@ -157,7 +159,7 @@ followUpRouter.get('/sessions/:id/results', async (req, res) => {
     boardPdf: pdf?.pdf_storage_key ?? null,
     board: [...board.values()],
     homework: [...homework.values()].map((h) => ({
-      title: h.title, handedIn: h.handedIn.size, assigned: h.assigned.size, misses: [...h.misses.values()],
+      title: h.title, handedIn: h.handedIn.size, handedInBy: [...h.handedIn], assigned: h.assigned.size, misses: [...h.misses.values()],
     })),
   })
 })
@@ -189,11 +191,17 @@ followUpRouter.post('/sessions/:id/follow-up', async (req, res) => {
     [problemIds],
   ) : []
   const doc = await planDoc(orgId, lesson.plan_id)
-  const blocks = qids.map((q) => blockOf(doc, q)).filter((b): b is LessonBlock => !!b && !!b.content)
-  if (!problems.length && !blocks.length) return res.status(400).json({ error: 'pick at least one problem' })
+  const asked = qids.map((q) => blockOf(doc, q)).filter((b): b is LessonBlock => !!b && !!b.content)
+  const blocks = asked.filter((b) => !b.at)
+  // Pins on a PDF page mean nothing without the page, so each brings its page along.
+  const pinnedPages = [...new Set(qids.filter((q) => blockOf(doc, q)?.at).map((q) => lessonOfQuestion(q)!.page))]
+  if (!problems.length && !asked.length) return res.status(400).json({ error: 'pick at least one problem' })
   const day = new Date(lesson.scheduled_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
   if (as === 'homework') {
+    if (!problems.length && !blocks.length) {
+      return res.status(400).json({ error: 'Questions on a PDF page can only go on the next lesson’s board.' })
+    }
     // Board questions become problems; the set and these problems stay out of
     // the library (archived), since they only make sense as this follow-up.
     const newIds: string[] = []
@@ -251,6 +259,7 @@ followUpRouter.post('/sessions/:id/follow-up', async (req, res) => {
       correct: typeof p.correct === 'string' ? p.correct : null,
     })),
     ...blocks.map((b) => ({ ...b, spacingAfter: 320 })),
+    ...pinnedPages.flatMap((p) => doc!.pages[p].blocks.filter((b) => b.type === 'image' || (b.at && asked.includes(b)))),
   ]
   const doc2 = parseLessonDoc({ ...nextDoc, pages: [{ label: 'Review', blocks: reviewBlocks }, ...nextDoc.pages] })
   const planId = newId()

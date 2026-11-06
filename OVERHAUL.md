@@ -374,8 +374,12 @@ time goes to teaching on it (from O2), recruiting partners, and the two licence 
     so no PDF-specific board code or board-assets table is needed.
   **Status (2026-10-29):** done: lesson load (52251b2, 7dba274), quiz overlay + answers panel
   (7be563f), the top tutor bar with Lesson page / End lesson (c9a753f, b83a458), B7
-  server-enforced write access (00589a7), G1. Left: games port, snapshot+asset survival
-  (room assets are still in memory), and the smoke coverage in *Accept*.
+  server-enforced write access (00589a7), G1. Left: games port (frozen until a paying tutor
+  asks) and the smoke coverage in *Accept*.
+  **Update (2026-10-30):** board images on a persistent board now live in `board_assets` ->
+  `files`, so they survive a restart; uploads need a board token with write access. Checked by
+  hand against a real restart, not yet in the smoke suite. PDF and photo pages take pinned
+  answer boxes (`LessonBlock.at`, `lessons/AnswerBoxes.tsx`).
   *Accept:* Konrad teaches every class that week on the platform; the smoke suite covers quiz
   timing and snapshot+asset survival across a restart.
 - **O3 The weekly loop.** Session persistence, the session summary (AI draft + edit + link/email),

@@ -4,7 +4,7 @@ import { apiFetch } from '../lib/api.ts'
 import { useToast } from '../lib/toast.tsx'
 import type { Org } from '../lib/useOrg.ts'
 
-interface Contact { name: string; emails: { email: string; role: 'student' | 'parent' }[]; portal_token: string; parent_updates?: boolean }
+export interface Contact { name: string; emails: { email: string; role: 'student' | 'parent' }[]; portal_token: string; parent_updates?: boolean }
 
 /** How the tutor signs off: their name from Settings, else their email's name part. */
 export function tutorSignature(org: Pick<Org, 'displayName'> | null, email: string | undefined): string {
@@ -30,12 +30,14 @@ export const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name
  * is sent by the app.
  */
 export function ParentUpdateDialog({
-  load, onClose, draftWithAi, title = 'Update for parents', onSent, children, draftKey,
+  load, onClose, draftWithAi, title = 'Update for parents', onSent, stayOpen, children, draftKey,
 }: {
   draftKey?: string
   title?: string
   /** Called when the tutor copies it or opens it in their email: as close to "sent" as the app can know. */
   onSent?: () => void
+  /** Sending doesn't close the dialog: there's another family's update to send. */
+  stayOpen?: boolean
   /** Above the message, e.g. a progress report's period picker. */
   children?: ReactNode
   /** Builds the draft once its data is fetched: who it goes to and what it says. */
@@ -85,7 +87,7 @@ export function ParentUpdateDialog({
             <div className="row-end">
               <DialogClose asChild><Button variant="ghost">Close</Button></DialogClose>
               <Button variant="secondary" onClick={() => navigator.clipboard.writeText(body ?? '').then(() => { toast('Copied'); onSent?.() }, () => toast('Couldn’t copy'))}>Copy text</Button>
-              <a className="btn btn-primary" href={mailto} onClick={() => { onSent?.(); setTimeout(onClose, 300) }}>Open in email</a>
+              <a className="btn btn-primary" href={mailto} onClick={() => { onSent?.(); if (!stayOpen) setTimeout(onClose, 300) }}>Open in email</a>
             </div>
           </>
         )}

@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Check, Play, Plus } from 'lucide-react'
-import { Button, EmptyState, FlipNumber, PageLoading, paletteFor } from '@tittel/ui'
+import { Button, EmptyState, PageLoading, paletteFor } from '@tittel/ui'
 import { apiFetch } from '../lib/api.ts'
 import { useSession } from '../lib/useSession.ts'
 import { useToast } from '../lib/toast.tsx'
 import { ScheduleLessonDialog } from '../lessons/ScheduleLessonDialog.tsx'
 import { CalendarInbox, type CalendarStatus } from '../lessons/CalendarInbox.tsx'
 import { QuickStudents } from '../lessons/QuickLesson.tsx'
-import { TeachingPrefs } from '../settings/TeachingPrefs.tsx'
 import { useOrg } from '../lib/useOrg.ts'
 import {
   type Lesson, lessonWho, lessonEnd, timeLabel, dayLabel, isJoinable, startLesson, scoreTone, canOpenBoard, dueLabel,
@@ -67,7 +66,6 @@ export function Home() {
   const [returned, setReturned] = useState<Returned[]>([])
   const [overdue, setOverdue] = useState<Overdue[]>([])
   const [studentCount, setStudentCount] = useState<number | null>(null)
-  const [homeworkCount, setHomeworkCount] = useState<number | null>(null)
   const [scheduling, setScheduling] = useState(false)
   const [calendar, setCalendar] = useState<CalendarStatus | null>(null)
   const [tutorName, setTutorName] = useState('')
@@ -95,7 +93,6 @@ export function Home() {
     apiFetch('/api/tutor/attention').then((r) => { setReturned(r.returned); setOverdue(r.overdue) }).catch(() => {})
     // Re-counted on every load: answering the calendar inbox can add students.
     apiFetch('/api/tutor/students').then((r) => setStudentCount(r.students.length)).catch(() => setStudentCount(0))
-    apiFetch('/api/tutor/assignments').then((r) => setHomeworkCount(r.assignments.length)).catch(() => setHomeworkCount(0))
   }
 
   useEffect(() => {
@@ -122,16 +119,6 @@ export function Home() {
   }
   const upcomingToday = todays.filter((l) => lessonEnd(l).getTime() > now)
   const needPrep = lessons.filter((l) => lessonEnd(l).getTime() > now && (!l.plan_id || l.homework.length === 0)).length
-
-  // The sample student doesn't count towards getting started.
-  const steps = [
-    { label: 'Add a student', hint: 'They get one private link for everything', done: (studentCount ?? 0) - (demo ? 1 : 0) > 0 },
-    { label: 'Schedule a lesson', hint: 'Weekly slots repeat by themselves', done: lessons.some((l) => l.student_id !== demo?.studentId) },
-    { label: 'Give homework', hint: 'From the lesson, in one step', done: (homeworkCount ?? 0) - (demo?.assignmentIds.length ?? 0) > 0 },
-  ]
-  const doneCount = steps.filter((s) => s.done).length
-  const showOnboarding = studentCount !== null && homeworkCount !== null && doneCount < steps.length
-  const stepColors = ['blue', 'mint', 'gold'] as const
 
   async function tryDemo() {
     setTrying(true)
@@ -185,48 +172,10 @@ export function Home() {
         <Button onClick={() => setScheduling(true)}><Plus size={15} strokeWidth={2.1} /> Schedule lesson</Button>
       </div>
 
-      {showOnboarding && (
-        <div className="surface-card onboard">
-          <div className="onboard-head">
-            <span className="card-title-lg">Get started</span>
-            <span className="list-row-sub num">{doneCount} of {steps.length} done</span>
-          </div>
-          <div className="onboard-steps">
-            {steps.map((s, i) => (
-              <div key={s.label} className="step" data-done={s.done}>
-                <span className="step-num" data-c={stepColors[i]} data-done={s.done}>
-                  {s.done ? <Check size={14} strokeWidth={3} /> : <FlipNumber value={i + 1} delay={i * 140} />}
-                </span>
-                <div>
-                  <div className="step-title">{s.label}</div>
-                  <div className="step-hint">{s.hint}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-          {!demo && (
-            <div className="onboard-try">
-              <Button variant="secondary" onClick={tryDemo} disabled={trying}>{trying ? 'Setting it up…' : 'Explore with a sample student'}</Button>
-              <span className="muted">A lesson that's already happened, with homework and answers to follow up on. Remove it any time.</span>
-            </div>
-          )}
-        </div>
-      )}
-
       {demo && (
         <div className="surface-card demo-banner">
           <span>You're exploring with a sample student, <Link to={`/app/lessons/${demo.lessonId}`} className="card-link">Sam R.</Link></span>
           <Button variant="ghost" onClick={removeDemo}>Remove sample</Button>
-        </div>
-      )}
-
-      {org && org.consentAt && !org.teachingAskedAt && (
-        <div className="surface-card teach-card">
-          <div>
-            <div className="card-title-lg">How do you teach?</div>
-            <p className="muted">So the app fits how you work. It only sets defaults, and you can change any of it in Settings.</p>
-          </div>
-          <TeachingPrefs org={org} onboarding />
         </div>
       )}
 
@@ -239,7 +188,12 @@ export function Home() {
           art="pythagoras"
           title="Your week is empty"
           description="Schedule your first lesson. Its plan, homework and meeting link all live on it."
-          action={<Button onClick={() => setScheduling(true)}>Schedule a lesson</Button>}
+          action={(
+            <div className="empty-actions">
+              <Button onClick={() => setScheduling(true)}>Schedule a lesson</Button>
+              {!demo && <Button variant="secondary" onClick={tryDemo} disabled={trying}>{trying ? 'Setting it up…' : 'Explore with a sample student'}</Button>}
+            </div>
+          )}
         />
       ) : (
         <div className="week">

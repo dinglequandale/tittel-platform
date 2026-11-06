@@ -85,6 +85,10 @@ function buildCard(block: LessonBlock): { wrapper: HTMLDivElement; card: HTMLDiv
     whiteSpace: 'normal',
     wordBreak: 'break-word',
   } as Partial<CSSStyleDeclaration>)
+  // A pin on a PDF page: a small dark tag that reads against the printed page.
+  if (block.at) {
+    Object.assign(card.style, { padding: '2px 10px', background: '#0F0F0F', color: '#ffffff', fontSize: '16px', fontWeight: '600' } as Partial<CSSStyleDeclaration>)
+  }
 
   // Author line breaks stay real text nodes so auto-render finds the math in them.
   const lines = (block.content ?? '').split('\n')

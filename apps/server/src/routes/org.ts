@@ -18,6 +18,10 @@ orgRouter.get('/org', async (req, res) => {
     displayName: org?.display_name ?? '',
     // When the tutor confirmed they have parents' consent for their students (child data, OVERHAUL §5).
     consentAt: typeof org?.settings?.consentAt === 'string' ? org.settings.consentAt : null,
+    onboardedAt: onboardedAt(org?.settings ?? {}),
+    onboardingStep: ONBOARDING_STEPS.includes(org?.settings?.onboardingStep as never) ? org!.settings.onboardingStep : null,
+    // The first real parent update: the last step of getting started.
+    parentUpdateSentAt: typeof org?.settings?.parentUpdateSentAt === 'string' ? org.settings.parentUpdateSentAt : null,
     // The sample student, while one exists (routes/demo.ts).
     demo: org?.settings?.demo ? { studentId: (org.settings.demo as { studentId: string }).studentId, lessonId: (org.settings.demo as { lessonId: string }).lessonId, assignmentIds: (org.settings.demo as { assignmentIds: string[] }).assignmentIds } : null,
     defaultMeetingUrl: typeof org?.settings?.defaultMeetingUrl === 'string' ? org.settings.defaultMeetingUrl : '',
@@ -29,7 +33,16 @@ orgRouter.get('/org', async (req, res) => {
   })
 })
 
-// How the tutor teaches (asked once on Home, editable in Settings). Each
+// Setup (/welcome). A tutor who saved or skipped "How do you teach?" on Home,
+// before this sequence existed, has finished it; there's nothing to backfill.
+const ONBOARDING_STEPS = ['you', 'consent', 'teaching', 'calendar', 'parents', 'report', 'ready'] as const
+
+function onboardedAt(s: Record<string, unknown>): string | null {
+  if (typeof s.onboardedAt === 'string') return s.onboardedAt
+  return typeof s.consentAt === 'string' && typeof s.teachingAskedAt === 'string' ? s.teachingAskedAt : null
+}
+
+// How the tutor teaches (asked in /welcome, editable in Settings). Each
 // preference only changes defaults and what's shown; nothing is locked.
 const TEACH_WHERE = ['online', 'in_person', 'both'] as const
 const SCHEDULE = ['regular', 'as_needed'] as const
@@ -44,7 +57,6 @@ export function teaching(s: Record<string, unknown>) {
     teachWhere: pick(s.teachWhere, TEACH_WHERE, 'online'),
     schedule: pick(s.schedule, SCHEDULE, 'regular'),
     homeworkDue: typeof s.homeworkDue === 'string' && HOMEWORK_DUE.test(s.homeworkDue) ? s.homeworkDue : 'next_lesson',
-    teachingAskedAt: typeof s.teachingAskedAt === 'string' ? s.teachingAskedAt : null,
     parentUpdates: {
       afterLesson: pu.afterLesson !== false,
       reports: pu.reports !== false,
@@ -67,11 +79,14 @@ async function setSetting(orgId: string, key: string, value: unknown) {
 }
 
 orgRouter.patch('/org', async (req, res) => {
-  const { defaultMeetingUrl, meetingLinkSource, aiHelp, name, displayName, consent, teachWhere, schedule, homeworkDue, teachingAsked, parentUpdates, parentTemplates } = req.body ?? {}
+  const { defaultMeetingUrl, meetingLinkSource, aiHelp, name, displayName, consent, teachWhere, schedule, homeworkDue, onboardingStep, onboarded, parentUpdateSent, parentUpdates, parentTemplates } = req.body ?? {}
   if (teachWhere !== undefined && !TEACH_WHERE.includes(teachWhere)) return res.status(400).json({ error: `teachWhere must be one of ${TEACH_WHERE.join(', ')}` })
   if (schedule !== undefined && !SCHEDULE.includes(schedule)) return res.status(400).json({ error: `schedule must be one of ${SCHEDULE.join(', ')}` })
   if (homeworkDue !== undefined && !(typeof homeworkDue === 'string' && HOMEWORK_DUE.test(homeworkDue))) {
     return res.status(400).json({ error: "homeworkDue must be 'next_lesson', 'none' or 'in_days:<1–60>'" })
+  }
+  if (onboardingStep !== undefined && !ONBOARDING_STEPS.includes(onboardingStep)) {
+    return res.status(400).json({ error: `onboardingStep must be one of ${ONBOARDING_STEPS.join(', ')}` })
   }
   if (parentUpdates !== undefined) {
     const p = parentUpdates as Record<string, unknown> | null
@@ -91,7 +106,14 @@ orgRouter.patch('/org', async (req, res) => {
   if (teachWhere !== undefined) await setSetting(orgId, 'teachWhere', teachWhere)
   if (schedule !== undefined) await setSetting(orgId, 'schedule', schedule)
   if (homeworkDue !== undefined) await setSetting(orgId, 'homeworkDue', homeworkDue)
-  if (teachingAsked === true) await setSetting(orgId, 'teachingAskedAt', new Date().toISOString())
+  if (onboardingStep !== undefined) await setSetting(orgId, 'onboardingStep', onboardingStep)
+  if (onboarded === true) {
+    // Consent is the one answer that can't be defaulted: it comes before any student.
+    const [row] = await orgQuery<{ consent_at: string | null }>(orgId, `select settings->>'consentAt' as consent_at from orgs where id = $1::text /* org_id */`)
+    if (!row?.consent_at) return res.status(400).json({ error: 'Confirm the student privacy step first.' })
+    await setSetting(orgId, 'onboardedAt', new Date().toISOString())
+  }
+  if (parentUpdateSent === true) await setSetting(orgId, 'parentUpdateSentAt', new Date().toISOString())
   if (parentUpdates !== undefined || parentTemplates !== undefined) {
     // Merged over what's saved, so one switch or one template saves alone.
     const [row] = await orgQuery<{ settings: Record<string, unknown> }>(orgId, `select settings from orgs where id = $1::text /* org_id */`)

@@ -15,11 +15,11 @@ import {
 } from './lessons.ts'
 import { PlanSlot } from './PlanSlot.tsx'
 import { HomeworkSlot } from './HomeworkSlot.tsx'
-import { ParentUpdateDialog, lessonContacts, recipientsOf, portalLink, firstName, tutorSignature } from './ParentUpdate.tsx'
-import { fillTemplate, DEFAULT_TEMPLATES } from './template.ts'
-import { AfterLesson, useLessonResults } from './AfterLesson.tsx'
+import { ParentUpdateDialog, lessonContacts, recipientsOf, portalLink, firstName, tutorSignature, type Contact } from './ParentUpdate.tsx'
+import { fillTemplate, familiesOf, familyResults, DEFAULT_TEMPLATES } from './template.ts'
+import { AfterLesson, useLessonResults, type LessonResults } from './AfterLesson.tsx'
 import { fileUrl } from '../lib/files.ts'
-import { useOrg } from '../lib/useOrg.ts'
+import { useOrg, saveOrg } from '../lib/useOrg.ts'
 
 function localDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -41,7 +41,6 @@ export function LessonPage() {
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [confirmStop, setConfirmStop] = useState(false)
   const [updating, setUpdating] = useState(false)
-  const { session } = useSession()
   const [aiEnabled, setAiEnabled] = useState(false)
   const { results, reload: reloadResults } = useLessonResults(lessonId!)
   const org = useOrg()
@@ -143,60 +142,7 @@ export function LessonPage() {
         </div>
       </div>
 
-      {updating && (() => {
-        // The update is the tutor's template (Settings → Parents) filled from
-        // what the app knows; with Claude on, the same facts can be written up
-        // as prose instead, never from anything else.
-        async function facts() {
-          const ps = (await lessonContacts(lesson!)).filter((p) => p.parent_updates !== false)
-          const names = ps.map((p) => firstName(p.name))
-          const who = names.length ? names.join(' and ') : lessonWho(lesson!)
-          const board = results?.board ?? []
-          const right = board.reduce((n, q) => n + q.right.length, 0)
-          const total = board.reduce((n, q) => n + q.right.length + q.wrong.length, 0)
-          const lastHw = results?.homework.find((h) => h.handedIn > 0)
-          const hw = lesson!.homework[lesson!.homework.length - 1]
-          const vars = {
-            first_name: who,
-            date: shortDate(lesson!.scheduled_at),
-            covered: lesson!.notes?.trim() || lesson!.plan_title || '',
-            board_score: total ? `${right} of ${total} answers right` : '',
-            last_homework: lastHw ? `${lastHw.title}, ${lastHw.misses.length ? `${lastHw.misses.length} to go over` : 'all right'}` : '',
-            homework: hw ? `${hw.title}${hw.dueAt ? `, due ${dueLabel(hw.dueAt)}` : ''}` : '',
-            board_notes_link: results?.boardPdf ? `${window.location.origin}${fileUrl(results.boardPdf)}` : '',
-            portal_link: ps.length === 1 ? portalLink(ps[0].portal_token)
-              : ps.map((p) => `\n${firstName(p.name)}: ${portalLink(p.portal_token)}`).join(''),
-            tutor_name: tutorSignature(org, session?.user.email),
-          }
-          return { ps, vars }
-        }
-        return (
-          <ParentUpdateDialog onClose={() => setUpdating(false)}
-            load={async () => {
-              const { ps, vars } = await facts()
-              const { subject, body } = fillTemplate(org?.parentTemplates.lesson ?? DEFAULT_TEMPLATES.lesson, vars)
-              return { to: recipientsOf(ps), subject, body }
-            }}
-            draftWithAi={aiEnabled ? async () => {
-              const { vars } = await facts()
-              const { text } = await apiFetch('/api/tutor/ai/parent-update', {
-                method: 'POST',
-                body: JSON.stringify({ facts: [
-                  `Student${vars.first_name.includes(' and ') ? 's' : ''}: ${vars.first_name}`, `Lesson: ${vars.date}`,
-                  ...(vars.covered ? [`What we covered: ${vars.covered}`] : []),
-                  ...(vars.board_score ? [`On the board: ${vars.board_score}.`] : []),
-                  ...(vars.last_homework ? [`Last homework: ${vars.last_homework}.`] : []),
-                  ...(vars.homework ? [`Homework: ${vars.homework}.`] : []),
-                ].join('\n') }),
-              })
-              const links = [
-                ...(vars.board_notes_link ? [`Notes from the board: ${vars.board_notes_link}`] : []),
-                `${vars.first_name}'s homework and lessons are here: ${vars.portal_link}`,
-              ]
-              return ['Hi,', '', text, '', ...links, '', 'Best,', vars.tutor_name].join('\n')
-            } : undefined} />
-        )
-      })()}
+      {updating && <LessonUpdate lesson={lesson} results={results} aiEnabled={aiEnabled} onClose={() => setUpdating(false)} />}
       {rescheduling && (
         <MoveDialog lesson={lesson} onClose={() => setRescheduling(false)}
           onSave={async (scheduledAt, durationMin) => { await patch({ scheduledAt, durationMin }); setRescheduling(false) }} />
@@ -225,6 +171,102 @@ export function LessonPage() {
         }}
       />
     </div>
+  )
+}
+
+/**
+ * The update for parents: one per family, so a group lesson's parents never
+ * see each other's addresses, children's links or results. It's the tutor's
+ * template (Settings → Parents) filled from what the app knows; with Claude
+ * on, the same facts can be written up as prose instead, never from anything else.
+ */
+function LessonUpdate({ lesson, results, aiEnabled, onClose }: {
+  lesson: Lesson
+  results: LessonResults | null
+  aiEnabled: boolean
+  onClose: () => void
+}) {
+  const toast = useToast()
+  const org = useOrg()
+  const { session } = useSession()
+  const [families, setFamilies] = useState<Contact[][] | null>(null)
+  const [at, setAt] = useState(0)
+  const [sent, setSent] = useState<Set<number>>(new Set())
+
+  useEffect(() => {
+    lessonContacts(lesson)
+      .then((all) => setFamilies(familiesOf(all.filter((p) => p.parent_updates !== false))))
+      .catch((err) => { toast((err as Error).message); onClose() })
+  }, [])
+
+  if (!families) return null
+  const ps = families[at] ?? []
+  const label = (f: Contact[]) => f.map((p) => firstName(p.name)).join(' and ')
+
+  function facts() {
+    const names = ps.map((p) => firstName(p.name))
+    const { boardScore, lastHomework } = familyResults(ps.map((p) => p.name), results)
+    const hw = lesson.homework[lesson.homework.length - 1]
+    return {
+      first_name: names.length ? names.join(' and ') : lessonWho(lesson),
+      date: shortDate(lesson.scheduled_at),
+      covered: lesson.notes?.trim() || lesson.plan_title || '',
+      board_score: boardScore,
+      last_homework: lastHomework,
+      homework: hw ? `${hw.title}${hw.dueAt ? `, due ${dueLabel(hw.dueAt)}` : ''}` : '',
+      board_notes_link: results?.boardPdf ? `${window.location.origin}${fileUrl(results.boardPdf)}` : '',
+      portal_link: ps.length === 1 ? portalLink(ps[0].portal_token)
+        : ps.map((p) => `\n${firstName(p.name)}: ${portalLink(p.portal_token)}`).join(''),
+      tutor_name: tutorSignature(org, session?.user.email),
+    }
+  }
+
+  function markSent() {
+    const next = new Set(sent).add(at)
+    setSent(next)
+    // The sample student's update isn't a real one, so it doesn't finish onboarding.
+    if (org && !org.parentUpdateSentAt && org.demo?.lessonId !== lesson.id) void saveOrg({ parentUpdateSent: true }).catch(() => {})
+    if (families!.length < 2) return
+    const left = families!.findIndex((_, i) => !next.has(i))
+    if (left === -1) { toast('All families done'); onClose() } else setAt(left)
+  }
+
+  return (
+    <ParentUpdateDialog onClose={onClose} onSent={markSent} stayOpen={families.length > 1} draftKey={String(at)}
+      title={families.length > 1 ? 'Updates for parents' : undefined}
+      load={async () => {
+        const { subject, body } = fillTemplate(org?.parentTemplates.lesson ?? DEFAULT_TEMPLATES.lesson, facts())
+        return { to: recipientsOf(ps), subject, body }
+      }}
+      draftWithAi={aiEnabled ? async () => {
+        const vars = facts()
+        const { text } = await apiFetch('/api/tutor/ai/parent-update', {
+          method: 'POST',
+          body: JSON.stringify({ facts: [
+            `Student${vars.first_name.includes(' and ') ? 's' : ''}: ${vars.first_name}`, `Lesson: ${vars.date}`,
+            ...(vars.covered ? [`What we covered: ${vars.covered}`] : []),
+            ...(vars.board_score ? [`On the board: ${vars.board_score}.`] : []),
+            ...(vars.last_homework ? [`Last homework: ${vars.last_homework}.`] : []),
+            ...(vars.homework ? [`Homework: ${vars.homework}.`] : []),
+          ].join('\n') }),
+        })
+        const links = [
+          ...(vars.board_notes_link ? [`Notes from the board: ${vars.board_notes_link}`] : []),
+          `${vars.first_name}'s homework and lessons are here: ${vars.portal_link}`,
+        ]
+        return ['Hi,', '', text, '', ...links, '', 'Best,', vars.tutor_name].join('\n')
+      } : undefined}>
+      {families.length > 1 && (
+        <Field label={`Family ${at + 1} of ${families.length}`} hint="Each family gets their own message, with only their child’s link and results.">
+          <Select value={String(at)} onValueChange={(v) => setAt(Number(v))}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {families.map((f, i) => <SelectItem key={i} value={String(i)}>{label(f)}{sent.has(i) ? ' · sent' : ''}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </Field>
+      )}
+    </ParentUpdateDialog>
   )
 }
 

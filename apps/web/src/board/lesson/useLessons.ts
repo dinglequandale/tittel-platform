@@ -60,11 +60,13 @@ export function useLessons({
   editor,
   channel,
   boardId,
+  authParams,
   enabled,
 }: {
   editor: Editor | null
   channel: ControlChannel
   boardId: string
+  authParams: string
   /** A signed-in host on a persistent board (the /try board has no plans). */
   enabled: boolean
 }) {
@@ -101,6 +103,7 @@ export function useLessons({
       setStatus('Loading lesson…')
       const result = await loadPlanOntoBoard(editor, plan.doc, {
         boardId,
+        authParams,
         ref: plan.ref,
         title: plan.title,
         date: plan.date,
@@ -112,7 +115,7 @@ export function useLessons({
       else flash(result.added ? `Loaded ${result.pages} page${result.pages === 1 ? '' : 's'}` : 'Opened lesson')
       if (result.added && document.hidden) cueUntilVisible()
     },
-    [editor, boardId, sendKeys, flash],
+    [editor, boardId, authParams, sendKeys, flash],
   )
 
   const fail = useCallback(

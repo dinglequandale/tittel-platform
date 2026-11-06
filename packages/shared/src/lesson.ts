@@ -40,6 +40,12 @@ export interface LessonBlock {
   spacingAfter: number
   maxWidth: number
   answer?: LessonAnswer
+  /**
+   * Pinned onto the image block before it, instead of flowing below it: where
+   * its centre sits, as fractions of that image's width and height. This is
+   * how a PDF page gets answer boxes without any text to hang them on.
+   */
+  at?: { x: number; y: number }
 }
 
 export interface LessonPage {
@@ -71,6 +77,9 @@ function asString(v: unknown, fallback = ''): string {
 }
 function asNumber(v: unknown, fallback: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback
+}
+function isFraction(v: unknown): v is number {
+  return typeof v === 'number' && v >= 0 && v <= 1
 }
 function asStringArray(v: unknown): string[] | undefined {
   if (!Array.isArray(v)) return undefined
@@ -181,6 +190,7 @@ export function parseLessonDoc(raw: unknown): LessonDoc {
       }
 
       const answer = parseAnswer(block.answer, pageReveal, pi, bi)
+      const at = block.at as { x?: unknown; y?: unknown } | null | undefined
 
       return {
         type,
@@ -190,6 +200,7 @@ export function parseLessonDoc(raw: unknown): LessonDoc {
         spacingAfter: asNumber(block.spacingAfter, defaults.spacing),
         maxWidth: asNumber(block.maxWidth, defaults.maxWidth),
         answer,
+        at: isFraction(at?.x) && isFraction(at?.y) ? { x: at.x, y: at.y } : undefined,
       }
     })
 

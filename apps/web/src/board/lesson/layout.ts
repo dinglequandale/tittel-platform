@@ -46,9 +46,20 @@ export function computeLayout(
 ): PlacedPage[] {
   return doc.pages.map((page, pi) => {
     let y = TOP_MARGIN
+    let image: PlacedBlock | null = null
     const blocks: PlacedBlock[] = page.blocks.map((block, bi) => {
       const m = measure(pi, bi) ?? { w: 200, h: 40 }
-      const placed: PlacedBlock = { id: blockId(prefix, pi, bi), blockIndex: bi, x: 0, y, w: m.w, h: m.h }
+      const id = blockId(prefix, pi, bi)
+      // Pinned onto the image above it, so it takes no room in the flow.
+      if (block.at && image) {
+        return {
+          id, blockIndex: bi, w: m.w, h: m.h,
+          x: image.x + block.at.x * image.w - m.w / 2,
+          y: image.y + block.at.y * image.h - m.h / 2,
+        }
+      }
+      const placed: PlacedBlock = { id, blockIndex: bi, x: 0, y, w: m.w, h: m.h }
+      if (block.type === 'image') image = placed
       y += m.h + block.spacingAfter
       return placed
     })

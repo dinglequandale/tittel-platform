@@ -1,10 +1,12 @@
-import { TLSocketRoom } from '@tldraw/sync-core'
+import * as Y from 'yjs'
 import type { WebSocket as WsSocket } from 'ws'
+import { BoardDoc, importTldrawSnapshot } from '@tittel/board'
 import type { QuestionKey, Submission, Player } from '@tittel/shared'
 import { pool } from '../db.ts'
+import { SyncRoom } from './sync.ts'
 
-// Rooms are in-memory while live; a `persistent` room additionally snapshots to
-// Postgres (boards.snapshot) so it survives idle-teardown and server restarts.
+// Rooms are in-memory while live; a `persistent` room additionally saves to
+// Postgres (boards.doc) so it survives idle-teardown and server restarts.
 // An ephemeral room (the free /try quick-board, or any board with no matching
 // `boards` row) behaves exactly like the legacy whiteboard: 100% volatile,
 // dropped for good ~30s after the last socket leaves.
@@ -26,7 +28,7 @@ export type ControlClient = {
 export interface Room {
   id: string
   persistent: boolean
-  socketRoom: TLSocketRoom<any, void>
+  sync: SyncRoom
   assets: Map<string, AssetBlob>
   controls: Set<ControlClient>
   lastCamera: unknown | null
@@ -63,32 +65,46 @@ export interface Room {
 
 const rooms = new Map<string, Room>()
 
-async function loadSnapshot(id: string): Promise<unknown | null> {
-  const { rows } = await pool.query<{ snapshot: unknown }>(
-    'select snapshot from boards where id = $1',
+/**
+ * The saved board as a live doc. `boards.snapshot` holds what the tldraw engine
+ * saved: a board with no `doc` yet is imported from it. The snapshot is left in
+ * place, so a board can always be recovered from the original.
+ */
+async function loadDoc(id: string): Promise<{ doc: BoardDoc; imported: boolean }> {
+  const doc = new BoardDoc()
+  const { rows } = await pool.query<{ doc: Buffer | null; snapshot: unknown }>(
+    'select doc, snapshot from boards where id = $1',
     [id],
   )
-  return rows[0]?.snapshot ?? null
+  const saved = rows[0]
+  let imported = false
+  if (saved?.doc) {
+    Y.applyUpdate(doc.ydoc, new Uint8Array(saved.doc))
+  } else if (saved?.snapshot) {
+    const { shapes, skipped } = importTldrawSnapshot(doc, saved.snapshot)
+    console.log(`[board] ${id} imported from tldraw: ${shapes} shapes, ${skipped} skipped`)
+    imported = true
+  }
+  return { doc, imported }
 }
 
-async function saveSnapshot(room: Room): Promise<void> {
+async function saveDoc(room: Room): Promise<void> {
   if (!room.persistent) return
-  const snapshot = room.socketRoom.getCurrentSnapshot()
-  const json = JSON.stringify(snapshot)
-  if (Buffer.byteLength(json) > MAX_SNAPSHOT_BYTES) {
-    console.warn(`[board] ${room.id} snapshot exceeds ${MAX_SNAPSHOT_BYTES} bytes — skipping save`)
+  const saved = Buffer.from(room.sync.snapshot())
+  if (saved.byteLength > MAX_SNAPSHOT_BYTES) {
+    console.warn(`[board] ${room.id} doc exceeds ${MAX_SNAPSHOT_BYTES} bytes — skipping save`)
     return
   }
   await pool.query(
-    'update boards set snapshot = $2, snapshot_updated_at = now() where id = $1',
-    [room.id, json],
+    'update boards set doc = $2, snapshot_updated_at = now() where id = $1',
+    [room.id, saved],
   )
   room.dirty = false
 }
 
 // A client opens its sync and control sockets at the same moment, so two
 // upgrades routinely race here. Without sharing the in-flight creation, each
-// would await loadSnapshot and build its own Room: the sockets split across
+// would await loadDoc and build its own Room: the sockets split across
 // two documents and the orphan's autosave overwrites the real snapshot.
 const pendingRooms = new Map<string, Promise<Room>>()
 // A room torn down moments ago may still be writing its final snapshot.
@@ -115,7 +131,8 @@ export function getOrCreateRoom(id: string, persistent: boolean): Promise<Room> 
 
 async function createRoom(id: string, persistent: boolean): Promise<Room> {
   await closingRooms.get(id)
-  const initialSnapshot = persistent ? await loadSnapshot(id) : null
+  const { doc, imported } = persistent ? await loadDoc(id) : { doc: new BoardDoc(), imported: false }
+  doc.seedFirstPage()
 
   const room: Room = {
     id,
@@ -144,24 +161,23 @@ async function createRoom(id: string, persistent: boolean): Promise<Room> {
     game: null,
     closeTimer: null,
     autosaveTimer: null,
-    dirty: false,
-    socketRoom: undefined as unknown as TLSocketRoom<any, void>,
+    dirty: imported,
+    sync: undefined as unknown as SyncRoom,
   }
 
-  room.socketRoom = new TLSocketRoom<any, void>({
-    initialSnapshot: (initialSnapshot as never) ?? undefined,
-    onSessionRemoved(_room, args) {
-      room.syncUsers.delete(args.sessionId)
-      if (args.numSessionsRemaining === 0) scheduleClose(room)
-    },
-    onDataChange() {
+  room.sync = new SyncRoom(doc.ydoc, {
+    onChange() {
       room.dirty = true
+    },
+    onSessionRemoved(sessionId, remaining) {
+      room.syncUsers.delete(sessionId)
+      if (remaining === 0) scheduleClose(room)
     },
   })
 
   if (persistent) {
     room.autosaveTimer = setInterval(() => {
-      if (room.dirty) void saveSnapshot(room).catch((err) => console.error('[board] autosave failed', err))
+      if (room.dirty) void saveDoc(room).catch((err) => console.error('[board] autosave failed', err))
     }, AUTOSAVE_MS)
   }
 
@@ -188,7 +204,7 @@ async function closeRoom(room: Room) {
   if (room.autosaveTimer) clearInterval(room.autosaveTimer)
   if (room.persistent) {
     try {
-      await saveSnapshot(room)
+      await saveDoc(room)
     } catch (err) {
       console.error('[board] final save failed', err)
     }
@@ -202,9 +218,5 @@ async function closeRoom(room: Room) {
     }
   }
   room.controls.clear()
-  try {
-    room.socketRoom.close()
-  } catch {
-    /* already closed */
-  }
+  room.sync.close()
 }

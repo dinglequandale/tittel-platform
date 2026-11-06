@@ -1,7 +1,9 @@
 # BOARD-SPEC — our own whiteboard engine, replacing tldraw
 
-**Written:** 2026-10-30. **Status:** design complete enough to start Stage 2; nothing past Stage 1 is built.
-Device behaviour is unproven until the gates in §12 pass.
+**Written:** 2026-10-30. **Status (2026-11-05): built, but not as planned below.** Konrad chose to
+replace tldraw in one step rather than in stages, using existing libraries where they fit. What
+shipped, how it differs from this plan, and what is still open are in **§16**. §1–§15 are the
+original plan, kept because their open questions and tests still apply.
 **Goal (Konrad):** remove tldraw and replace it with an in-house board that keeps its most useful
 features (ink colours, widths, tool types, images, screenshots) and adds shapes that snap to perfect
 forms, without that snapping ever touching mathematical writing.
@@ -614,3 +616,48 @@ Surface or other Windows pen; Mac Chrome and Safari with mouse and trackpad; And
 - [Apple forum: missing PointerEvents with Scribble](https://developer.apple.com/forums/thread/662874)
 - [WebKit bug 217430](https://bugs.webkit.org/show_bug.cgi?id=217430)
 - [Apple forum: PointerEvents with Apple Pencil Pro](https://developer.apple.com/forums/thread/776468)
+
+---
+
+## 16. What was built (2026-11-05)
+
+Commits `6554202` (toolbar, Shape tool, recogniser) and `771b8a3` (the engine), merged into
+`overhaul`. tldraw and its 117 packages are gone, so OVERHAUL §5's tldraw licence task no longer
+applies.
+
+### 16.1 Where it differs from this plan
+
+| This plan | Built |
+|---|---|
+| Server-ordered operations of our own (§5) | **Yjs** documents over the y-websocket protocol, served by our own `apps/server/src/board/sync.ts`; per-person undo and presence come from Yjs |
+| Stages with gates A–C (§12) | One step. No gate was run; see §16.3 |
+| `boards.engine` per board, `snapshot_legacy` (§11) | `boards.doc` (bytea, Yjs state). A board with no `doc` is imported from `boards.snapshot` on first open; `snapshot` is never overwritten, so it stays the original |
+| Hex colours, quantised points (§4) | tldraw's named colours and s/m/l/xl sizes, kept so imported boards look the same (`packages/board/src/schema.ts`) |
+| Canvas renderer with `Path2D` caches (§6) | `apps/web/src/board/engine`: `Canvas.tsx`, `ShapeGraphic.tsx`, `editor.ts`, `gestures.ts`; `perfect-freehand` for ink, `@use-gesture` for pinch and wheel |
+| PDF through our renderer (§6.5) | `html-to-image` + `jsPDF` |
+| Page reorder, groups, bound and curved arrows | Not built. Unusual tldraw shapes import as rectangles (triangles and diamonds are kept); frames, embeds and video are dropped on import |
+
+Kept from the plan: recognition runs only with the Shape tool (§9); a pen in use turns touch into
+pan (§7); coalesced pointer events are read where available.
+
+### 16.2 Server-side checks: still open
+
+`sync.ts` drops every edit from a read-only session (a large-class student without write access).
+It does **not** yet do what §5.5 asks:
+
+- A student who may write can still change or delete locked lesson blocks and question records.
+  tldraw's server didn't stop this either, so it isn't a regression, but it should be fixed before
+  paying tutors run graded questions on the board.
+- Yjs updates aren't validated, so a writer's malformed or very large update reaches every
+  client. Whether clients survive hostile data hasn't been tested.
+- A board over 5 MB still stops saving with only a server log line (§11.3, item 3).
+
+### 16.3 Not yet tested
+
+- **Gate A never ran:** no real stylus. Handwriting feel, palm rejection and touch pinch are
+  untested on an iPad or a pen tablet. Do this before using the board in a lesson.
+- **Recogniser thresholds** were tuned on synthetic strokes only (§9's real-stroke fixture is still
+  to collect).
+- **Real saved boards:** the import ran against a small fixture board on the test database. Run the
+  schema change before deploying, then watch the server log for `imported from tldraw` lines as old
+  boards open.

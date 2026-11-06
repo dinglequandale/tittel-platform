@@ -54,7 +54,7 @@ export function StatsPanel({
   channel: ControlChannel
   initialStats?: QuizStats | null
   onHide: () => void
-  /** Class roster size (from tldraw presence), so "answered" can show a denominator. */
+  /** Class roster size (from board presence), so "answered" can show a denominator. */
   rosterSize?: number
   /** Currently-open (assigned) question ids, from Board's `quiz-open` state — used
    *  to mark live rows and to know which questions count toward `allAnswered`. */

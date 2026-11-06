@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { Editor } from 'tldraw'
 import { parseLessonDoc, type QuestionKey } from '@tittel/shared'
 import { apiFetch } from '../../lib/api.ts'
 import type { ControlChannel } from '../controlChannel.ts'
+import type { BoardEditor } from '../engine/editor.ts'
 import { loadPlanOntoBoard, lessonPrefix, lessonRefOf, type LessonRef } from './load.ts'
 import { questionKeysFromDoc } from './keys.ts'
 
@@ -38,20 +38,6 @@ async function fetchLibraryPlan(lessonId: string): Promise<FetchedPlan> {
   return { ref: { kind: 'plan', id: lesson.id, version: lesson.version }, title: lesson.title, doc: lesson.doc }
 }
 
-// tldraw sync pushes on animation frames, which a background tab doesn't run:
-// a lesson loaded behind the meeting tab reaches students only once the tutor
-// looks at the board. Say so in the tab strip until they do.
-function cueUntilVisible() {
-  const title = document.title
-  document.title = '● Lesson ready: open the board'
-  const restore = () => {
-    if (document.hidden) return
-    document.title = title
-    document.removeEventListener('visibilitychange', restore)
-  }
-  document.addEventListener('visibilitychange', restore)
-}
-
 function fetchPlan(ref: LessonRef): Promise<FetchedPlan> {
   return ref.kind === 'session' ? fetchSessionPlan(ref.id) : fetchLibraryPlan(ref.id)
 }
@@ -63,7 +49,7 @@ export function useLessons({
   authParams,
   enabled,
 }: {
-  editor: Editor | null
+  editor: BoardEditor | null
   channel: ControlChannel
   boardId: string
   authParams: string
@@ -113,7 +99,6 @@ export function useLessons({
       sendKeys()
       if (result.stale) flash('This plan changed after it went on the board. Answers are off for it.', 6000)
       else flash(result.added ? `Loaded ${result.pages} page${result.pages === 1 ? '' : 's'}` : 'Opened lesson')
-      if (result.added && document.hidden) cueUntilVisible()
     },
     [editor, boardId, authParams, sendKeys, flash],
   )

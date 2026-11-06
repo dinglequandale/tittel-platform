@@ -3,7 +3,7 @@ import { SignJWT, jwtVerify } from 'jose'
 
 // Short-lived signed board tokens (PLAN.md §6.3): minted server-side on page
 // load once we know whether the visitor is the board's host (auth-derived) or
-// a guest, then carried by the WS handshake for both the tldraw sync socket
+// a guest, then carried by the WS handshake for both the board sync socket
 // and the ControlChannel — replacing the legacy `#host` URL-fragment model.
 // Signed with BOARD_TOKEN_SECRET so tokens survive a redeploy mid-lesson;
 // falls back to a per-boot random secret (dev convenience) if unset — a live

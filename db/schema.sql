@@ -412,3 +412,7 @@ alter table sessions add column if not exists skipped boolean not null default f
 -- last_report_at is when a progress report last went out, for the reminder.
 alter table students add column if not exists parent_updates boolean not null default true;
 alter table students add column if not exists last_report_at timestamptz;
+
+-- The board document (Yjs state). A board from the tldraw engine has only
+-- `snapshot`; it is imported on first open and the snapshot is kept as the original.
+alter table boards add column if not exists doc bytea;

@@ -9,7 +9,7 @@ interface LibraryLesson {
 }
 
 // Bar button + list of the library's plans. Rendered inside the tutor's top bar
-// (not a portal) so it stacks above tldraw's UI without z-index games.
+// (not a portal) so it stacks above the board without z-index games.
 export function LessonPicker({
   onPick,
   onAddFiles,

@@ -1,16 +1,17 @@
-import { AssetRecordType, PageRecordType, createShapeId, type Editor, type JsonObject, type TLPageId } from 'tldraw'
 import { parseLessonDoc, type QuestionKey } from '@tittel/shared'
+import type { BoardEditor } from '../engine/editor.ts'
+import { uploadBoardImage } from '../assetStore.ts'
 import { renderBlock } from './render.ts'
 import { computeLayout, blockId, pageId } from './layout.ts'
 import { questionMetaFor, questionKeysFromDoc } from './keys.ts'
 
-// Host-side injection of a lesson plan into the live, synced tldraw store
+// Host-side injection of a lesson plan into the live, synced board document
 // (OVERHAUL.md O2, plan-load contract). Every student sees the pages appear
 // through sync; no separate broadcast. Unlike the legacy loader this APPENDS:
 // a board keeps its earlier pages, and each plan's ids carry its `idPrefix`,
 // so loading the same plan twice just reopens it.
 //
-// Answer keys never touch the store. Each lesson page's `meta.lesson` records
+// Answer keys never touch the document. Each lesson page's `meta.lesson` records
 // where the plan came from, so a host who reloads can re-fetch it and rebuild
 // the keys (see useLessonKeys.ts); answerable shapes carry only `meta.q`.
 
@@ -24,7 +25,7 @@ export function lessonPrefix(ref: LessonRef): string {
 }
 
 /** The lesson ref on a page, if it's a loaded lesson page. */
-export function lessonRefOf(meta: JsonObject | undefined): LessonRef | null {
+export function lessonRefOf(meta: Record<string, unknown> | undefined): LessonRef | null {
   const l = meta?.lesson as Record<string, unknown> | undefined
   if (!l || typeof l !== 'object' || typeof l.id !== 'string' || typeof l.version !== 'number') return null
   if (l.kind !== 'session' && l.kind !== 'plan') return null
@@ -32,14 +33,6 @@ export function lessonRefOf(meta: JsonObject | undefined): LessonRef | null {
 }
 
 const dayFmt = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-
-async function uploadAsset(boardId: string, authParams: string, blob: Blob): Promise<string> {
-  const id = `${crypto.randomUUID()}-lesson.png`
-  const url = `/uploads/${encodeURIComponent(boardId)}/${encodeURIComponent(id)}`
-  const res = await fetch(`${url}?${authParams}`, { method: 'POST', body: blob, headers: { 'content-type': blob.type || 'image/png' } })
-  if (!res.ok) throw new Error(`Couldn’t upload a lesson image (${res.status})`)
-  return url
-}
 
 export interface LoadResult {
   /** False when the plan's pages were already on the board and were just reopened. */
@@ -61,7 +54,7 @@ export interface LoadOptions {
   onProgress?: (done: number, total: number) => void
 }
 
-export async function loadPlanOntoBoard(editor: Editor, raw: unknown, opts: LoadOptions): Promise<LoadResult> {
+export async function loadPlanOntoBoard(editor: BoardEditor, raw: unknown, opts: LoadOptions): Promise<LoadResult> {
   if ((raw as { source?: unknown } | null)?.source === 'pdf') {
     throw new Error('PDF plans can’t be loaded onto the board yet')
   }
@@ -70,7 +63,7 @@ export async function loadPlanOntoBoard(editor: Editor, raw: unknown, opts: Load
   const keys = questionKeysFromDoc(doc, prefix)
   if (doc.pages.length === 0) throw new Error('This plan has no pages yet')
 
-  const firstPage = PageRecordType.createId(pageId(prefix, 0))
+  const firstPage = pageId(prefix, 0)
   const existing = editor.getPage(firstPage)
   if (existing) {
     editor.setCurrentPage(firstPage)
@@ -82,14 +75,14 @@ export async function loadPlanOntoBoard(editor: Editor, raw: unknown, opts: Load
 
   // 1. Render + upload every block.
   const total = doc.pages.reduce((n, p) => n + p.blocks.length, 0)
-  type Built = { url: string; w: number; h: number; mimeType: string }
+  type Built = { url: string; w: number; h: number }
   const built = new Map<string, Built>()
   let done = 0
   for (let pi = 0; pi < doc.pages.length; pi++) {
     for (let bi = 0; bi < doc.pages[pi].blocks.length; bi++) {
       const rendered = await renderBlock(doc.pages[pi].blocks[bi])
-      const url = rendered.blob ? await uploadAsset(opts.boardId, opts.authParams, rendered.blob) : rendered.src!
-      built.set(`${pi}:${bi}`, { url, w: rendered.w, h: rendered.h, mimeType: rendered.mimeType })
+      const url = rendered.blob ? await uploadBoardImage(opts.boardId, opts.authParams, rendered.blob, 'lesson.png') : rendered.src!
+      built.set(`${pi}:${bi}`, { url, w: rendered.w, h: rendered.h })
       opts.onProgress?.(++done, total)
     }
   }
@@ -100,40 +93,32 @@ export async function loadPlanOntoBoard(editor: Editor, raw: unknown, opts: Load
   // 3. Inject as one undo step, appended after the board's existing pages.
   const title = (opts.title ?? doc.title).trim() || 'Lesson'
   const baseName = `${dayFmt.format(opts.date ?? new Date())} · ${title}`
-  const pageMeta: JsonObject = { lesson: { ...opts.ref } }
-  editor.run(() => {
+  const pageMeta = { lesson: { ...opts.ref } }
+  const board = editor.doc
+  board.mark()
+  board.transact(() => {
     for (const page of placed) {
-      const tlPageId: TLPageId = PageRecordType.createId(page.id)
       const name = placed.length > 1 ? `${baseName} · ${page.pageIndex + 1}` : baseName
-      editor.createPage({ id: tlPageId, name, meta: pageMeta })
+      board.createPage({ id: page.id, name, meta: pageMeta })
 
       for (const pb of page.blocks) {
         const info = built.get(`${page.pageIndex}:${pb.blockIndex}`)!
         const block = doc.pages[page.pageIndex].blocks[pb.blockIndex]
-        const id = blockId(prefix, page.pageIndex, pb.blockIndex)
-        const assetId = AssetRecordType.createId(id)
-        editor.createAssets([
-          {
-            id: assetId,
-            typeName: 'asset',
-            type: 'image',
-            props: { name: id, src: info.url, w: pb.w, h: pb.h, mimeType: info.mimeType || 'image/png', isAnimated: false },
-            meta: {},
-          },
-        ])
         const q = questionMetaFor(block, prefix, page.pageIndex, pb.blockIndex)
         // Rebuilt as a literal: a grid-in's `choices` is undefined, which isn't JSON.
-        const meta: JsonObject = q
+        const meta = q
           ? { lesson: prefix, q: { id: q.id, format: q.format, ...(q.choices ? { choices: q.choices } : {}) } }
           : { lesson: prefix }
-        editor.createShape({
-          id: createShapeId(id),
+        board.createShape({
+          id: blockId(prefix, page.pageIndex, pb.blockIndex),
           type: 'image',
-          parentId: tlPageId,
+          page: page.id,
+          src: info.url,
           x: pb.x,
           y: pb.y,
-          isLocked: true, // lesson content shouldn't be nudged by stray clicks
-          props: { assetId, w: pb.w, h: pb.h },
+          w: pb.w,
+          h: pb.h,
+          locked: true, // lesson content shouldn't be nudged by stray clicks
           meta,
         })
       }

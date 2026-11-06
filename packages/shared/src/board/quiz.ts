@@ -4,7 +4,7 @@
 //
 // The single most important invariant in this file: an answer KEY never travels
 // to a student. The host uploads keys to the server over the control channel;
-// the server grades. What lands in the synced tldraw document (`QuestionMeta`)
+// the server grades. What lands in the synced board document (`QuestionMeta`)
 // carries only a question's identity and input format — never its answer.
 
 // AnswerFormat/Reveal/DEFAULT_CHOICES already live in lesson.ts (ported from

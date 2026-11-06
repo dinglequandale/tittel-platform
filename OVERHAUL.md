@@ -308,7 +308,8 @@ scheduled for O6.)
     - *Canvas:* Excalidraw (MIT, 134k★, very active), but it has no pages, camera-follow, or
       tldraw-sync equivalent, so switching means rewriting the board and its sync. fabric.js (MIT)
       and perfect-freehand (MIT) are building blocks, not products. Not worth it while 3.15.5 is
-      free.
+      free. **Superseded 2026-10-30:** we plan our own engine in stages (`docs/BOARD-SPEC.md`). The
+      tldraw rules above still apply until its Stage 7.
     - *Graphing:* nothing open-source matches Desmos. A "Desmos-lite" could be built from MathLive
       (MIT, input) + Compute Engine (MIT, parse/evaluate LaTeX) + function-plot (MIT, plotting).
       JSXGraph is LGPL-3.0 (usable unmodified); Mafs is MIT but quiet since Mar 2025. GeoGebra is

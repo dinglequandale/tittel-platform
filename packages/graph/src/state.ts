@@ -51,12 +51,17 @@ export interface GraphSettings {
   logModeRegressions?: boolean
 }
 
+/** A clicked point, labelled with its coordinates for everyone viewing this state. */
+export interface GraphPin { x: number; y: number }
+
 export interface GraphState {
   v: 1
   settings: GraphSettings
   /** null = default viewport (x ∈ [−10, 10], 1:1 aspect, set by the view). */
   viewport: Viewport | null
   items: GraphItem[]
+  /** Cleared when the math changes, since a pin may no longer be on its curve. */
+  pins?: GraphPin[]
 }
 
 /** Curve colours, in the same roles and order as the reference calculator's
@@ -73,6 +78,15 @@ export function emptyState(): GraphState {
     viewport: null,
     items: [],
   }
+}
+
+export const MAX_PINS = 12
+
+/** Add a pin at (x, y), or remove the one already there. The oldest pin drops off past MAX_PINS. */
+export function togglePin(state: GraphState, x: number, y: number): GraphState {
+  const pins = state.pins ?? []
+  const rest = pins.filter((p) => p.x !== x || p.y !== y)
+  return { ...state, pins: rest.length < pins.length ? rest : [...pins, { x, y }].slice(-MAX_PINS) }
 }
 
 let counter = 0

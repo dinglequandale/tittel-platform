@@ -600,10 +600,13 @@ export function BoardCanvas({
           canEdit={!isHost && studentsCanEdit}
           studentsCanEdit={studentsCanEdit}
           onToggleAccess={toggleAccess}
+          onClose={isHost ? () => setCalcOpen(false) : undefined}
         />
       )}
 
-      {!isHost && studentSoloCalc && personalCalcOpen && <Calculator channel={channel} isHost={false} personal />}
+      {!isHost && studentSoloCalc && personalCalcOpen && (
+        <Calculator channel={channel} isHost={false} personal onClose={() => setPersonalCalcOpen(false)} />
+      )}
     </div>
   )
 }

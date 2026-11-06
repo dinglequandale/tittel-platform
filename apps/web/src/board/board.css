@@ -436,6 +436,30 @@
   color: var(--accent);
 }
 
+.calc-close-btn {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin: -0.15rem -0.3rem -0.15rem auto;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.calc-close-btn:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.calc-close-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .calc-badge {
   font-size: 0.7rem;
   font-weight: 700;

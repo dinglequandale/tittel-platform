@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Plus, Undo2, Redo2, Wrench, Keyboard } from 'lucide-react'
 import {
-  analyze, exactOrDecimal, newId, newTable, nextColor, DEFAULT_SLIDER,
-  type ExpressionItem, type GraphItem, type GraphSettings, type GraphState, type SliderBounds, type TableItem, type Viewport,
+  analyze, exactOrDecimal, newId, newTable, nextColor, togglePin, DEFAULT_SLIDER,
+  type ExpressionItem, type GraphItem, type GraphPin, type GraphSettings, type GraphState, type SliderBounds, type TableItem, type Viewport,
 } from '@tittel/graph'
 import { ExpressionList, cellKey, nameLatex, type FocusRequest } from './ExpressionList.tsx'
 import { GraphPaper } from './GraphPaper.tsx'
 import { Keypad } from './Keypad.tsx'
+import { loadMathQuill } from './mathquill.ts'
 import './graph.css'
 
 // The graphing calculator (GRAPH-SPEC G1–G2). Controlled: `state` in, every
@@ -16,15 +17,19 @@ import './graph.css'
 
 const NARROW_PX = 450
 const COALESCE_MS = 800
+const NO_PINS: GraphPin[] = []
 
 export function GraphCalculator({
   state,
   onChange,
   editable = true,
+  onPinRequest,
 }: {
   state: GraphState
   onChange: (next: GraphState) => void
   editable?: boolean
+  /** A read-only viewer clicked a point: ask whoever owns `state` to pin it. */
+  onPinRequest?: (x: number, y: number) => void
 }) {
   const analysis = useMemo(() => analyze(state), [state.items, state.settings])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -45,7 +50,11 @@ export function GraphCalculator({
     return () => ro.disconnect()
   }, [])
 
-  const focusRow = (id: string, end: 'left' | 'right' = 'right') =>
+  // Load the editor on opening, not on the first row, so that row is live at
+  // once. A failure here isn't final: each row loads it again when it mounts.
+  useEffect(() => { loadMathQuill().catch(() => {}) }, [])
+
+  const focusRow =(id: string, end: 'left' | 'right' = 'right') =>
     setFocus((f) => ({ id, end, n: (f?.n ?? 0) + 1 }))
 
   /** Record history (typing in one row coalesces) and emit. */
@@ -62,7 +71,7 @@ export function GraphCalculator({
     stateRef.current = next
     onChange(next)
   }
-  const setItems = (items: GraphItem[], key?: string) => commit({ ...stateRef.current, items }, key)
+  const setItems = (items: GraphItem[], key?: string) => commit({ ...stateRef.current, items, pins: undefined }, key)
 
   const undo = () => {
     const h = history.current
@@ -220,11 +229,18 @@ export function GraphCalculator({
     onChange(stateRef.current)
   }
   const setSettings = (patch: Partial<GraphSettings>) =>
-    commit({ ...stateRef.current, settings: { ...stateRef.current.settings, ...patch } })
+    commit({ ...stateRef.current, settings: { ...stateRef.current.settings, ...patch }, pins: undefined })
 
   const exportPoint = (x: number, y: number) => {
     const cur = stateRef.current.items
-    setItems([...cur, makeItem(`\\left(${exactOrDecimal(x)},${exactOrDecimal(y)}\\right)`, cur)])
+    commit({ ...stateRef.current, items: [...cur, makeItem(`\\left(${exactOrDecimal(x)},${exactOrDecimal(y)}\\right)`, cur)] })
+  }
+
+  const pinPoint = (x: number, y: number) => {
+    if (!editable) { onPinRequest?.(x, y); return }
+    // Like the viewport, not an undo step.
+    stateRef.current = togglePin(stateRef.current, x, y)
+    onChange(stateRef.current)
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -276,11 +292,13 @@ export function GraphCalculator({
           viewport={state.viewport}
           settings={state.settings}
           selectedId={selectedId}
+          pins={state.pins ?? NO_PINS}
           editable={editable}
           onSelect={(id) => { setSelectedId(id); setSettingsOpen(false) }}
           onViewport={setViewport}
           onDragVar={setSlider}
           onExportPoint={exportPoint}
+          onPin={pinPoint}
         />
         {editable && (
           <div className="gc-settings">

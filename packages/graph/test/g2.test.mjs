@@ -1,6 +1,6 @@
 // G2 engine tests (GRAPH-SPEC §6 G2): lists, statistics, piecewise,
 // inequalities, implicit curves, tables, regressions.
-import { analyze, emptyState, contour, isList } from '../src/index.ts'
+import { analyze, emptyState, contour, isList, togglePin, MAX_PINS } from '../src/index.ts'
 
 let failures = 0
 function check(name, ok, detail = '') {
@@ -153,6 +153,16 @@ const pv = (r, n) => r.params.find((p) => p.name === n)?.value
   check('parameter restriction respected, power fit a=2 b=2', bnd && near(pv(bnd, 'a'), 2, 1e-5) && near(pv(bnd, 'b'), 2, 1e-5), JSON.stringify(bnd))
 
   check('regression without data errors helpfully', /list data/.test(row(graph('y\\sim mx+b')).error ?? ''), JSON.stringify(row(graph('y\\sim mx+b'))))
+}
+
+// ---- pins ---------------------------------------------------------------------
+{
+  const one = togglePin(emptyState(), 2, 4)
+  check('pin adds', one.pins?.length === 1 && one.pins[0].x === 2 && one.pins[0].y === 4)
+  check('same point again removes it', togglePin(one, 2, 4).pins?.length === 0)
+  let many = one
+  for (let i = 0; i < MAX_PINS; i++) many = togglePin(many, i + 10, 0)
+  check('past the cap, the oldest pin drops', many.pins?.length === MAX_PINS && many.pins[0].x === 10)
 }
 
 console.log(failures ? `\n${failures} FAILED` : '\nALL GREEN')

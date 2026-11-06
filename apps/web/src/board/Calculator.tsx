@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { emptyState, type GraphState } from '@tittel/graph'
+import { X } from 'lucide-react'
+import { emptyState, togglePin, type GraphState } from '@tittel/graph'
 import { GraphCalculator, isGraphState } from '../graph/GraphCalculator.tsx'
 import type { ControlChannel } from './controlChannel.ts'
 
@@ -51,6 +52,7 @@ export function Calculator({
   studentsCanEdit = false,
   onToggleAccess,
   personal = false,
+  onClose,
 }: {
   channel: ControlChannel
   isHost: boolean
@@ -62,6 +64,8 @@ export function Calculator({
   onToggleAccess?: (allow: boolean) => void
   /** A private, non-synced scratch calculator (free reign): full edit, no relay. */
   personal?: boolean
+  /** Shows a close button. A student following the shared panel gets none: the tutor opens and closes it. */
+  onClose?: () => void
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
   const [graph, setGraph] = useState<GraphState>(() =>
@@ -113,7 +117,8 @@ export function Calculator({
   // Drag the panel by its header. Pointer capture keeps the drag smooth even when
   // the cursor passes over the calculator's own surface.
   const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!geomEditable || e.button !== 0) return
+    // Capturing the pointer would take the click away from the close button.
+    if (!geomEditable || e.button !== 0 || (e.target as HTMLElement).closest('button')) return
     e.preventDefault()
     const el = e.currentTarget
     el.setPointerCapture(e.pointerId)
@@ -155,6 +160,9 @@ export function Calculator({
     if (personal) return
     const off = channel.on('calc', (m) => {
       if (m.action === 'state' && isGraphState(m.state)) setGraph(m.state)
+      // A read-only student clicked a point: the tutor applies it, so it reaches
+      // everyone (and late joiners) in the shared state.
+      else if (m.action === 'pin' && isHost) onUserChange(togglePin(graphRef.current, m.x, m.y))
     })
     let offOpen: (() => void) | undefined
     if (isHost) {
@@ -200,9 +208,19 @@ export function Calculator({
           {personal ? 'My calculator' : `Calculator${!isHost && !canEdit ? ' · live' : ''}`}
         </span>
         {!isHost && canEdit && !personal && <span className="calc-badge">you can edit</span>}
+        {onClose && (
+          <button type="button" className="calc-close-btn" onClick={onClose} aria-label="Close calculator" title="Close calculator">
+            <X size={16} />
+          </button>
+        )}
       </div>
       <div className="calc-body">
-        <GraphCalculator state={graph} onChange={onUserChange} editable={amEditor} />
+        <GraphCalculator
+          state={graph}
+          onChange={onUserChange}
+          editable={amEditor}
+          onPinRequest={(x, y) => channel.send({ type: 'calc', action: 'pin', x, y })}
+        />
       </div>
       {isHost && (
         <div className="calc-access">

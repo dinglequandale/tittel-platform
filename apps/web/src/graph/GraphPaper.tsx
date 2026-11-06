@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
-import { Plus, Minus, Home, ListPlus } from 'lucide-react'
+import { Plus, Minus, Home, ListPlus, X } from 'lucide-react'
 import {
   contour, defaultViewport, exactOrDecimal, fitAspect, gridLabel, gridStep, pointLatex, pointsOfInterest,
   regionMask, sampleCurve, zoomAbout,
-  type Analysis, type Curve, type GraphItem, type GraphSettings, type Poi, type Polyline, type RegionMask,
+  type Analysis, type Curve, type GraphItem, type GraphPin, type GraphSettings, type Poi, type Polyline, type RegionMask,
   type Segments, type Viewport,
 } from '@tittel/graph'
 import { Tex } from './Tex.tsx'
@@ -15,7 +15,7 @@ const HIT_CURVE_PX = 7
 const HIT_POINT_PX = 11
 const HIT_POI_PX = 9
 
-interface DragTarget { name: string; axis: 'x' | 'y'; other?: { name: string; axis: 'x' | 'y' } }
+interface DragTarget extends GraphPin { name: string; axis: 'x' | 'y'; other?: { name: string; axis: 'x' | 'y' } }
 
 export function GraphPaper({
   analysis,
@@ -23,29 +23,34 @@ export function GraphPaper({
   viewport,
   settings,
   selectedId,
+  pins,
   editable,
   onSelect,
   onViewport,
   onDragVar,
   onExportPoint,
+  onPin,
 }: {
   analysis: Analysis
   items: GraphItem[]
   viewport: Viewport | null
   settings: GraphSettings
   selectedId: string | null
+  /** Coordinate labels, shared with everyone viewing this graph. */
+  pins: GraphPin[]
   editable: boolean
   onSelect: (id: string | null) => void
   onViewport: (v: Viewport | null) => void
   /** A draggable point moved: set slider `name` to `value` (rounded to `resolution`). */
   onDragVar: (name: string, value: number, resolution: number) => void
   onExportPoint: (x: number, y: number) => void
+  /** Pin the point at (x, y), or unpin it if it's already pinned. */
+  onPin: (x: number, y: number) => void
 }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [hover, setHover] = useState<Poi | null>(null)
-  const [pinned, setPinned] = useState<Poi[]>([])
 
   useEffect(() => {
     const el = wrapRef.current
@@ -84,7 +89,7 @@ export function GraphPaper({
 
   // Sampled geometry for everything visible, recomputed when the view or graph changes.
   const geometry = useMemo(() => {
-    const curves: { id: string; color: string; dashed: boolean; lines: Polyline[] }[] = []
+    const curves: { id: string; color: string; dashed: boolean; curve: Curve; lines: Polyline[] }[] = []
     const implicits: { id: string; color: string; dashed: boolean; segs: Segments }[] = []
     const regions: { id: string; color: string; mask: RegionMask }[] = []
     if (!size.w) return { curves, implicits, regions }
@@ -92,7 +97,7 @@ export function GraphPaper({
       const st = visible(r.id)
       if (!st) continue
       if (r.region) regions.push({ id: r.id, color: st.color, mask: regionMask(r.region.test, view, size.w, size.h) })
-      for (const c of r.curves ?? []) curves.push({ id: r.id, color: st.color, dashed: !!c.dashed, lines: sampleCurve(c, view, size.w, size.h) })
+      for (const c of r.curves ?? []) curves.push({ id: r.id, color: st.color, dashed: !!c.dashed, curve: c, lines: sampleCurve(c, view, size.w, size.h) })
       for (const im of r.implicits ?? []) {
         const f = im.restrict ? (x: number, y: number) => (im.restrict!(x, y) ? im.f(x, y) : NaN) : im.f
         implicits.push({ id: r.id, color: st.color, dashed: !!im.dashed, segs: contour(f, view, size.w, size.h) })
@@ -127,9 +132,6 @@ export function GraphPaper({
     return mine.flatMap((c, i) => pointsOfInterest(c, [...others, ...mine.filter((_, j) => j !== i)], view, size.w))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysis, selectedId, style, view, size])
-
-  // Pinned labels belong to the selection they were made on.
-  useEffect(() => setPinned([]), [selectedId])
 
   useEffect(() => {
     const c = canvasRef.current
@@ -294,19 +296,24 @@ export function GraphPaper({
       g.beginPath(); g.arc(px, py, 4.5, 0, Math.PI * 2); g.fill()
     }
 
-    const pinnedSet = new Set(pinned.map((p) => `${p.x},${p.y}`))
     for (const p of pois) {
       const [px, py] = toPx(p.x, p.y)
-      const strong = pinnedSet.has(`${p.x},${p.y}`) || (hover && hover.x === p.x && hover.y === p.y)
+      const strong = hover && hover.x === p.x && hover.y === p.y
       g.fillStyle = strong ? '#0F0F0F' : '#A4A6A3'
       g.beginPath(); g.arc(px, py, strong ? 5.5 : 4.25, 0, Math.PI * 2); g.fill()
+    }
+
+    g.fillStyle = '#0F0F0F'
+    for (const p of pins) {
+      const [px, py] = toPx(p.x, p.y)
+      g.beginPath(); g.arc(px, py, 5.5, 0, Math.PI * 2); g.fill()
     }
   }
 
   // ---- interaction ----------------------------------------------------------
   const drag = useRef<
     | { kind: 'pan'; startX: number; startY: number; base: Viewport; moved: boolean }
-    | { kind: 'point'; target: DragTarget }
+    | { kind: 'point'; target: DragTarget; startX: number; startY: number; moved: boolean }
     | null
   >(null)
 
@@ -318,6 +325,12 @@ export function GraphPaper({
   const hitPoi = (px: number, py: number) =>
     pois.find((p) => { const [x, y] = toPx(p.x, p.y); return Math.hypot(x - px, y - py) <= HIT_POI_PX })
 
+  const hitPin = (px: number, py: number) =>
+    pins.find((p) => { const [x, y] = toPx(p.x, p.y); return Math.hypot(x - px, y - py) <= HIT_POI_PX })
+
+  const hitPoint = (px: number, py: number) =>
+    points.find((p) => { const [x, y] = toPx(p.x, p.y); return Math.hypot(x - px, y - py) <= HIT_POINT_PX })
+
   const hitDraggable = (px: number, py: number): DragTarget | undefined => {
     if (!editable) return undefined
     for (let i = points.length - 1; i >= 0; i--) {
@@ -325,8 +338,9 @@ export function GraphPaper({
       if (!p.dragX && !p.dragY) continue
       const [x, y] = toPx(p.x, p.y)
       if (Math.hypot(x - px, y - py) > HIT_POINT_PX) continue
-      if (p.dragX && p.dragY) return { name: p.dragX, axis: 'x', other: { name: p.dragY, axis: 'y' } }
-      return p.dragX ? { name: p.dragX, axis: 'x' } : { name: p.dragY!, axis: 'y' }
+      const at = { x: p.x, y: p.y }
+      if (p.dragX && p.dragY) return { ...at, name: p.dragX, axis: 'x', other: { name: p.dragY, axis: 'y' } }
+      return p.dragX ? { ...at, name: p.dragX, axis: 'x' } : { ...at, name: p.dragY!, axis: 'y' }
     }
     return undefined
   }
@@ -360,19 +374,57 @@ export function GraphPaper({
     return undefined
   }
 
+  /** Where a click on row `id` landed on its curve. On y = f(x) and x = f(y) the
+   *  free coordinate rounds to what a pixel can tell apart, so a click near
+   *  x = 2 on y = x² reads (2, 4), not (2.013, 4.052). */
+  const pointOnCurve = (id: string, px: number, py: number): GraphPin => {
+    let bestD = Infinity
+    let best: [number, number] = [px, py]
+    let curve: Curve | undefined
+    const consider = (ax: number, ay: number, bx: number, by: number, c?: Curve) => {
+      const q = segClosest(px, py, ax, ay, bx, by)
+      const d = Math.hypot(px - q[0], py - q[1])
+      if (d < bestD) { bestD = d; best = q; curve = c }
+    }
+    for (const cv of curves) {
+      if (cv.id !== id) continue
+      for (const line of cv.lines) {
+        for (let i = 0; i + 3 < line.length; i += 2) {
+          const [ax, ay] = toPx(line[i], line[i + 1])
+          const [bx, by] = toPx(line[i + 2], line[i + 3])
+          consider(ax, ay, bx, by, cv.curve)
+        }
+      }
+    }
+    for (const im of implicits) {
+      if (im.id !== id) continue
+      for (let i = 0; i < im.segs.length; i += 4) {
+        const [ax, ay] = toPx(im.segs[i], im.segs[i + 1])
+        const [bx, by] = toPx(im.segs[i + 2], im.segs[i + 3])
+        consider(ax, ay, bx, by)
+      }
+    }
+    const [mx, my] = toMath(best[0], best[1])
+    if (!curve) return { x: mx, y: my }
+    const decimals = Math.max(0, -Math.ceil(Math.log10((view.xmax - view.xmin) / size.w)))
+    const t = Number((curve.orientation === 'y' ? mx : my).toFixed(decimals))
+    const v = curve.fn(t)
+    if (!Number.isFinite(v)) return { x: mx, y: my }
+    return curve.orientation === 'y' ? { x: t, y: v } : { x: v, y: t }
+  }
+
   const onPointerDown = (e: RPointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return
     const [px, py] = local(e)
     const target = hitDraggable(px, py)
     if (target) {
-      drag.current = { kind: 'point', target }
+      drag.current = { kind: 'point', target, startX: e.clientX, startY: e.clientY, moved: false }
       e.currentTarget.setPointerCapture(e.pointerId)
       return
     }
-    const poi = hitPoi(px, py)
-    if (poi) {
-      const same = (q: Poi) => q.x === poi.x && q.y === poi.y
-      setPinned((ps) => (ps.some(same) ? ps.filter((q) => !same(q)) : [...ps, poi]))
+    const hit = hitPin(px, py) ?? hitPoi(px, py)
+    if (hit) {
+      onPin(hit.x, hit.y)
       return
     }
     drag.current = { kind: 'pan', startX: e.clientX, startY: e.clientY, base: view, moved: false }
@@ -383,6 +435,8 @@ export function GraphPaper({
     const [px, py] = local(e)
     const d = drag.current
     if (d?.kind === 'point') {
+      if (!d.moved && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < 3) return
+      d.moved = true
       const [mx, my] = toMath(px, py)
       const res = (view.xmax - view.xmin) / size.w
       onDragVar(d.target.name, d.target.axis === 'x' ? mx : my, res)
@@ -403,15 +457,20 @@ export function GraphPaper({
     const poi = hitPoi(px, py)
     setHover(poi ?? null)
     const el = e.currentTarget
-    el.style.cursor = hitDraggable(px, py) ? 'grab' : poi || hitCurve(px, py) ? 'pointer' : editable ? 'move' : 'default'
+    el.style.cursor = hitDraggable(px, py) ? 'grab' : poi || hitPin(px, py) || hitCurve(px, py) ? 'pointer' : editable ? 'move' : 'default'
   }
 
   const onPointerUp = (e: RPointerEvent<HTMLCanvasElement>) => {
     const d = drag.current
     drag.current = null
+    if (d?.kind === 'point' && !d.moved) onPin(d.target.x, d.target.y)
     if (d?.kind === 'pan' && !d.moved) {
       const [px, py] = local(e)
-      onSelect(hitCurve(px, py) ?? null)
+      const id = hitCurve(px, py)
+      onSelect(id ?? null)
+      if (!id) return
+      const at = hitPoint(px, py) ?? pointOnCurve(id, px, py)
+      onPin(at.x, at.y)
     }
   }
 
@@ -434,8 +493,8 @@ export function GraphPaper({
     onViewport(zoomAbout(view, (view.xmin + view.xmax) / 2, (view.ymin + view.ymax) / 2, factor))
   }
 
-  const cards = [...pinned]
-  if (hover && !pinned.some((p) => p.x === hover.x && p.y === hover.y)) cards.push(hover)
+  const cards = [...pins]
+  if (hover && !pins.some((p) => p.x === hover.x && p.y === hover.y)) cards.push(hover)
 
   return (
     <div ref={wrapRef} className="gp">
@@ -452,8 +511,8 @@ export function GraphPaper({
       />
       {cards.map((p) => {
         const [px, py] = toPx(p.x, p.y)
-        const isPinned = pinned.some((q) => q.x === p.x && q.y === p.y)
-        const flip = px > size.w - 150
+        const isPinned = pins.some((q) => q.x === p.x && q.y === p.y)
+        const flip = px > size.w - 170
         return (
           <div
             key={`${p.x},${p.y}`}
@@ -464,6 +523,11 @@ export function GraphPaper({
             {isPinned && editable && (
               <button type="button" className="gp-card-export" title="Add to the expression list" onClick={() => onExportPoint(p.x, p.y)}>
                 <ListPlus size={15} />
+              </button>
+            )}
+            {isPinned && (
+              <button type="button" className="gp-card-export" title="Remove label" onClick={() => onPin(p.x, p.y)}>
+                <X size={15} />
               </button>
             )}
           </div>
@@ -482,9 +546,14 @@ export function GraphPaper({
   )
 }
 
-function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+function segClosest(px: number, py: number, ax: number, ay: number, bx: number, by: number): [number, number] {
   const dx = bx - ax, dy = by - ay
   const len = dx * dx + dy * dy
   const t = len ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len)) : 0
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+  return [ax + t * dx, ay + t * dy]
+}
+
+function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const [qx, qy] = segClosest(px, py, ax, ay, bx, by)
+  return Math.hypot(px - qx, py - qy)
 }

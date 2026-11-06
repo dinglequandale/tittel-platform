@@ -417,10 +417,17 @@ function MathInput({
   latexRef.current = latex
   const cb = useRef({ onEdit, onEnter, onUp, onDown, onDeleteEmpty })
   cb.current = { onEdit, onEnter, onUp, onDown, onDeleteEmpty }
+  // A focus request made before the field exists waits here, however long
+  // MathQuill takes to load.
+  const pendingFocus = useRef<FocusRequest | null>(null)
 
   const setLatex = (mf: MathField, l: string) => {
     settingRef.current = true
     try { mf.latex(l) } finally { settingRef.current = false }
+  }
+  const applyFocus = (mf: MathField, f: FocusRequest) => {
+    mf.focus()
+    if (f.end === 'right') mf.moveToRightEnd(); else mf.moveToLeftEnd()
   }
 
   useEffect(() => {
@@ -446,6 +453,8 @@ function MathInput({
       })
       setLatex(mf, latexRef.current)
       mfRef.current = mf
+      if (pendingFocus.current) applyFocus(mf, pendingFocus.current)
+      pendingFocus.current = null
     })
     return () => {
       dead = true
@@ -463,14 +472,8 @@ function MathInput({
 
   useEffect(() => {
     if (!focus) return
-    let tries = 0
-    const go = () => {
-      const mf = mfRef.current
-      if (!mf) { if (tries++ < 20) setTimeout(go, 25); return }
-      mf.focus()
-      if (focus.end === 'right') mf.moveToRightEnd(); else mf.moveToLeftEnd()
-    }
-    go()
+    if (mfRef.current) applyFocus(mfRef.current, focus)
+    else pendingFocus.current = focus
   }, [focus])
 
   return (

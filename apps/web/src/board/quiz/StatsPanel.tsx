@@ -88,7 +88,8 @@ export function StatsPanel({
   // Drag, copied from Timer.tsx's pointer-capture pattern — but this panel is
   // local to the tutor's own screen, so position is never broadcast.
   const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return
+    // Capturing the pointer would take the click away from the close button.
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return
     e.preventDefault()
     const el = e.currentTarget
     el.setPointerCapture(e.pointerId)

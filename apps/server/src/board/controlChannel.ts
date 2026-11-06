@@ -196,6 +196,8 @@ export function handleControl(ws: WebSocket, room: Room, role: 'host' | 'guest')
       move?: unknown
       payload?: unknown
       view?: unknown
+      x?: unknown
+      y?: unknown
     }
     try {
       text = data.toString()
@@ -354,6 +356,11 @@ export function handleControl(ws: WebSocket, room: Room, role: 'host' | 'guest')
     } else if (msg?.type === 'calc' && msg.action === 'state' && room.studentsCanEdit && text.length <= MAX_CALC_STATE_LEN) {
       room.lastCalcState = msg.state
       broadcastToOthers(msg)
+    } else if (msg?.type === 'calc' && msg.action === 'pin') {
+      // Any student may label a point, editor or not. The tutor applies it to the
+      // shared state; nothing here is stored or shown to the other students.
+      if (!allowQuizMessage(client)) return
+      if (typeof msg.x === 'number' && typeof msg.y === 'number') sendToHosts({ type: 'calc', action: 'pin', x: msg.x, y: msg.y })
     } else if (msg?.type === 'quiz-seen') {
       if (!allowQuizMessage(client)) return
       const { userId, qids } = msg

@@ -145,7 +145,8 @@ export function Timer({
 
   // Drag (host only)
   const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!isHost || e.button !== 0) return
+    // Capturing the pointer would take the click away from the close button.
+    if (!isHost || e.button !== 0 || (e.target as HTMLElement).closest('button')) return
     e.preventDefault()
     const el = e.currentTarget
     el.setPointerCapture(e.pointerId)

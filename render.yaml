@@ -7,7 +7,13 @@ services:
   - type: web
     name: tittel-platform
     runtime: node
+    # Free sleeps after 15 idle minutes, and the first visitor waits ~a minute
+    # for it to wake. Switch to `starter` in the Render dashboard before the
+    # first real lesson (docs/DEPLOY.md, step 4).
     plan: free
+    # Render checks this before it sends traffic to a new deploy. It answers
+    # 503 when the database is unreachable (apps/server/src/app.ts).
+    healthCheckPath: /api/health
     buildCommand: npm install && npm run build
     # Schema is idempotent (create-if-not-exists / alter-if-not-exists), so
     # it's safe to reapply it on every boot — keeps prod in sync without a
@@ -32,8 +38,24 @@ services:
       # Optional: the endpoint 503s and the UI hides the feature if unset.
       - key: ANTHROPIC_API_KEY
         sync: false
-      # Public Supabase values baked into the client bundle at build time.
+      # Server error reports. Optional: Sentry stays off when unset.
+      - key: SENTRY_DSN
+        sync: false
+      # The CA that signed the database's certificate (Supabase: Database
+      # settings -> SSL configuration), as PEM. When set, the certificate is
+      # verified against it (apps/server/src/lib/dbSsl.ts). Optional.
+      - key: DATABASE_CA_CERT
+        sync: false
+      # Public values baked into the client bundle at build time: a change
+      # needs a redeploy (Manual Deploy -> Clear build cache & deploy).
       - key: VITE_SUPABASE_URL
         sync: false
       - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      # Browser error reports. Optional.
+      - key: VITE_SENTRY_DSN
+        sync: false
+      # Set to `on` to show "Sign in with Google", once Google is
+      # enabled in Supabase. Leave unset until then.
+      - key: VITE_GOOGLE_AUTH
         sync: false

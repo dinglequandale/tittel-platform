@@ -8,7 +8,7 @@
     "start": "tsx src/index.ts",
     "migrate": "tsx src/migrate.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node test/smoke.mjs && node --import tsx test/calendar.test.mjs && node --import tsx test/sync.test.mjs"
+    "test": "node test/smoke.mjs && node --import tsx test/calendar.test.mjs && node --import tsx test/sync.test.mjs && node --import tsx test/api.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.1",
@@ -28,6 +28,8 @@
     "yjs": "^13.6.33"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
+    "@electric-sql/pglite-socket": "^0.2.14",
     "@types/express": "^4.17.21",
     "@types/node": "^22.7.4",
     "@types/pg": "^8.11.10",

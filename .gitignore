@@ -7,3 +7,6 @@ apps/web/dist/
 
 # Claude Code curated memory (private; do not publish)
 .claude/memory/
+
+# Test stack data (apps/server/test/stack)
+apps/server/test/stack/.data/

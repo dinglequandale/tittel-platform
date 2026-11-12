@@ -1,4 +1,6 @@
+import { lazy, Suspense, type ComponentType } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { PageLoading } from '@tittel/ui'
 import { Landing } from './marketing/Landing.tsx'
 import { Login } from './auth/Login.tsx'
 import { Signup } from './auth/Signup.tsx'
@@ -6,28 +8,36 @@ import { ForgotPassword, ResetPassword } from './auth/PasswordReset.tsx'
 import { LegalPage } from './marketing/LegalPage.tsx'
 import { RequireAuth } from './shell/RequireAuth.tsx'
 import { RequireOnboarded } from './shell/RequireOnboarded.tsx'
-import { Onboarding } from './onboarding/Onboarding.tsx'
-import { AppShell } from './shell/AppShell.tsx'
-import { Home } from './shell/Home.tsx'
-import { StudentsPage } from './students/StudentsPage.tsx'
-import { StudentPage } from './students/StudentPage.tsx'
-import { ContentPage } from './content/ContentPage.tsx'
 import { PortalPage } from './portal/PortalPage.tsx'
 import { RunnerPage } from './runner/RunnerPage.tsx'
 import { ReviewPage } from './review/ReviewPage.tsx'
-import { BoardPage } from './board/BoardPage.tsx'
-import { TryLanding } from './board/TryLanding.tsx'
-import { InsightsPage } from './insights/InsightsPage.tsx'
-import { LessonPage } from './lessons/LessonPage.tsx'
-import { SettingsPage } from './settings/SettingsPage.tsx'
 import { NotFound } from './NotFound.tsx'
-import { GraphPlayground } from './graph/GraphPlayground.tsx'
+
+// Students open /s, /hw and /review on phones, so those ship in the first
+// download. The tutor app, the board (with its calculator) and pdf.js load
+// only when a route needs them (LAUNCH.md L4.7).
+function load<K extends string>(factory: () => Promise<Record<K, ComponentType>>, name: K) {
+  return lazy(() => factory().then((m) => ({ default: m[name] })))
+}
+const Onboarding = load(() => import('./onboarding/Onboarding.tsx'), 'Onboarding')
+const AppShell = load(() => import('./shell/AppShell.tsx'), 'AppShell')
+const Home = load(() => import('./shell/Home.tsx'), 'Home')
+const StudentsPage = load(() => import('./students/StudentsPage.tsx'), 'StudentsPage')
+const StudentPage = load(() => import('./students/StudentPage.tsx'), 'StudentPage')
+const ContentPage = load(() => import('./content/ContentPage.tsx'), 'ContentPage')
+const InsightsPage = load(() => import('./insights/InsightsPage.tsx'), 'InsightsPage')
+const LessonPage = load(() => import('./lessons/LessonPage.tsx'), 'LessonPage')
+const SettingsPage = load(() => import('./settings/SettingsPage.tsx'), 'SettingsPage')
+const BoardPage = load(() => import('./board/BoardPage.tsx'), 'BoardPage')
+const TryLanding = load(() => import('./board/TryLanding.tsx'), 'TryLanding')
+const GraphPlayground = load(() => import('./graph/GraphPlayground.tsx'), 'GraphPlayground')
 
 // Route map — PLAN.md §4.3. Student-facing surfaces (/try, /b, /s, /hw,
 // /review) are chromeless and ported in Phases 2-3; they're stubbed here so
 // the full map is navigable from Phase 0.
 export function Router() {
   return (
+    <Suspense fallback={<PageLoading />}>
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/try" element={<TryLanding />} />
@@ -65,5 +75,6 @@ export function Router() {
       {import.meta.env.DEV && <Route path="/dev/graph" element={<GraphPlayground />} />}
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </Suspense>
   )
 }

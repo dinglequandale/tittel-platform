@@ -37,6 +37,8 @@ board, homework, meeting) are never joined.
   the next lesson.
 - After AI import creates a set, the next step (assign it to someone) isn't offered.
 - The "New" button only opens Content. The onboarding checklist teaches sets, not lessons.
+  *(2026-11: both fixed. New opens a menu of lessons, students and homework, and onboarding is
+  the `/welcome` sequence: about you, student privacy, teaching, calendar, parents.)*
 - "Needs board" is a status tutors have to manage. Boards should simply exist.
 - Live lists boards with no context. Analytics is separate from the students it describes.
 - The student portal shows homework but not lessons, boards or meeting links.

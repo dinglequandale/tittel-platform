@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Calculator, BookOpen } from 'lucide-react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { Button, Dialog, DialogContent, DialogTitle, DialogClose } from '@tittel/ui'
+import { Button, Dialog, DialogContent, DialogTitle, DialogClose, MadeWith } from '@tittel/ui'
+import { BRAND_NAME } from '@tittel/shared'
 import { apiFetch, linkErrorMessage } from '../lib/api.ts'
 import { RichText } from '../lib/Math.tsx'
 import { fileUrl, type StoredFile } from '../lib/files.ts'
@@ -324,6 +325,7 @@ export function RunnerPage() {
           </p>
           <Button onClick={begin} disabled={starting} style={{ alignSelf: 'center' }}>{starting ? 'Starting…' : 'Begin'}</Button>
         </div>
+        <MadeWith name={BRAND_NAME} />
       </main>
     )
   }
@@ -472,6 +474,7 @@ export function RunnerPage() {
           <Button onClick={onSubmitClick} disabled={submitting}>{submitting ? 'Submitting…' : 'Submit'}</Button>
         )}
       </footer>
+      <MadeWith name={BRAND_NAME} />
 
       <Dialog open={confirmSubmit} onOpenChange={setConfirmSubmit}>
         <DialogContent>

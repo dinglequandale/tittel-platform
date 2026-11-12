@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { CalendarDays, Users, BookOpen, BarChart3, Settings, Plus } from 'lucide-react'
+import { CalendarDays, Users, BookOpen, BarChart3, Settings, Plus, MessageSquare } from 'lucide-react'
 import { Shell, Wordmark, Qed, Menu, MenuTrigger, MenuContent, MenuItem } from '@tittel/ui'
-import { BRAND_NAME } from '@tittel/shared'
+import { BRAND_NAME, FEEDBACK_EMAIL } from '@tittel/shared'
 import { supabase } from '../lib/supabase.ts'
 import { useSession } from '../lib/useSession.ts'
 import { AppToastProvider } from '../lib/toast.tsx'
@@ -65,6 +65,13 @@ export function AppShell() {
               ))}
             </nav>
             <div className="shell-sidebar-spacer" />
+            {FEEDBACK_EMAIL && (
+              <a className="shell-nav-item" title="Send feedback"
+                href={`mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(`${BRAND_NAME} feedback`)}`}>
+                <MessageSquare size={18} strokeWidth={1.75} />
+                <span className="shell-nav-label">Send feedback</span>
+              </a>
+            )}
             <div className="shell-sidebar-footer">
               <div className="shell-org">
                 <div className="shell-org-avatar">{initial}</div>

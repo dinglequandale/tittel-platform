@@ -90,12 +90,13 @@ eq2('"Answer: 3.5" stays an inline answer', singular.problems.length === 1 && si
 
 // Parent messages from the tutor's template.
 const filled = fillTemplate(DEFAULT_TEMPLATES.lesson, {
-  first_name: 'Sam', date: 'Thu, Oct 29', covered: 'Factoring', board_score: '1 of 2 answers right',
+  first_name: 'Sam', date: 'Thu, Oct 29', covered: 'Factoring went well; next time, completing the square.', board_score: '1 question to practise',
   last_homework: '', homework: '', board_notes_link: '', portal_link: 'https://x/s/abc', tutor_name: 'Konrad',
 })
 eq('template: subject from the first line', filled.subject, 'Sam: lesson on Thu, Oct 29')
 eq2('template: empty parts dropped', !filled.body.includes('Homework') && !filled.body.includes('Notes from the board'), filled.body)
-eq2('template: kept parts filled', filled.body.includes('What we covered: Factoring') && filled.body.includes('On the board: 1 of 2 answers right.'), filled.body)
+eq2('template: the tutor\'s note comes first', filled.body.startsWith('Hi,\n\nFactoring went well; next time, completing the square.\n'), filled.body)
+eq2('template: counts read as what to practise', filled.body.includes('From the board: 1 question to practise.') && !/of \d+ answers right/.test(filled.body), filled.body)
 eq2('template: no doubled blank lines', !/\n\n\n/.test(filled.body), filled.body)
 eq2('template: signed with the name', filled.body.endsWith('Best,\nKonrad'), filled.body)
 eq('template: unknown placeholder kept, no subject', fillTemplate('Hi {nmae}', { first_name: 'Sam' }), { subject: '', body: 'Hi {nmae}' })
@@ -127,8 +128,9 @@ const groupResults = {
   board: [{ right: ['Ana Reyes'], wrong: [{ name: 'Ben Cole' }] }, { right: [], wrong: [{ name: 'Ana Reyes' }, { name: 'Ben Cole' }] }],
   homework: [{ title: 'Quadratics', handedInBy: ['Ana Reyes'], misses: [{ who: [{ name: 'Ana Reyes' }] }, { who: [{ name: 'Ben Cole' }] }] }],
 }
-eq('family results: only their child counts', familyResults(['Ana Reyes'], groupResults), { boardScore: '1 of 2 answers right', lastHomework: 'Quadratics, 1 to go over' })
-eq('family results: nothing handed in', familyResults(['Ben Cole'], groupResults), { boardScore: '0 of 2 answers right', lastHomework: '' })
+eq('family results: only their child counts', familyResults(['Ana Reyes'], groupResults), { boardScore: '1 question to practise', lastHomework: 'Quadratics, 1 to go over' })
+eq('family results: nothing handed in', familyResults(['Ben Cole'], groupResults), { boardScore: '2 questions to practise', lastHomework: '' })
+eq('family results: all right', familyResults(['Ana Reyes'], { board: [{ right: ['Ana Reyes'], wrong: [] }, { right: ['Ana Reyes'], wrong: [] }], homework: [] }), { boardScore: 'all 2 answered right', lastHomework: '' })
 
 // Answer boxes pinned on PDF pages.
 const pdf = planFromImages(['/api/files/a', '/api/files/b'], 'Worksheet')
@@ -167,7 +169,7 @@ const noPortal = toggleSection(reportBody, 'report', 'portal')
 eq('a last section goes back above the sign-off', toggleSection(noPortal, 'report', 'portal'), reportBody)
 eq('a one-paragraph message gets it at the end', toggleSection('Hi', 'report', 'board'), 'Hi\n\nOn the board: {board_summary}.')
 const lessonBody = splitTemplate(DEFAULT_TEMPLATES.lesson).body
-eq('a line inside a paragraph goes back there', toggleSection(toggleSection(lessonBody, 'lesson', 'board'), 'lesson', 'board'), lessonBody)
+eq('a line inside a paragraph goes back there', toggleSection(toggleSection(lessonBody, 'lesson', 'last_homework'), 'lesson', 'last_homework'), lessonBody)
 
 // Setup: which steps a tutor gets, and where they pick up.
 const noReports = { reports: true, reminder: 'none' }

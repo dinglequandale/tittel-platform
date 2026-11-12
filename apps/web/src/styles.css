@@ -99,7 +99,7 @@ html, body, #root {
 .corner:hover { color: var(--coral-strong); }
 .corner-tl { left: 26px; }
 .corner-tr { right: 26px; }
-.landing-hero { position: relative; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 96px 16px; }
+.landing-hero { position: relative; min-height: 88vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 96px 16px; }
 .landing-stage { position: absolute; inset: 0; pointer-events: none; }
 .landing-card { position: absolute; animation: card-in 520ms var(--ease-pop) both; }
 .landing-card-1 { left: 6%; top: 12%; width: min(22vw, 260px); animation-delay: 100ms; }
@@ -320,6 +320,8 @@ html, body, #root {
 .miss-row input { margin-top: 3px; }
 .miss-who { display: block; font-size: 12.5px; }
 .portal-notes { display: flex; flex-direction: column; gap: 6px; }
+/* Phone tap targets (LAUNCH.md L4.6): at least 44px tall. */
+.portal-hw-link, .portal-notes a { display: flex; align-items: center; min-height: 44px; }
 
 /* Auth extras, consent and legal pages (O5). */
 .auth-forgot { align-self: flex-end; font-size: 13px; color: var(--ink-2); margin-top: -6px; }
@@ -330,7 +332,15 @@ html, body, #root {
 .legal { max-width: 720px; }
 .legal h2 { font-size: 1.05rem; margin: 1.4rem 0 0.3rem; }
 .legal p { line-height: 1.6; }
-.landing-footer { position: absolute; bottom: 16px; left: 0; right: 0; text-align: center; font-size: 12px; color: var(--ink-3); }
+.landing-footer { padding: 24px 16px 32px; text-align: center; font-size: 12px; color: var(--ink-3); }
+.landing-about { max-width: 640px; margin: 0 auto; padding: 24px 16px 8px; }
+.landing-about p { font-size: 18px; line-height: 1.6; color: var(--ink-2); }
+.landing-shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; max-width: 1120px; margin: 0 auto; padding: 40px 16px; }
+.landing-shots figure { margin: 0; }
+.landing-shots img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius-card); box-shadow: var(--shadow-2); }
+.landing-shots figcaption { margin-top: 10px; font-size: 14px; color: var(--ink-2); }
+.landing-end { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 24px 16px 8px; color: var(--ink-2); }
+.landing-end .btn { height: 46px; padding: 0 24px; font-size: 15px; }
 .landing-footer a { color: var(--ink-3); }
 .empty-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .demo-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; margin-bottom: 16px; font-size: 14px; }
@@ -451,10 +461,11 @@ button.tpl-add:hover { background: var(--blue); color: #fff; }
 @media (max-width: 860px) {
   .ob { grid-template-columns: minmax(0, 1fr); align-content: start; }
   .ob-rail { position: static; height: auto; flex-flow: row wrap; align-items: center; gap: 12px 16px; padding: 14px 16px; border-right: none; border-bottom: 1px solid var(--rule); }
-  .ob-signout { margin: 0 0 0 auto; align-self: center; }
-  .ob-steps { order: 3; flex-basis: 100%; flex-direction: row; gap: 18px; }
-  .ob-rail-step + .ob-rail-step::before { left: -18px; top: 13px; width: 18px; height: 1px; }
-  .ob-rail-step button { padding: 0; }
+  .ob-signout { margin: 0 0 0 auto; align-self: center; min-height: 44px; padding: 0 8px; }
+  /* 44px tap targets; the circles keep their 18px spacing. */
+  .ob-steps { order: 3; flex-basis: 100%; flex-direction: row; gap: 0; }
+  .ob-rail-step + .ob-rail-step::before { left: -9px; top: 22px; width: 18px; height: 1px; }
+  .ob-rail-step button { padding: 9px; }
   .ob-rail-text { display: none; }
   .ob-rail-qed { display: none; }
   .ob-main { padding: 0 16px; }

@@ -12,7 +12,7 @@ export const PLACEHOLDERS: Record<TemplateKind, { name: string; label: string; h
     { name: 'first_name', label: "Student's first name", hint: 'Sam (or "Ana and Ben" for siblings)' },
     { name: 'date', label: 'Lesson day', hint: 'the lesson day' },
     { name: 'covered', label: 'What you covered', hint: 'your lesson notes, else the plan title' },
-    { name: 'board_score', label: 'Board answers', hint: '"3 of 4 answers right" on the board' },
+    { name: 'board_score', label: 'Board answers', hint: '"1 question to practise" from the board' },
     { name: 'last_homework', label: 'Last homework', hint: 'what came back since last time' },
     { name: 'homework', label: 'Homework set', hint: 'what was given, and when it is due' },
     { name: 'board_notes_link', label: 'Board notes link', hint: 'the board as a PDF' },
@@ -35,8 +35,8 @@ export const PLACEHOLDERS: Record<TemplateKind, { name: string; label: string; h
 /** The parts of a message a tutor can switch off and back on, in the order they usually read. */
 export const SECTIONS: Record<TemplateKind, { key: string; label: string; text: string }[]> = {
   lesson: [
-    { key: 'covered', label: 'What you covered', text: 'What we covered: {covered}' },
-    { key: 'board', label: 'Board answers', text: 'On the board: {board_score}.' },
+    { key: 'covered', label: 'What you covered', text: '{covered}' },
+    { key: 'board', label: 'Board answers', text: 'From the board: {board_score}.' },
     { key: 'last_homework', label: 'Last homework', text: 'Last homework: {last_homework}.' },
     { key: 'homework', label: 'Homework set', text: 'Homework: {homework}.' },
     { key: 'notes', label: 'Board notes', text: 'Notes from the board: {board_notes_link}' },
@@ -54,10 +54,9 @@ export const DEFAULT_TEMPLATES: Record<TemplateKind, string> = {
   lesson: `Subject: {first_name}: lesson on {date}
 Hi,
 
-A quick update on {first_name}'s lesson on {date}.
+{covered}
 
-What we covered: {covered}
-On the board: {board_score}.
+From the board: {board_score}.
 Last homework: {last_homework}.
 Homework: {homework}.
 
@@ -119,7 +118,8 @@ export function familyResults(names: string[], results: ResultsForFamily | null)
   const hw = results?.homework.find((h) => h.handedInBy.some(ours))
   const missed = hw?.misses.filter((m) => m.who.some((w) => ours(w.name))).length ?? 0
   return {
-    boardScore: right + wrong ? `${right} of ${right + wrong} answers right` : '',
+    // What to practise, not a score: "1 of 2 right" reads as 50% to a parent.
+    boardScore: wrong ? `${wrong} question${wrong === 1 ? '' : 's'} to practise` : right ? `all ${right} answered right` : '',
     lastHomework: hw ? `${hw.title}, ${missed ? `${missed} to go over` : 'all right'}` : '',
   }
 }

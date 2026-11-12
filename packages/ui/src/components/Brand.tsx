@@ -16,6 +16,19 @@ export function Wordmark({ name, className }: { name: string; className?: string
   )
 }
 
+// The small "made with <name>∎" mark under student and parent pages (OVERHAUL
+// R6): the tutor's brand leads, ours is only this, and it's the referral loop.
+// Opens the home page in a new tab so a student mid-homework loses nothing.
+export function MadeWith({ name }: { name: string }) {
+  return (
+    <footer className="made-with">
+      <a href="/" target="_blank" rel="noopener">
+        made with <Wordmark name={name} />
+      </a>
+    </footer>
+  )
+}
+
 // Loading indicator: the ∎ cycling through the palette with a pop.
 export function QedLoader({ label = 'Loading' }: { label?: string }) {
   return (

@@ -12,32 +12,34 @@ professional and sleek. Read those three files before any UI work.
 
 ## 0. Where things actually stand
 
+*Written 2026-10-20. The last column records what changed by 2026-11-12; LAUNCH.md has the current plan.*
+
 The git log reads "Phase 3 (part 1)" followed by fix passes A–G. **Phases 4–7 of PLAN.md have not
 been built.** On top of that, there is an uncommitted UI pass that implements the pine prototype
 (real-data Home, Analytics, and Settings pages; restyled Students, Content, and Live). It
 typechecks.
 
-| Area | State | Gap to "publishable" |
-|---|---|---|
-| Landing `/` | 20-line stub | The whole marketing site |
-| App shell | Works. Search box is a fake `<span>`. "New" only links to Content. Display name comes from the email's local part | Command palette, a real New menu, a real display/org name |
-| Home | Uncommitted. Real counts and an onboarding checklist | "Needs attention" signals (scores, overdue), recent sessions |
-| Students | Roster, groups, portal/board links | **Student record page** (timeline, mastery, work) does not exist |
-| Content | Problem bank, sets, tags, AI import. Lessons = JSON import plus a raw JSON `<pre>` | **Lesson builder** does not exist |
-| Live / board | Sync, camera/page follow, calculator, timer, free reign, write grants, PDF export | **Quiz answer overlay, stats panel, lesson loading, and games are not ported** (`BoardCanvas.tsx:35`). These are the product's differentiators |
-| Runner | Answer, autosave, timer, submit | **SAT-style skin deferred**: no Desmos, reference sheet, or eliminator. SAT is the flagship GTM vertical |
-| Portal / Review | Functional | Design, mobile layout, a results moment |
-| Analytics | Four stat tiles and completion bars | Per-tag mastery, trends, "Draft review lesson" |
-| Settings | Email and sign-out | Org name, profile, billing, data export, account deletion |
-| Seam (assign → analyze → review lesson → board) | Not built | The product's core demo |
-| `sessions` / `quiz_events` | `sessions` row inserted on class start. `quiz_events` never written | End-of-class persistence |
-| Billing / onboarding seed / email / legal | None | All required to charge money |
-| Password reset / Google sign-in | None | Required |
-| Board assets | In-memory (lost on restart) | Supabase Storage for persistent boards |
-| Security | DB TLS `rejectUnauthorized` TODO | Must fix before paying customers |
-| Responsiveness | 3 media queries in the whole app, 0 in `board.css` | Portal, runner, and review must work on phones |
-| Tests / CI | `smoke.mjs` + grader unit test. No CI | CI on push. Browser tests are now possible (see §6) |
-| Meta | `<title>Slate</title>`, no favicon, no OG tags | Brand meta |
+| Area | State (2026-10-20) | Gap to "publishable" | Now (2026-11-12) |
+|---|---|---|---|
+| Landing `/` | 20-line stub | The whole marketing site | Lean landing: hero, one paragraph for math/SAT tutors, three screenshots, sign up (L4) |
+| App shell | Works. Search box is a fake `<span>`. "New" only links to Content. Display name comes from the email's local part | Command palette, a real New menu, a real display/org name | Real search and New menu; names come from onboarding and Settings. No command palette |
+| Home | Uncommitted. Real counts and an onboarding checklist | "Needs attention" signals (scores, overdue), recent sessions | "This week" (FLOW-SPEC F1): lessons, needs attention, calendar inbox. Onboarding moved to `/welcome` |
+| Students | Roster, groups, portal/board links | **Student record page** (timeline, mastery, work) does not exist | Student page at `/app/students/:id`. No mastery view |
+| Content | Problem bank, sets, tags, AI import. Lessons = JSON import plus a raw JSON `<pre>` | **Lesson builder** does not exist | Library; lesson plans from a PDF, typed text or AI import, with answer boxes |
+| Live / board | Sync, camera/page follow, calculator, timer, free reign, write grants, PDF export | **Quiz answer overlay, stats panel, lesson loading, and games are not ported** (`BoardCanvas.tsx:35`). These are the product's differentiators | Own engine on Yjs (tldraw removed, BOARD-SPEC §16). Answer overlay, stats panel, lesson and PDF loading ported. Games not ported |
+| Runner | Answer, autosave, timer, submit | **SAT-style skin deferred**: no Desmos, reference sheet, or eliminator. SAT is the flagship GTM vertical | Graphing calculator and reference sheet. No eliminator or section timing |
+| Portal / Review | Functional | Design, mobile layout, a results moment | Restyled; "made with" footer; checked at 375px (L4) |
+| Analytics | Four stat tiles and completion bars | Per-tag mastery, trends, "Draft review lesson" | Insights: overview, homework gradebook, hours. No per-tag mastery |
+| Settings | Email and sign-out | Org name, profile, billing, data export, account deletion | Workspace and display name, parent templates, calendar, data export, workspace deletion. No billing |
+| Seam (assign → analyze → review lesson → board) | Not built | The product's core demo | End lesson → results → follow-up homework → parent update (O3) |
+| `sessions` / `quiz_events` | `sessions` row inserted on class start. `quiz_events` never written | End-of-class persistence | Board answers kept in `quiz_events` (`lib/lessonRecord.ts`) |
+| Billing / onboarding seed / email / legal | None | All required to charge money | Sample student and `/welcome` built; legal drafts with gaps (DEPLOY.md §6); billing is a Payment Link, not built |
+| Password reset / Google sign-in | None | Required | Built; untested against the real Supabase project |
+| Board assets | In-memory (lost on restart) | Supabase Storage for persistent boards | In the database (`board_assets` → `files`); survive restarts (tested) |
+| Security | DB TLS `rejectUnauthorized` TODO | Must fix before paying customers | `DATABASE_CA_CERT` supported; default stays unverified until a real connection is confirmed |
+| Responsiveness | 3 media queries in the whole app, 0 in `board.css` | Portal, runner, and review must work on phones | Student pages and signup checked at 375px (L4) |
+| Tests / CI | `smoke.mjs` + grader unit test. No CI | CI on push. Browser tests are now possible (see §6) | CI on push (passing). Signed-in API suite on a PGlite stack in `npm test` |
+| Meta | `<title>Slate</title>`, no favicon, no OG tags | Brand meta | Favicon ∎ added. Title still hard-coded, no OG tags |
 
 Stray files: `output.png` in the repo root is an unrelated diffusion-components plot, so delete it
 or move it out. `Tutoring app UI design-handoff/` is superseded and should not be committed.
@@ -194,7 +196,8 @@ the icon wiggles on hover. Topbar page title in Outfit 600 with a static termina
 animation in tutor chrome). **Real ⌘K palette** (O6) (`cmdk`): jump to student, set, lesson, board, and run "new X".
 "New" becomes a menu. The footer shows org name and plan/trial status.
 
-**Home.** Greeting with one Garamond-italic emphasis word. The onboarding checklist uses the
+**Home.** *(Since replaced: Home is FLOW-SPEC's "This week", and onboarding is the `/welcome`
+sequence, not a checklist on Home.)* Greeting with one Garamond-italic emphasis word. The onboarding checklist uses the
 site's coloured, flipping step numbers. "Needs attention" (overdue, or <60% on the last attempt)
 needs a server endpoint. Upcoming assignments get completion rings in palette colours. An empty
 state gets one MathArt card plus one CTA.
@@ -211,7 +214,8 @@ and (3) **pick bank problems**. The composer only does page list, reorder, delet
 text/LaTeX with live KaTeX preview, and set answer keys. No inspector, no spacing drag, no block
 palette. Optimistic `version` lock. Quiet work surface.
 
-**Live / Board.** Restyle the dock and panels to the new tokens (white, hairline, floating
+**Live / Board.** *(Since built on our own engine, not tldraw: BOARD-SPEC §16. The quiz and lesson
+ports landed; games did not.)* Restyle the dock and panels to the new tokens (white, hairline, floating
 shadow, pill buttons). **Port from `C:\Users\konra\tittel-tutoring-app\client\src`:** `quiz/`
 (AnswerOverlay, StatsPanel, exportStats), `lesson/` (render + inject), and `games/` (GameHost,
 GameLibrary, nim/pizza/lockers; the shared logic already lives in `packages/shared/src/board/games`).

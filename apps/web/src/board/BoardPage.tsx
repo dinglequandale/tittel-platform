@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import { MadeWith } from '@tittel/ui'
+import { BRAND_NAME } from '@tittel/shared'
 import { apiFetch } from '../lib/api.ts'
 import { supabase } from '../lib/supabase.ts'
 import { ControlChannel } from './controlChannel.ts'
@@ -271,6 +273,7 @@ function NameGate({ onSubmit }: { onSubmit: (name: string) => void }) {
           Enter the board
         </button>
       </form>
+      <MadeWith name={BRAND_NAME} />
     </div>
   )
 }

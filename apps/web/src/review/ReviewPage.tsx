@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft } from 'lucide-react'
-import { Button } from '@tittel/ui'
+import { Button, MadeWith } from '@tittel/ui'
+import { BRAND_NAME } from '@tittel/shared'
 import { apiFetch, linkErrorMessage } from '../lib/api.ts'
 import { useSession } from '../lib/useSession.ts'
 import { useToast, AppToastProvider } from '../lib/toast.tsx'
@@ -177,6 +178,7 @@ function Review() {
           )
         })}
       </div>
+      <MadeWith name={BRAND_NAME} />
     </div>
   )
 }

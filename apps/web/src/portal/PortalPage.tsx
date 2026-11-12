@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { BRAND_NAME } from '@tittel/shared'
-import { Button } from '@tittel/ui'
+import { Button, MadeWith } from '@tittel/ui'
 import { apiFetch, linkErrorMessage } from '../lib/api.ts'
 import { dayLabel, timeLabel, isJoinable, lessonEnd, dueLabel, shortDate } from '../lessons/lessons.ts'
 import { fileUrl } from '../lib/files.ts'
@@ -124,7 +124,7 @@ export function PortalPage() {
                   {a.commented && ' · your tutor left a comment'}
                 </div>
                 {a.attempt_token && (
-                  <Link to={a.status === 'submitted' || a.status === 'expired' ? `/review/${a.attempt_token}` : `/hw/${a.attempt_token}`}>
+                  <Link className="portal-hw-link" to={a.status === 'submitted' || a.status === 'expired' ? `/review/${a.attempt_token}` : `/hw/${a.attempt_token}`}>
                     {a.status === 'submitted' || a.status === 'expired' ? 'Review your answers →' : a.status === 'active' ? 'Continue →' : 'Start →'}
                   </Link>
                 )}
@@ -146,6 +146,7 @@ export function PortalPage() {
           </div>
         </section>
       )}
+      <MadeWith name={BRAND_NAME} />
     </main>
   )
 }

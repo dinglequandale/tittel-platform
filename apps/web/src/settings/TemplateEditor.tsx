@@ -11,7 +11,7 @@ import {
 const SAMPLE: Record<TemplateKind, Record<string, string>> = {
   lesson: {
     first_name: 'Sam', date: 'Thu, Oct 29', covered: 'Solving quadratics by factoring. Next: completing the square.',
-    board_score: '3 of 4 answers right', last_homework: 'Quadratics practice, 1 to go over', homework: 'Factoring set B, due Tue, Nov 3',
+    board_score: '1 question to practise', last_homework: 'Quadratics practice, 1 to go over', homework: 'Factoring set B, due Tue, Nov 3',
     board_notes_link: 'https://…/board-notes.pdf', portal_link: 'https://…/s/sam',
   },
   report: {

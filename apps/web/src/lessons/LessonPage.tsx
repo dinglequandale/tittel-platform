@@ -210,7 +210,8 @@ function LessonUpdate({ lesson, results, aiEnabled, onClose }: {
     return {
       first_name: names.length ? names.join(' and ') : lessonWho(lesson),
       date: shortDate(lesson.scheduled_at),
-      covered: lesson.notes?.trim() || lesson.plan_title || '',
+      // The tutor's own note leads the message; without one, the plan says what was covered.
+      covered: lesson.notes?.trim() || (lesson.plan_title ? `We worked on ${lesson.plan_title}.` : ''),
       board_score: boardScore,
       last_homework: lastHomework,
       homework: hw ? `${hw.title}${hw.dueAt ? `, due ${dueLabel(hw.dueAt)}` : ''}` : '',
@@ -245,7 +246,7 @@ function LessonUpdate({ lesson, results, aiEnabled, onClose }: {
           body: JSON.stringify({ facts: [
             `Student${vars.first_name.includes(' and ') ? 's' : ''}: ${vars.first_name}`, `Lesson: ${vars.date}`,
             ...(vars.covered ? [`What we covered: ${vars.covered}`] : []),
-            ...(vars.board_score ? [`On the board: ${vars.board_score}.`] : []),
+            ...(vars.board_score ? [`From the board: ${vars.board_score}.`] : []),
             ...(vars.last_homework ? [`Last homework: ${vars.last_homework}.`] : []),
             ...(vars.homework ? [`Homework: ${vars.homework}.`] : []),
           ].join('\n') }),

@@ -115,5 +115,7 @@ in them, and what it needs:
 ## 7. Still yours before outside tutors (from LAUNCH.md)
 
 - **[K]** The final product name: one line in `packages/shared/src/brand.ts` (`BRAND_NAME`).
+- **[K]** The feedback address: `FEEDBACK_EMAIL` in the same file. The in-app "Send feedback" link
+  and the landing page's contact line stay hidden while it's empty.
 - **[K]** A domain, then step 7's URLs again with it.
 - **[K]** The Stripe Payment Link for the founding year, and the list of 5–10 tutors.

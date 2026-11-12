@@ -346,7 +346,7 @@ into O6's shell items.
   writes only what changed, and inserts new lessons in one statement. Before this, linking
   re-downloaded the calendar and wrote every lesson one round trip at a time (~90 ms each to
   Supabase): several seconds. Saving an address also places any other series with that address
-  (both of Mateo's) in the same answer.
+  (both of one student's) in the same answer.
 
 ### 9.3 A whole practice in a few steps (2026-10-28, after the tutor-persona walkthrough)
 

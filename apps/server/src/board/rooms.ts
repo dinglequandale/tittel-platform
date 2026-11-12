@@ -11,10 +11,16 @@ import { SyncRoom } from './sync.ts'
 // `boards` row) behaves exactly like the legacy whiteboard: 100% volatile,
 // dropped for good ~30s after the last socket leaves.
 const GRACE_MS = 30_000
-const AUTOSAVE_MS = 60_000
+// Tests save sooner (test/stack); a real board saves once a minute.
+const AUTOSAVE_MS = Number(process.env.BOARD_AUTOSAVE_MS) || 60_000
 // PLAN.md §6.3: boards heavier than this refuse to persist — "board too heavy,
 // export + start a page" is a friendlier failure than silently truncating data.
-const MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
+// The host hears about it (and is warned from 80%), so it never fails silently.
+export const MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
+const WARN_SNAPSHOT_BYTES = Math.floor(MAX_SNAPSHOT_BYTES * 0.8)
+
+/** How close the saved board is to the cap: `full` is no longer being saved. */
+export type BoardSize = 'ok' | 'warn' | 'full'
 
 type AssetBlob = { data: Buffer; contentType: string }
 
@@ -61,6 +67,7 @@ export interface Room {
   closeTimer: ReturnType<typeof setTimeout> | null
   autosaveTimer: ReturnType<typeof setInterval> | null
   dirty: boolean
+  size: BoardSize
 }
 
 const rooms = new Map<string, Room>()
@@ -88,9 +95,26 @@ async function loadDoc(id: string): Promise<{ doc: BoardDoc; imported: boolean }
   return { doc, imported }
 }
 
+/** The message the host's board shows as a banner (controlChannel.ts sends it on connect too). */
+export function boardSizeMessage(room: Room) {
+  return { type: 'board-size', state: room.size, limit: MAX_SNAPSHOT_BYTES }
+}
+
+/** Records how full the board is and tells its hosts when that changes. */
+function noteSize(room: Room, bytes: number) {
+  const size: BoardSize = bytes > MAX_SNAPSHOT_BYTES ? 'full' : bytes > WARN_SNAPSHOT_BYTES ? 'warn' : 'ok'
+  if (size === room.size) return
+  room.size = size
+  const message = JSON.stringify(boardSizeMessage(room))
+  for (const client of room.controls) {
+    if (client.role === 'host' && client.socket.readyState === client.socket.OPEN) client.socket.send(message)
+  }
+}
+
 async function saveDoc(room: Room): Promise<void> {
   if (!room.persistent) return
   const saved = Buffer.from(room.sync.snapshot())
+  noteSize(room, saved.byteLength)
   if (saved.byteLength > MAX_SNAPSHOT_BYTES) {
     console.warn(`[board] ${room.id} doc exceeds ${MAX_SNAPSHOT_BYTES} bytes — skipping save`)
     return
@@ -162,6 +186,7 @@ async function createRoom(id: string, persistent: boolean): Promise<Room> {
     closeTimer: null,
     autosaveTimer: null,
     dirty: imported,
+    size: 'ok',
     sync: undefined as unknown as SyncRoom,
   }
 

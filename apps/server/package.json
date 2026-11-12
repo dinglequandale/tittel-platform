@@ -8,7 +8,7 @@
     "start": "tsx src/index.ts",
     "migrate": "tsx src/migrate.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node test/smoke.mjs && node --import tsx test/calendar.test.mjs && node --import tsx test/sync.test.mjs && node --import tsx test/api.test.mjs"
+    "test": "node test/smoke.mjs && node --import tsx test/calendar.test.mjs && node --import tsx test/sync.test.mjs && node --import tsx test/db-tls.test.mjs && node --import tsx test/api.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.1",

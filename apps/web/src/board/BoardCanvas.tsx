@@ -95,6 +95,8 @@ export function BoardCanvas({
   // freshly opened panel starts populated.
   const [statsOpen, setStatsOpen] = useState(false)
   const [lastStats, setLastStats] = useState<QuizStats | null>(null)
+  // How full the saved board is (rooms.ts): past the cap it stops saving.
+  const [boardSize, setBoardSize] = useState<'ok' | 'warn' | 'full'>('ok')
   // Questions accepting answers (server-authoritative, echoed to everyone). Any
   // open question is "practice mode": students stay on the tutor's page and
   // camera but get their own calculator.
@@ -134,6 +136,11 @@ export function BoardCanvas({
   }, [channel, isHost])
 
   useEffect(() => channel.on('quiz-open', (m) => setOpenQids(new Set(m.qids as string[]))), [channel])
+
+  useEffect(() => {
+    if (!isHost) return
+    return channel.on('board-size', (m) => setBoardSize(m.state === 'full' || m.state === 'warn' ? m.state : 'ok'))
+  }, [channel, isHost])
 
   const studentSoloCalc = freeReign || practiceOpen
 
@@ -472,6 +479,13 @@ export function BoardCanvas({
             <div className="board-chrome__center">
               {bar && <div className="board-bar">{bar}</div>}
               {!connected && <span className="board-offline" role="status">Reconnecting…</span>}
+              {isHost && boardSize !== 'ok' && (
+                <span className={`board-size-banner ${boardSize}`} role="alert">
+                  {boardSize === 'full'
+                    ? 'This board is full and is no longer being saved. Export it as a PDF, then delete old pages to make room.'
+                    : 'This board is nearly full. Export it as a PDF and delete old pages you no longer need.'}
+                </span>
+              )}
             </div>
             <div className="board-chrome__side end">
               <PeopleMenu selfId={userId} granted={isHost && isLarge ? granted : undefined} onToggle={toggleGrant} />

@@ -11,7 +11,7 @@ import {
   MAX_OPEN_QIDS,
   type Player,
 } from '@tittel/shared'
-import type { ControlClient, Room } from './rooms.ts'
+import { boardSizeMessage, type ControlClient, type Room } from './rooms.ts'
 import { recordBoardAnswer } from '../lib/lessonRecord.ts'
 
 // Ported near-verbatim from the legacy whiteboard's server/index.ts
@@ -163,6 +163,7 @@ export function handleControl(ws: WebSocket, room: Room, role: 'host' | 'guest')
   } else {
     safeSend(ws, { type: 'quiz-stats', stats: quizStats(room) })
     safeSend(ws, { type: 'quiz-open', qids: [...room.quizOpen] })
+    if (room.size !== 'ok') safeSend(ws, boardSizeMessage(room))
   }
   if (room.game) {
     safeSend(ws, gameStateMsg(room))

@@ -445,6 +445,24 @@
   padding: 0.2rem 0.7rem;
 }
 
+.board-size-banner {
+  pointer-events: all;
+  max-width: 34rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--gold-wash);
+  border: 1px solid var(--warning);
+  border-radius: 0.6rem;
+  padding: 0.35rem 0.8rem;
+}
+
+.board-size-banner.full {
+  color: var(--incorrect-ink);
+  background: var(--coral-wash);
+  border-color: var(--incorrect);
+}
+
 .page-menu {
   position: relative;
   pointer-events: all;

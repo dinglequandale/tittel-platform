@@ -1,6 +1,7 @@
 import './env.ts'
 import { Pool } from 'pg'
 import type { QueryResultRow } from 'pg'
+import { dbSsl } from './lib/dbSsl.ts'
 
 // Single shared connection pool. DATABASE_URL is the Supabase Postgres URI —
 // use the session-pooler URL on Render (PLAN.md §9.5), direct host is
@@ -13,25 +14,9 @@ if (!connectionString) {
   )
 }
 
-const isLocal =
-  !!connectionString &&
-  (connectionString.includes('localhost') || connectionString.includes('127.0.0.1'))
-
-// TODO(security): DEFAULT_REJECT_UNAUTHORIZED should be true (verify the
-// Supabase pooler's cert chain) — tested against this project's real
-// DATABASE_URL on 2026-07-17 and Node's default verification failed with
-// "self-signed certificate in certificate chain" (confirmed not a local
-// network/proxy issue: a plain HTTPS request to google.com verifies fine
-// in the same environment). Revisit once Supabase's pooler cert is
-// confirmed valid for this project's region, then flip the default below.
-// PGSSLMODE=no-verify stays available as an explicit, auditable escape
-// hatch for any environment where it's still true.
-const DEFAULT_REJECT_UNAUTHORIZED = false
-const rejectUnauthorized = process.env.PGSSLMODE === 'no-verify' ? false : DEFAULT_REJECT_UNAUTHORIZED
-
 export const pool = new Pool({
   connectionString,
-  ssl: connectionString && !isLocal ? { rejectUnauthorized } : undefined,
+  ssl: dbSsl(connectionString, process.env),
 })
 
 // --- Tenancy enforcement (PLAN.md §5.4) -------------------------------------

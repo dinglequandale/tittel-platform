@@ -105,7 +105,7 @@ server.on('upgrade', (req, socket, head) => {
         wss.handleUpgrade(req, socket, head, (ws) => {
           const sessionId = url.searchParams.get('sessionId') || crypto.randomUUID()
           if (resolved.userId) room.syncUsers.set(sessionId, resolved.userId)
-          room.sync.connect(ws, { sessionId, readonly: isReadonly })
+          room.sync.connect(ws, { sessionId, readonly: isReadonly, guest: resolved.role === 'guest' })
         })
       })
       .catch((err) => {

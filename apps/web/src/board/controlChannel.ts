@@ -18,6 +18,7 @@ const STICKY_TYPES = new Set([
   'quiz-open',
   'game-state',
   'game-view',
+  'board-size',
 ])
 
 export class ControlChannel {

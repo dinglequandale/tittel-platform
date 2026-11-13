@@ -40,7 +40,7 @@ export function Landing() {
             {BRAND_NAME} is for independent math and SAT tutors. Plan a lesson from a PDF or your own notes,
             teach it on a live whiteboard where students answer on the board, set homework that marks itself,
             and send parents a short update when the lesson ends. Students and parents never make an account:
-            they get a private link. It’s new, and it’s built by a tutor who teaches with it. Tell us what’s
+            they get a private link. It’s new, and it’s built by a working math tutor. Tell us what’s
             missing.
           </p>
         </section>

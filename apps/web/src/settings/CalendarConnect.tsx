@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { ExternalLink } from 'lucide-react'
 import { Button, Field, Input } from '@tittel/ui'
+import { BRAND_NAME } from '@tittel/shared'
 import { apiFetch } from '../lib/api.ts'
 import type { CalendarStatus } from '../lessons/CalendarInbox.tsx'
 
@@ -93,7 +94,7 @@ export function CalendarConnect({ onConnected, later }: {
       // The server can't reach or read it: the address looked right but didn't open.
       setError(message.startsWith("Couldn't read")
         ? { message: "That address didn't open as a calendar.", tip: guide?.tip }
-        : { message: "That isn't a calendar address Slate can read.", tip: 'Copy the whole address, then paste it again.' })
+        : { message: `That isn't a calendar address ${BRAND_NAME} can read.`, tip: 'Copy the whole address, then paste it again.' })
     } finally {
       setBusy(false)
     }
@@ -133,10 +134,10 @@ export function CalendarConnect({ onConnected, later }: {
       ))}
       {later && (
         <div>
-          <Choice selected={later.chosen} title="None of these" sub="Or not now. You'll schedule lessons in Slate." onSelect={() => pick(null)} />
+          <Choice selected={later.chosen} title="None of these" sub={`Or not now. You'll schedule lessons in ${BRAND_NAME}.`} onSelect={() => pick(null)} />
           {later.chosen && (
             <div className="choice-detail">
-              <p className="muted">That works. Everything in Slate runs without a calendar, and you can connect one any time in Settings.</p>
+              <p className="muted">That works. Everything in {BRAND_NAME} runs without a calendar, and you can connect one any time in Settings.</p>
             </div>
           )}
         </div>

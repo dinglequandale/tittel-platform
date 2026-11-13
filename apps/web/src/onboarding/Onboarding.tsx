@@ -20,7 +20,7 @@ const PARENT_CHOICES: { id: Parents; title: string; sub: string; prefs: Org['par
   { id: 'lesson', title: 'A note after each lesson', sub: 'What you covered, how it went and the homework.', prefs: { afterLesson: true, reports: true, reminder: 'none' } },
   { id: 'monthly', title: 'A monthly progress report', sub: "Each student's lessons, homework and scores for the month.", prefs: { afterLesson: false, reports: true, reminder: 'monthly' } },
   { id: 'both', title: 'Both', sub: 'A note after each lesson, and a report each month.', prefs: { afterLesson: true, reports: true, reminder: 'monthly' } },
-  { id: 'self', title: 'I handle that myself', sub: 'Slate won’t offer parent messages. You can turn them on in Settings.', prefs: { afterLesson: false, reports: false, reminder: 'none' } },
+  { id: 'self', title: 'I handle that myself', sub: `${BRAND_NAME} won’t offer parent messages. You can turn them on in Settings.`, prefs: { afterLesson: false, reports: false, reminder: 'none' } },
 ]
 
 function parentsChoice(p: Org['parentUpdates']): Parents {

@@ -55,8 +55,9 @@ already done in the repo. Written 2026-11-12 with LAUNCH.md L3. Placeholders in 
    cache & deploy*.
 6. **[K] If the first deploy can't reach the database** with `DATABASE_CA_CERT` set (log line
    `self-signed certificate` or `unable to verify`), set `PGSSLMODE` = `no-verify` to get running,
-   and tell the next session: the CA text is probably incomplete. Once a deploy connects with the CA
-   and without `PGSSLMODE`, the default in `apps/server/src/lib/dbSsl.ts` can be flipped to verify.
+   and tell the next session: the CA text is probably incomplete. The certificate is verified by
+   default (`apps/server/src/lib/dbSsl.ts`), so without `DATABASE_CA_CERT` a Supabase connection is
+   refused. In a local `.env`, put the PEM in double quotes with `\n` between its lines.
 
 ## 3. Supabase and Sentry
 
@@ -66,7 +67,8 @@ already done in the repo. Written 2026-11-12 with LAUNCH.md L3. Placeholders in 
 8. **[K] Google sign-in (optional).** Supabase → Authentication → Providers → Google, with a client
    from Google Cloud whose redirect is the callback Supabase shows there. Then set
    `VITE_GOOGLE_AUTH=on` and redeploy.
-9. **[K] Sentry (optional).** Two projects, Node and React; their DSNs go in step 5.
+9. **[K] Sentry (optional).** Two projects, Node and React; their DSNs go in step 5. Then add
+   Sentry (error monitoring) to the providers in the Privacy Policy's "Who else handles it".
 
 ## 4. First boot
 
@@ -104,8 +106,6 @@ in them, and what it needs:
 | both | `[date]` (`UPDATED`) | the date the final text takes effect |
 | both | `[contact email]` (`CONTACT`) | the address parents and tutors write to |
 | both | `[legal name of the business]` (`ENTITY`) | the business's legal name (sole trader name or company) |
-| Privacy, "Who else handles it" | `[error monitoring provider, if enabled]` | "Sentry" if the Sentry DSNs are set, else delete the phrase |
-| Privacy, "Who else handles it" | `[Where data is stored: region.]` | the Supabase project's region and the Render service's region |
 | Privacy, "How long we keep it" | `[… within N days …]` | how many days after an account closes its data is deleted |
 | Privacy, "Your choices and rights" | `[Add any rights that apply where you operate …]` | the regimes that apply (UK/EU GDPR, US state laws), ideally with legal advice |
 | Terms, "Trial and payment" | `[Pricing, billing, renewal and refund terms.]` | price, billing period, renewal and refund policy (matches the Stripe Payment Link) |

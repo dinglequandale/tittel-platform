@@ -7,14 +7,11 @@ import type { ConnectionOptions } from 'node:tls'
 // set, the server's certificate is verified against it. PGSSLMODE=no-verify
 // still turns verification off: an explicit, auditable escape hatch.
 //
-// TODO(security): without a CA, DEFAULT_REJECT_UNAUTHORIZED stays false.
-// Tested against this project's real DATABASE_URL on 2026-07-17, Node's
-// default verification failed with "self-signed certificate in certificate
-// chain" (not a local network/proxy issue: a plain HTTPS request to google.com
-// verified fine in the same environment): the pooler's chain ends at Supabase's
-// own CA, which Node doesn't trust. Flip the default once a connection with
-// DATABASE_CA_CERT is confirmed on Render.
-const DEFAULT_REJECT_UNAUTHORIZED = false
+// Verified by default. Supabase's pooler chain ends at Supabase's own CA, which
+// Node doesn't trust, so a Supabase DATABASE_URL needs DATABASE_CA_CERT set
+// (confirmed on Render 2026-11-26); without it the connection is refused
+// rather than silently left unverified.
+const DEFAULT_REJECT_UNAUTHORIZED = true
 
 export function dbSsl(
   connectionString: string | undefined,

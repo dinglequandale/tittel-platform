@@ -20,7 +20,7 @@ const otherCa = fixture('other-ca.pem')
 // ---- the settings ---------------------------------------------------------
 const remote = 'postgres://u:p@db.example.com:5432/postgres'
 check('no TLS for a local database', dbSsl('postgres://postgres@127.0.0.1:5499/postgres', { DATABASE_CA_CERT: ca }) === undefined)
-check('without a CA the default is unchanged (not verified)', dbSsl(remote, {})?.rejectUnauthorized === false)
+check('without a CA the certificate is still verified', dbSsl(remote, {})?.rejectUnauthorized === true)
 check('with DATABASE_CA_CERT the certificate is verified against it', dbSsl(remote, { DATABASE_CA_CERT: ca })?.rejectUnauthorized === true && dbSsl(remote, { DATABASE_CA_CERT: ca })?.ca === ca.trim())
 check('a PEM pasted on one line with \\n works', dbSsl(remote, { DATABASE_CA_CERT: ca.trim().replace(/\n/g, '\\n') })?.ca === ca.trim())
 check('PGSSLMODE=no-verify still turns verification off', dbSsl(remote, { DATABASE_CA_CERT: ca, PGSSLMODE: 'no-verify' })?.rejectUnauthorized === false)
@@ -64,7 +64,7 @@ check('the right CA completes the TLS handshake', handshakes.at(-1) === 'ok', wi
 const wrongCa = await connect({ DATABASE_CA_CERT: otherCa })
 check('a certificate from another CA is refused', /self[- ]signed|unable to verify|certificate/i.test(wrongCa), wrongCa)
 const noCa = await connect({})
-check('without a CA it connects unverified, as before', handshakes.at(-1) === 'ok' && !/certificate/i.test(noCa), noCa)
+check('without a CA a certificate Node does not trust is refused', /self[- ]signed|unable to verify|certificate/i.test(noCa), noCa)
 
 server.close()
 console.log(failures ? `\n${failures} failed` : '\nall passed')

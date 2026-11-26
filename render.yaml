@@ -14,7 +14,9 @@ services:
     # Render checks this before it sends traffic to a new deploy. It answers
     # 503 when the database is unreachable (apps/server/src/app.ts).
     healthCheckPath: /api/health
-    buildCommand: npm install && npm run build
+    # --include=dev: NODE_ENV=production makes npm skip devDependencies, but
+    # the build needs vite and the start command needs tsx.
+    buildCommand: npm ci --include=dev && npm run build
     # Schema is idempotent (create-if-not-exists / alter-if-not-exists), so
     # it's safe to reapply it on every boot — keeps prod in sync without a
     # manual migration step (PLAN.md §9.5).
